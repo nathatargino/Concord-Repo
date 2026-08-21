@@ -13,7 +13,9 @@ interface PeerConnection {
   ignoreOffer: boolean;
 }
 
-export function useWebRTC(emit: EmitFn) {
+type AttachRemoteFn = (audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => void;
+
+export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
   const peersRef = useRef<Map<string, PeerConnection>>(new Map());
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -92,7 +94,11 @@ export function useWebRTC(emit: EmitFn) {
             document.getElementById('remote-audios')?.appendChild(audioEl);
             peerData.audioEl = audioEl;
           }
-          audioEl.srcObject = streams[0] ?? null;
+          if (attachRemoteStream) {
+            attachRemoteStream(audioEl, streams[0] ?? new MediaStream(), peerId);
+          } else {
+            audioEl.srcObject = streams[0] ?? null;
+          }
         }
 
         if (track.kind === 'video') {

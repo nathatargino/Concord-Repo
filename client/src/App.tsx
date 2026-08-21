@@ -44,7 +44,10 @@ export default function App() {
   }, [audio, yt]);
 
   // ─── WEBRTC SYSTEM ───────────────────────────────────────────────
-  const rtc = useWebRTC((event, ...args) => socket.emit(event as any, ...args));
+  const rtc = useWebRTC(
+    (event, ...args) => socket.emit(event as any, ...args),
+    audio.attachRemoteStream
+  );
 
   // ─── SOCKET CONNECTION ───────────────────────────────────────────
   const socket = useSocket({
