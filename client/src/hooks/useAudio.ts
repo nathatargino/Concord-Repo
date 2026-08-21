@@ -58,14 +58,17 @@ export function useAudio() {
       gainNode.gain.value = callMuted ? 0 : remoteVol / 100;
 
       source.connect(gainNode);
+      // Route through dest so the audio element (and therefore the volume slider) controls playback.
+      // Do NOT also connect to ctx.destination — that would produce a duplicate audio output.
       gainNode.connect(dest);
-      gainNode.connect(ctx.destination);
 
       remoteGains.set(userId, gainNode);
       audioEl.srcObject = dest.stream;
 
       monitorSpeaking(stream, userId);
-    } catch {
+    } catch (err) {
+      // GainNode pipeline failed — fall back to direct stream (volume slider won't work).
+      console.warn('[useAudio] attachRemoteStream: GainNode setup failed, falling back to direct stream', err);
       audioEl.srcObject = stream;
     }
   }, []);

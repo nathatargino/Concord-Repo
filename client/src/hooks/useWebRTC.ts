@@ -94,9 +94,13 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
             document.getElementById('remote-audios')?.appendChild(audioEl);
             peerData.audioEl = audioEl;
           }
+          // Always route through GainNode so the volume slider works.
+          // The bare srcObject fallback intentionally bypasses volume control,
+          // so only use it as a last resort when no audio pipeline exists.
           if (attachRemoteStream) {
             attachRemoteStream(audioEl, streams[0] ?? new MediaStream(), peerId);
           } else {
+            // Fallback: no GainNode — volume slider will NOT affect this stream.
             audioEl.srcObject = streams[0] ?? null;
           }
         }
