@@ -82,7 +82,10 @@ export function useYouTube(
       player.loadVideoById(videoId, Math.floor(startSeconds));
 
       const { ytVol, callMuted } = useAudioStore.getState();
-      player.setVolume(callMuted ? 0 : ytVol);
+      const targetVol = callMuted ? 0 : ytVol;
+      player.setVolume(targetVol);
+      if (targetVol > 0) player.unMute();
+      
       useAppStore.getState().setIsPlaying(true);
     },
     [ensurePlayer]
@@ -107,7 +110,14 @@ export function useYouTube(
   const applyYTVolume = useCallback(() => {
     if (!playerRef.current) return;
     const { ytVol, callMuted } = useAudioStore.getState();
-    playerRef.current.setVolume(callMuted ? 0 : ytVol);
+    const targetVol = callMuted ? 0 : ytVol;
+    playerRef.current.setVolume(targetVol);
+    
+    if (targetVol > 0) {
+      playerRef.current.unMute();
+    } else {
+      playerRef.current.mute();
+    }
   }, []);
 
   const unlock = useCallback(async () => {
