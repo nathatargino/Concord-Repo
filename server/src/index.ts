@@ -1,0 +1,107 @@
+import 'dotenv/config';
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import {
+  ClientToServerEvents,
+  InterServerEvents,
+  ServerToClientEvents,
+  SocketData,
+} from './types';
+import { registerHub } from './hub';
+import multer from 'multer';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs';
+
+const app = express();
+const httpServer = createServer(app);
+
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const PORT = process.env.PORT || 3001;
+
+// ─── MIDDLEWARE ────────────────────────────────────────────────────
+app.use(cors({ origin: CLIENT_URL, credentials: true }));
+app.use(express.json());
+
+// Serve static files from public folder
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+
+// ─── SOCKET.IO ────────────────────────────────────────────────────
+const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>(
+  httpServer,
+  {
+    cors: {
+      origin: CLIENT_URL,
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
+    transports: ['websocket', 'polling'],
+  }
+);
+
+registerHub(io);
+
+// ─── TURN/STUN CREDENTIALS ────────────────────────────────────────
+app.get('/api/turn/credentials', (_req, res) => {
+  const iceServers: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+
+  const turnKeyId = process.env.TURN_KEY_ID;
+  const turnApiToken = process.env.TURN_API_TOKEN;
+  const turnUrl = process.env.TURN_URL;
+
+  if (turnKeyId && turnApiToken && turnUrl) {
+    iceServers.push({
+      urls: turnUrl,
+      username: turnKeyId,
+      credential: turnApiToken,
+    });
+  }
+
+  res.json({ iceServers });
+});
+
+// ─── IMAGE UPLOAD ─────────────────────────────────────────────────
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const dir = path.join(__dirname, '../public/uploads');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${uuidv4()}${ext}`);
+  },
+});
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
+
+app.post('/api/upload', upload.single('image'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhuma imagem enviada' });
+  }
+  
+  // Return the public URL path
+  const imageUrl = `/uploads/${req.file.filename}`;
+  res.json({ url: imageUrl });
+});
+
+
+// ─── HEALTH CHECK ─────────────────────────────────────────────────
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ─── START ────────────────────────────────────────────────────────
+httpServer.listen(PORT, () => {
+  console.log(`\n🚀 Concord Server running on http://localhost:${PORT}`);
+  console.log(`   Accepting connections from: ${CLIENT_URL}\n`);
+});

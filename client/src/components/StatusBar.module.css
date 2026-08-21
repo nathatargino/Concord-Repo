@@ -1,0 +1,43 @@
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--bg-elevated);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+
+.left, .right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.connected {
+  background: var(--success-color);
+  box-shadow: 0 0 6px var(--success-color);
+}
+
+.disconnected {
+  background: var(--danger-neon);
+}
+
+.statusText {
+  color: var(--text-muted);
+}
+
+.userText {
+  color: var(--text-muted);
+}
+
+.userName {
+  color: var(--text-primary);
+  font-weight: 600;
+}

@@ -1,0 +1,82 @@
+.appContainer {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  overflow: hidden;
+  position: relative;
+  padding-bottom: 35px; /* Space for StatusBar */
+}
+
+.mainContent {
+  flex: 1;
+  display: flex;
+  padding: 16px;
+  gap: 16px;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.chatSection {
+  flex: 1;
+  min-width: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.sidePanels {
+  width: 340px;
+  min-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 6px;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.4) transparent;
+}
+
+@media (max-width: 1100px) {
+  .mainContent {
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+  }
+  
+  .chatSection {
+    min-height: 400px;
+  }
+  
+  .sidePanels {
+    width: 100%;
+    min-width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-y: visible;
+  }
+  
+  .sidePanels > * {
+    flex: 1;
+    min-width: 320px;
+  }
+}
+
+@media (min-height: 900px) {
+  .mainContent {
+    padding: 24px;
+    gap: 24px;
+  }
+  
+  .sidePanels {
+    width: 380px;
+    min-width: 380px;
+    gap: 20px;
+  }
+}

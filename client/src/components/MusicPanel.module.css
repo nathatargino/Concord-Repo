@@ -1,0 +1,300 @@
+.panel {
+  background: var(--bg-elevated);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  position: relative;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.headerIcon {
+  font-size: 16px;
+}
+
+.headerTitle {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+}
+
+.nowPlayingBadge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 8px;
+  padding: 3px 8px;
+  color: var(--neon-color);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.eqBar {
+  display: inline-block;
+  width: 3px;
+  background: var(--neon-color);
+  border-radius: 2px;
+  animation: eq 0.8s ease-in-out infinite alternate;
+}
+
+.eqBar:nth-child(1) { height: 8px; animation-delay: 0s; }
+.eqBar:nth-child(2) { height: 12px; animation-delay: 0.2s; }
+.eqBar:nth-child(3) { height: 6px; animation-delay: 0.4s; }
+
+@keyframes eq {
+  from { transform: scaleY(0.3); }
+  to { transform: scaleY(1); }
+}
+
+.content {
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.currentTrack {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(34, 211, 238, 0.05);
+  border: 1px solid rgba(34, 211, 238, 0.15);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.thumbnail {
+  width: 44px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.trackInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trackLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--neon-color);
+}
+
+.trackLink {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.trackLink:hover {
+  color: var(--text-primary);
+}
+
+.form {
+  display: flex;
+  gap: 8px;
+}
+
+.input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.input:focus {
+  border-color: rgba(124, 58, 237, 0.5);
+  background: rgba(124, 58, 237, 0.06);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+}
+
+.input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.addBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #7C3AED, #4F46E5);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.35);
+}
+
+.addBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(124, 58, 237, 0.5);
+}
+
+.addBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin: -4px 0 0;
+}
+
+.queue {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.queueLabel {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.queueList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 100px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.3) transparent;
+}
+
+.queueItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.queueIndex {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+
+.queueThumb {
+  width: 36px;
+  height: 26px;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.queueInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.queueVideoId {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.queueBy {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.removeBtn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-size: 14px;
+  margin-left: auto;
+}
+
+.removeBtn:hover {
+  color: var(--danger-neon);
+  background: rgba(244, 63, 94, 0.1);
+}
+
+.dragHandle {
+  cursor: grab;
+  color: rgba(255, 255, 255, 0.2);
+  margin-right: 4px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.dragging {
+  opacity: 0.4;
+  transform: scale(0.98);
+}
+
+.dragOver {
+  border-top: 2px solid var(--neon-color);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+@media (min-height: 900px) {
+  .header { padding: 14px 18px; }
+  .headerTitle { font-size: 15px; }
+  .content { padding: 14px 18px; gap: 14px; }
+  .currentTrack { padding: 10px; gap: 12px; }
+  .thumbnail { width: 56px; height: 42px; }
+  .input { padding: 9px 12px; font-size: 13px; }
+  .addBtn { padding: 9px 14px; font-size: 13px; }
+  .queueList { max-height: 180px; }
+}

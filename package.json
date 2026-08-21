@@ -1,0 +1,12 @@
+{
+  "name": "concord",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
+    "build": "pnpm --filter client build",
+    "start": "pnpm --filter server start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
