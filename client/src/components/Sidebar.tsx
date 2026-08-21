@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
@@ -22,6 +22,8 @@ export const Sidebar: React.FC<Props> = ({
 
   const voiceUsers = users.filter((u) => u.inVoice);
   const otherUsers = users.filter((u) => !u.inVoice);
+
+  const [showOnline, setShowOnline] = useState(false);
 
   return (
     <aside className={styles.sidebar}>
@@ -57,36 +59,44 @@ export const Sidebar: React.FC<Props> = ({
         )}
 
         <section className={styles.section}>
-          <div className={styles.sectionLabel}>
-            <span className={styles.sectionIcon}>👥</span>
-            Online — {users.length}
+          <div 
+            className={`${styles.sectionLabel} ${styles.clickable}`} 
+            onClick={() => setShowOnline(!showOnline)}
+          >
+            <div className={styles.sectionLabelLeft}>
+              <span className={styles.sectionIcon}>👥</span>
+              Online — {users.length}
+            </div>
+            <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>▼</span>
           </div>
-          <div className={styles.userList}>
-            {otherUsers.map((user) => (
-              <UserCard
-                key={user.id}
-                id={user.id}
-                name={user.name || 'Anônimo'}
-                isMe={user.id === myId}
-                inVoice={false}
-                screenSharing={user.screenSharing}
-                onScreenShareClick={onScreenShareClick}
-              />
-            ))}
-            {voiceUsers
-              .filter((u) => u.id !== myId)
-              .map((user) => (
+          {showOnline && (
+            <div className={styles.userList}>
+              {otherUsers.map((user) => (
                 <UserCard
-                  key={`dup-${user.id}`}
+                  key={user.id}
                   id={user.id}
                   name={user.name || 'Anônimo'}
                   isMe={user.id === myId}
-                  inVoice
+                  inVoice={false}
                   screenSharing={user.screenSharing}
                   onScreenShareClick={onScreenShareClick}
                 />
               ))}
-          </div>
+              {voiceUsers
+                .filter((u) => u.id !== myId)
+                .map((user) => (
+                  <UserCard
+                    key={`dup-${user.id}`}
+                    id={user.id}
+                    name={user.name || 'Anônimo'}
+                    isMe={user.id === myId}
+                    inVoice
+                    screenSharing={user.screenSharing}
+                    onScreenShareClick={onScreenShareClick}
+                  />
+                ))}
+            </div>
+          )}
         </section>
       </div>
 
