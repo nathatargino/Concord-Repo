@@ -74,30 +74,17 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {otherUsers.map((user) => (
+              {users.map((user) => (
                 <UserCard
                   key={user.id}
                   id={user.id}
                   name={user.name || 'Anônimo'}
                   isMe={user.id === myId}
-                  inVoice={false}
+                  inVoice={user.inVoice}
                   screenSharing={user.screenSharing}
                   onScreenShareClick={onScreenShareClick}
                 />
               ))}
-              {voiceUsers
-                .filter((u) => u.id !== myId)
-                .map((user) => (
-                  <UserCard
-                    key={`dup-${user.id}`}
-                    id={user.id}
-                    name={user.name || 'Anônimo'}
-                    isMe={user.id === myId}
-                    inVoice
-                    screenSharing={user.screenSharing}
-                    onScreenShareClick={onScreenShareClick}
-                  />
-                ))}
             </div>
           </div>
         </section>
