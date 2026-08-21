@@ -89,23 +89,32 @@
 }
 
 .chevron {
-  font-size: 10px;
-  transition: transform 0.2s ease;
-  transform: rotate(-90deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-muted);
 }
 
 .chevronOpen {
-  transform: rotate(0deg);
+  transform: rotate(90deg);
 }
 
-.sectionIcon {
-  font-size: 13px;
+.collapsibleWrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsibleWrapper.expanded {
+  grid-template-rows: 1fr;
 }
 
 .userList {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .userCard {

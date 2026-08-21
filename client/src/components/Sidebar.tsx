@@ -39,7 +39,6 @@ export const Sidebar: React.FC<Props> = ({
         {voiceUsers.length > 0 && (
           <section className={styles.section}>
             <div className={styles.sectionLabel}>
-              <span className={styles.sectionIcon}>🔊</span>
               Na call — {voiceUsers.length}
             </div>
             <div className={styles.userList}>
@@ -67,9 +66,13 @@ export const Sidebar: React.FC<Props> = ({
               <span className={styles.sectionIcon}>👥</span>
               Online — {users.length}
             </div>
-            <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>▼</span>
+            <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </span>
           </div>
-          {showOnline && (
+          <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
               {otherUsers.map((user) => (
                 <UserCard
@@ -96,7 +99,7 @@ export const Sidebar: React.FC<Props> = ({
                   />
                 ))}
             </div>
-          )}
+          </div>
         </section>
       </div>
 
