@@ -11,7 +11,7 @@ import { useAudioStore } from './stores/useAudioStore';
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
-import { VoicePanel } from './components/VoicePanel';
+
 import { MusicPanel } from './components/MusicPanel';
 import { AudioControls } from './components/AudioControls';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
