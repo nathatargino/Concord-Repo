@@ -44,22 +44,35 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
 registerHub(io);
 
 // ─── TURN/STUN CREDENTIALS ────────────────────────────────────────
-app.get('/api/turn/credentials', (_req, res) => {
+app.get('/api/turn/credentials', async (_req, res) => {
   const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ];
 
-  const turnKeyId = process.env.TURN_KEY_ID;
-  const turnApiToken = process.env.TURN_API_TOKEN;
-  const turnUrl = process.env.TURN_URL;
+  const meteredApiKey = process.env.METERED_API_KEY;
+  const meteredDomain = process.env.METERED_DOMAIN; // e.g. "yourapp.metered.live"
 
-  if (turnKeyId && turnApiToken && turnUrl) {
-    iceServers.push({
-      urls: turnUrl,
-      username: turnKeyId,
-      credential: turnApiToken,
-    });
+  if (meteredApiKey && meteredDomain) {
+    try {
+      const meteredRes = await fetch(
+        `https://${meteredDomain}/api/v1/turn/credentials?apiKey=${meteredApiKey}`
+      );
+      const meteredServers = await meteredRes.json();
+      if (Array.isArray(meteredServers)) {
+        iceServers.push(...meteredServers);
+      }
+    } catch (e) {
+      console.error('Failed to fetch Metered TURN servers:', e);
+    }
+  } else {
+    // Fallback: manual TURN config
+    const turnKeyId = process.env.TURN_KEY_ID;
+    const turnApiToken = process.env.TURN_API_TOKEN;
+    const turnUrl = process.env.TURN_URL;
+    if (turnKeyId && turnApiToken && turnUrl) {
+      iceServers.push({ urls: turnUrl, username: turnKeyId, credential: turnApiToken });
+    }
   }
 
   res.json({ iceServers });

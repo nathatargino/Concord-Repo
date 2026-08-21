@@ -28,7 +28,7 @@ export function useWebRTC(emit: EmitFn) {
 
   // Fetch ICE servers from server
   const fetchIceServers = useCallback(async () => {
-    if (iceServersRef.current.length > 1) return; // already fetched
+    if (iceServersRef.current.length > 2) return; // already fetched TURN servers
     try {
       const res = await fetch(`${SERVER_URL}/api/turn/credentials`);
       const data = await res.json();
