@@ -21,7 +21,6 @@ export const Sidebar: React.FC<Props> = ({
   const { users, myId, connected } = useAppStore();
 
   const voiceUsers = users.filter((u) => u.inVoice);
-  const otherUsers = users.filter((u) => !u.inVoice);
 
   const [showOnline, setShowOnline] = useState(false);
 
