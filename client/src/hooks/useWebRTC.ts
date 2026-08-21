@@ -1,6 +1,8 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
 interface PeerConnection {
@@ -26,8 +28,9 @@ export function useWebRTC(emit: EmitFn) {
 
   // Fetch ICE servers from server
   const fetchIceServers = useCallback(async () => {
+    if (iceServersRef.current.length > 1) return; // already fetched
     try {
-      const res = await fetch('/api/turn/credentials');
+      const res = await fetch(`${SERVER_URL}/api/turn/credentials`);
       const data = await res.json();
       if (data.iceServers?.length) {
         iceServersRef.current = data.iceServers;
