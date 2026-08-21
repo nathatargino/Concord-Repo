@@ -201,7 +201,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
@@ -216,8 +216,8 @@
 }
 
 .queueThumb {
-  width: 36px;
-  height: 26px;
+  width: 44px;
+  height: 32px;
   border-radius: 5px;
   object-fit: cover;
 }

@@ -30,7 +30,7 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
   return (
     <div className={styles.panel} onPointerDown={handlePointerDown}>
       <div className={styles.header}>
-        <span className={styles.headerIcon}>🎛️</span>
+        <span className={styles.headerIcon}>🎧</span>
         <h2 className={styles.headerTitle}>Áudio</h2>
         <button className={styles.resetBtn} onClick={resetAll} title="Resetar configurações">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
