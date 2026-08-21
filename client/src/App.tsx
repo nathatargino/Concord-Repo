@@ -100,10 +100,10 @@ export default function App() {
         audio: {
           channelCount: 1,
           echoCancellation: true,
-          noiseSuppression: useAudioStore.getState().noiseSuppression,
+          noiseSuppression: true,
           autoGainControl: true,
           // @ts-ignore
-          googNoiseSuppression: useAudioStore.getState().noiseSuppression,
+          googNoiseSuppression: true,
           googHighpassFilter: true,
         },
       });
@@ -125,22 +125,6 @@ export default function App() {
     yt.stopYouTube();
   };
 
-  // Live apply noise suppression when toggled
-  useEffect(() => {
-    const unsub = useAudioStore.subscribe((state, prevState) => {
-      if (state.noiseSuppression !== prevState.noiseSuppression) {
-        const track = audio.getMicTrack();
-        if (track) {
-          track.applyConstraints({
-            noiseSuppression: state.noiseSuppression,
-            // @ts-ignore
-            googNoiseSuppression: state.noiseSuppression,
-          }).catch(console.error);
-        }
-      }
-    });
-    return unsub;
-  }, [audio]);
 
   return (
     <div className={styles.appContainer}>

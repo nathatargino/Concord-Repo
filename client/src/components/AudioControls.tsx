@@ -13,13 +13,11 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     remoteVol,
     micMuted,
     callMuted,
-    noiseSuppression,
     setYtVol,
     setMicVol,
     setRemoteVol,
     toggleMicMute,
     toggleCallMute,
-    toggleNoiseSuppression,
     resetAll,
   } = useAudioStore();
 
@@ -56,13 +54,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
             title={callMuted ? 'Desmutar Chamada' : 'Mutar Chamada (Ouvir nada)'}
           >
             {callMuted ? '🔇 Call Mute' : '🔊 Call On'}
-          </button>
-          <button
-            className={`${styles.toggleBtn} ${!noiseSuppression ? styles.toggleMuted : ''}`}
-            onClick={toggleNoiseSuppression}
-            title={noiseSuppression ? 'Desativar Supressão de Ruído' : 'Ativar Supressão de Ruído'}
-          >
-            {noiseSuppression ? '✨ Supressão ON' : '⚡ Supressão OFF'}
           </button>
         </div>
 
