@@ -9,6 +9,7 @@ export interface MusicItem {
   videoId: string;
   token: number;
   requestedBy?: string;
+  title?: string;
 }
 
 export interface ChatMessage {

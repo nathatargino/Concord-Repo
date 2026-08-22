@@ -143,7 +143,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                     className={styles.queueThumb}
                   />
                   <div className={styles.queueInfo}>
-                    <span className={styles.queueVideoId}>{item.videoId}</span>
+                    <span className={styles.queueVideoId}>{item.title || item.videoId}</span>
                     {item.requestedBy && (
                       <span className={styles.queueBy}>por {item.requestedBy}</span>
                     )}

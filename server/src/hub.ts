@@ -94,14 +94,26 @@ export function registerHub(io: IoServer) {
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
-    socket.on('request_music', (url: string) => {
+    socket.on('request_music', async (url: string) => {
       const videoId = extractVideoId(url);
       if (!videoId) {
         socket.emit('toast_notification', 'URL do YouTube inválida', 'error');
         return;
       }
+      
+      let title = videoId;
+      try {
+        const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+        const data = await res.json();
+        if (data.title) {
+          title = data.title;
+        }
+      } catch (err) {
+        // Fallback to videoId
+      }
+
       const token = Date.now();
-      const item: MusicItem = { videoId, token, requestedBy: user.name };
+      const item: MusicItem = { videoId, token, requestedBy: user.name, title };
       musicQueue.push(item);
       broadcastQueueUpdate(io);
 
