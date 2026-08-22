@@ -10,7 +10,6 @@ interface AudioNodes {
 }
 
 const speakingAnimations = new Map<string, number>();
-const remoteGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
