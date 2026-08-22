@@ -137,17 +137,23 @@
   border-color: rgba(124, 58, 237, 0.2);
 }
 
-/* Speaking glow — applied via JS */
+/* Speaking glow — applied via JS to user card */
 :global(.speaking-glow) {
-  background: rgba(34, 211, 238, 0.08) !important;
-  border-color: rgba(34, 211, 238, 0.4) !important;
-  box-shadow: 0 0 16px rgba(34, 211, 238, 0.2);
-  animation: speakingPulse 1s ease-in-out infinite;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  background: rgba(16, 185, 129, 0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.5), 0 0 12px rgba(16, 185, 129, 0.2) !important;
+  animation: cardSpeakingPulse 1.5s ease-in-out infinite;
 }
 
-@keyframes speakingPulse {
-  0%, 100% { box-shadow: 0 0 8px rgba(34, 211, 238, 0.15); }
-  50% { box-shadow: 0 0 20px rgba(34, 211, 238, 0.35); }
+@keyframes cardSpeakingPulse {
+  0%, 100% { 
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.3), 0 0 8px rgba(16, 185, 129, 0.15); 
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+  50% { 
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.6), 0 0 16px rgba(16, 185, 129, 0.35); 
+    border-color: rgba(16, 185, 129, 0.7);
+  }
 }
 
 .avatar {

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
-import { useAudio } from './hooks/useAudio';
+import { useAudio, monitorSpeaking, stopSpeaking } from './hooks/useAudio';
 import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
@@ -113,6 +113,7 @@ export default function App() {
       const processedStream = audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
       store.setInVoice(true);
+      monitorSpeaking(processedStream, store.myId);
     } catch (err) {
       console.error('Mic error', err);
       alert('Erro ao acessar o microfone. Verifique as permissões.');
@@ -126,6 +127,7 @@ export default function App() {
       screenShare.stopScreenShare();
     }
     yt.stopYouTube();
+    stopSpeaking(store.myId);
   };
 
 

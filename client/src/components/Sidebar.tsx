@@ -125,6 +125,7 @@ const UserCard: React.FC<UserCardProps> = ({
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
     >
       <div
+        id={`avatar-${id}`}
         className={styles.avatar}
         style={{ background: `hsl(${hue}, 60%, 40%)` }}
       >
