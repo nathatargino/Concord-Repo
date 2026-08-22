@@ -49,27 +49,20 @@ export function useAudio() {
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
-      const ctx = audioNodes?.ctx ?? getOrCreateCtx();
-      const source = ctx.createMediaStreamSource(stream);
-      const gainNode = ctx.createGain();
-      const dest = ctx.createMediaStreamDestination();
-
       const { remoteVol, callMuted } = useAudioStore.getState();
-      gainNode.gain.value = callMuted ? 0 : remoteVol / 100;
-
-      source.connect(gainNode);
-      // Route through dest so the audio element (and therefore the volume slider) controls playback.
-      // Do NOT also connect to ctx.destination — that would produce a duplicate audio output.
-      gainNode.connect(dest);
-
-      remoteGains.set(userId, gainNode);
-      audioEl.srcObject = dest.stream;
-
-      monitorSpeaking(stream, userId);
-    } catch (err) {
-      // GainNode pipeline failed — fall back to direct stream (volume slider won't work).
-      console.warn('[useAudio] attachRemoteStream: GainNode setup failed, falling back to direct stream', err);
+      
       audioEl.srcObject = stream;
+      audioEl.volume = remoteVol / 100;
+      audioEl.muted = callMuted;
+      
+      // Force play to overcome some browser policies
+      audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
+
+      // Reuse the active context for speaking detection so it isn't suspended
+      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+      monitorSpeaking(stream, userId, activeCtx);
+    } catch (err) {
+      console.warn('[useAudio] attachRemoteStream failed', err);
     }
   }, []);
 
@@ -82,13 +75,13 @@ export function useAudio() {
 
   const applyRemoteSettings = useCallback(() => {
     const { remoteVol, callMuted } = useAudioStore.getState();
-    remoteGains.forEach((gain) => {
-      gain.gain.value = callMuted ? 0 : remoteVol / 100;
+    document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
+      audio.volume = remoteVol / 100;
+      audio.muted = callMuted;
     });
   }, []);
 
   const removeRemoteGain = useCallback((userId: string) => {
-    remoteGains.delete(userId);
     stopSpeaking(userId);
   }, []);
 
@@ -104,8 +97,8 @@ export function useAudio() {
 
 // ─── SPEAKING DETECTION ─────────────────────────────────────────────
 
-export function monitorSpeaking(stream: MediaStream, userId: string) {
-  const ctx = new AudioContext();
+export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?: AudioContext) {
+  const ctx = activeCtx || new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 256;
