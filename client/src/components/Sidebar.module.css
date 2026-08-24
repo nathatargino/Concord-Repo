@@ -310,11 +310,25 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--accent-color);
+  background: var(--accent-bright);
   cursor: pointer;
   transition: transform 0.1s;
 }
 
 .contextMenuSlider input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.contextMenuSlider input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+  border: none;
+  transition: transform 0.1s;
+}
+
+.contextMenuSlider input[type="range"]::-moz-range-thumb:hover {
   transform: scale(1.2);
 }
