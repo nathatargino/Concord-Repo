@@ -43,7 +43,9 @@ export function useAudio() {
 
     audioNodes = { ctx, micSource: source, micGain: gainNode, destination: dest, analyser };
 
-    return dest.stream;
+    // Ao invés de retornar o dest.stream (que perde a supressão de ruído e cancelamento 
+    // de eco por passar pela Web Audio API), retornamos o rawStream original para o WebRTC.
+    return rawStream;
   }, []);
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
