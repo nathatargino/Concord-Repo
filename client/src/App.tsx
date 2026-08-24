@@ -52,6 +52,8 @@ export default function App() {
     audio.attachRemoteStream
   );
 
+  let handleLeaveVoice = () => {};
+
   // ─── SOCKET CONNECTION ───────────────────────────────────────────
   const socket = useSocket({
     onExistingVoiceUsers: rtc.onExistingVoiceUsers,
@@ -81,6 +83,11 @@ export default function App() {
       store.setRoom(null);
       navigate('/');
     },
+    onKickedFromVoice: () => handleLeaveVoice(),
+    onKickedFromRoom: () => {
+      store.setRoom(null);
+      navigate('/');
+    }
   });
 
   // ─── SCREEN SHARE SYSTEM ─────────────────────────────────────────
@@ -147,7 +154,7 @@ export default function App() {
     }
   };
 
-  const handleLeaveVoice = () => {
+  handleLeaveVoice = () => {
     rtc.leaveVoice();
     store.setInVoice(false);
     if (store.amSharing) {
@@ -173,6 +180,11 @@ export default function App() {
         onLeaveVoice={handleLeaveVoice}
         onStartScreenShare={screenShare.startScreenShare}
         onStopScreenShare={screenShare.stopScreenShare}
+        onAdminAction={(action, targetId) => {
+          if (action === 'mute') socket.emit('admin_mute_user', targetId);
+          else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
+          else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
+        }}
       />
 
       <main className={styles.mainContent}>

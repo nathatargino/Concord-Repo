@@ -3,6 +3,8 @@ export interface UserInfo {
   name: string;
   inVoice: boolean;
   screenSharing: boolean;
+  micMuted: boolean;
+  callMuted: boolean;
 }
 
 export interface MusicItem {
@@ -29,4 +31,5 @@ export interface RoomInfo {
   createdAt: number;
   expiresAt: number;
   userCount: number;
+  adminId: string;
 }

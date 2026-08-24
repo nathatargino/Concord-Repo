@@ -9,6 +9,7 @@ interface Props {
   onLeaveVoice: () => void;
   onStartScreenShare: () => void;
   onStopScreenShare: () => void;
+  onAdminAction: (action: 'mute' | 'kick_voice' | 'kick_room', targetId: string) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -17,12 +18,27 @@ export const Sidebar: React.FC<Props> = ({
   onLeaveVoice,
   onStartScreenShare,
   onStopScreenShare,
+  onAdminAction,
 }) => {
-  const { users, myId, connected } = useAppStore();
+  const { users, myId, connected, room } = useAppStore();
 
   const voiceUsers = users.filter((u) => u.inVoice);
 
   const [showOnline, setShowOnline] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string } | null>(null);
+
+  React.useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, []);
+
+  const handleContextMenu = (e: React.MouseEvent, id: string) => {
+    if (room?.adminId === myId && id !== myId) {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, targetId: id });
+    }
+  };
 
   return (
     <aside className={styles.sidebar}>
@@ -47,9 +63,13 @@ export const Sidebar: React.FC<Props> = ({
                   id={user.id}
                   name={user.name || 'Anônimo'}
                   isMe={user.id === myId}
-                  inVoice
+                  inVoice={user.inVoice}
                   screenSharing={user.screenSharing}
+                  micMuted={user.micMuted}
+                  callMuted={user.callMuted}
+                  isAdmin={user.id === room?.adminId}
                   onScreenShareClick={onScreenShareClick}
+                  onContextMenu={handleContextMenu}
                 />
               ))}
             </div>
@@ -81,7 +101,11 @@ export const Sidebar: React.FC<Props> = ({
                   isMe={user.id === myId}
                   inVoice={user.inVoice}
                   screenSharing={user.screenSharing}
+                  micMuted={user.micMuted}
+                  callMuted={user.callMuted}
+                  isAdmin={user.id === room?.adminId}
                   onScreenShareClick={onScreenShareClick}
+                  onContextMenu={handleContextMenu}
                 />
               ))}
             </div>
@@ -95,6 +119,37 @@ export const Sidebar: React.FC<Props> = ({
         onStartScreenShare={onStartScreenShare}
         onStopScreenShare={onStopScreenShare}
       />
+
+      {contextMenu && (
+        <div 
+          className={styles.contextMenu}
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {users.find(u => u.id === contextMenu.targetId)?.inVoice && (
+            <>
+              <button 
+                onClick={() => { onAdminAction('mute', contextMenu.targetId); setContextMenu(null); }}
+                className={styles.contextMenuItem}
+              >
+                🔇 Mutar Microfone
+              </button>
+              <button 
+                onClick={() => { onAdminAction('kick_voice', contextMenu.targetId); setContextMenu(null); }}
+                className={styles.contextMenuItem}
+              >
+                📞 Desconectar da Voz
+              </button>
+            </>
+          )}
+          <button 
+            onClick={() => { onAdminAction('kick_room', contextMenu.targetId); setContextMenu(null); }}
+            className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
+          >
+            🚪 Expulsar da Sala
+          </button>
+        </div>
+      )}
     </aside>
   );
 };
@@ -105,7 +160,11 @@ interface UserCardProps {
   isMe: boolean;
   inVoice: boolean;
   screenSharing: boolean;
+  micMuted: boolean;
+  callMuted: boolean;
+  isAdmin: boolean;
   onScreenShareClick: (userId: string) => void;
+  onContextMenu: (e: React.MouseEvent, id: string) => void;
 }
 
 const UserCard: React.FC<UserCardProps> = ({
@@ -114,7 +173,11 @@ const UserCard: React.FC<UserCardProps> = ({
   isMe,
   inVoice,
   screenSharing,
+  micMuted,
+  callMuted,
+  isAdmin,
   onScreenShareClick,
+  onContextMenu,
 }) => {
   const initials = name.slice(0, 2).toUpperCase();
   const hue = [...name].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
@@ -123,6 +186,7 @@ const UserCard: React.FC<UserCardProps> = ({
     <div
       id={`user-${id}`}
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
+      onContextMenu={(e) => onContextMenu(e, id)}
     >
       <div
         id={`avatar-${id}`}
@@ -136,8 +200,19 @@ const UserCard: React.FC<UserCardProps> = ({
         <span className={styles.userName}>
           {name}
           {isMe && <span className={styles.meTag}>você</span>}
+          {isAdmin && <span className={styles.adminTag} title="Dono da sala">👑</span>}
         </span>
         <div className={styles.badges}>
+          {callMuted && (
+            <span className={`${styles.badge} ${styles.mutedBadge}`} title="Áudio e Mic Mutados">
+              🎧
+            </span>
+          )}
+          {!callMuted && micMuted && (
+            <span className={`${styles.badge} ${styles.mutedBadge}`} title="Microfone Mutado">
+              🔇
+            </span>
+          )}
           {inVoice && (
             <span className={styles.badge} title="Na call de voz">
               🎙️

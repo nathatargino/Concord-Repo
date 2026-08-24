@@ -22,6 +22,7 @@ interface RoomState {
   code: string;
   createdAt: number;
   expiresAt: number;
+  adminId: string;
   users: Map<string, UserInfo>;
   voiceUsers: Set<string>;
   screenSharingUsers: Set<string>;
@@ -60,6 +61,7 @@ function createRoom(): RoomState {
     code,
     createdAt: now,
     expiresAt: now + ROOM_DURATION_MS,
+    adminId: '',
     users: new Map(),
     voiceUsers: new Set(),
     screenSharingUsers: new Set(),
@@ -123,6 +125,7 @@ function toRoomInfo(room: RoomState): RoomInfo {
     createdAt: room.createdAt,
     expiresAt: room.expiresAt,
     userCount: room.users.size,
+    adminId: room.adminId,
   };
 }
 
@@ -144,6 +147,14 @@ function extractVideoId(url: string): string | null {
 
 function broadcastUserList(io: IoServer, room: RoomState) {
   io.to(room.id).emit('user_list', Array.from(room.users.values()));
+}
+
+function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState) {
+  if (room.adminId === socketId && room.users.size > 0) {
+    room.adminId = room.users.keys().next().value!;
+    io.to(room.id).emit('room_info', toRoomInfo(room));
+    io.to(room.adminId).emit('toast_notification', 'Você agora é o dono da sala!', 'info');
+  }
 }
 
 function broadcastQueueUpdate(io: IoServer, room: RoomState) {
@@ -174,7 +185,7 @@ export function registerHub(io: IoServer) {
   io.on('connection', (socket: IoSocket) => {
     console.log(`[+] Connected: ${socket.id}`);
 
-    let user: UserInfo = { id: socket.id, name: '', inVoice: false, screenSharing: false };
+    let user: UserInfo = { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
 
     // Helper: get current room (returns null if socket not in a room)
     function getCurrentRoom(): RoomState | null {
@@ -186,9 +197,10 @@ export function registerHub(io: IoServer) {
     // ─── CREATE ROOM ───────────────────────────────────────────────
     socket.on('create_room', () => {
       const room = createRoom();
+      room.adminId = socket.id;
       socket.data.roomId = room.id;
       socket.join(room.id);
-      user = { id: socket.id, name: '', inVoice: false, screenSharing: false };
+      user = { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
       socket.emit('room_joined', toRoomInfo(room));
       console.log(`[Room] ${socket.id} created and joined ${room.id}`);
@@ -212,6 +224,7 @@ export function registerHub(io: IoServer) {
           if (prevRoom.users.size === 0) {
             destroyRoom(prevRoom.id);
           } else {
+            handleAdminReassignment(socket.id, io, prevRoom);
             broadcastUserList(io, prevRoom);
           }
         }
@@ -220,7 +233,10 @@ export function registerHub(io: IoServer) {
 
       socket.data.roomId = room.id;
       socket.join(room.id);
-      user = room.users.get(socket.id) ?? { id: socket.id, name: '', inVoice: false, screenSharing: false };
+      if (!room.adminId) {
+        room.adminId = socket.id;
+      }
+      user = room.users.get(socket.id) ?? { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
 
       socket.emit('room_joined', toRoomInfo(room));
@@ -402,6 +418,39 @@ export function registerHub(io: IoServer) {
       broadcastUserList(io, room);
     });
 
+    // ─── ADMIN & MEDIA EVENTS ──────────────────────────────────────
+    socket.on('update_media_state', (micMuted, callMuted) => {
+      const room = getCurrentRoom();
+      if (!room) return;
+      user.micMuted = micMuted;
+      user.callMuted = callMuted;
+      broadcastUserList(io, room);
+    });
+
+    socket.on('admin_mute_user', (targetId) => {
+      const room = getCurrentRoom();
+      if (room && room.adminId === socket.id) {
+        io.to(targetId).emit('server_muted');
+        io.to(room.id).emit('toast_notification', `O admin mutou um usuário`, 'info');
+      }
+    });
+
+    socket.on('admin_kick_voice', (targetId) => {
+      const room = getCurrentRoom();
+      if (room && room.adminId === socket.id) {
+        io.to(targetId).emit('kicked_from_voice');
+        io.to(room.id).emit('toast_notification', `O admin desconectou um usuário da voz`, 'info');
+      }
+    });
+
+    socket.on('admin_kick_room', (targetId) => {
+      const room = getCurrentRoom();
+      if (room && room.adminId === socket.id) {
+        io.to(targetId).emit('kicked_from_room');
+        io.to(room.id).emit('toast_notification', `Um usuário foi expulso da sala`, 'info');
+      }
+    });
+
     // ─── DISCONNECT ────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`[-] Disconnected: ${socket.id}`);
@@ -421,6 +470,7 @@ export function registerHub(io: IoServer) {
         if (room.users.size === 0) {
           destroyRoom(room.id);
         } else {
+          handleAdminReassignment(socket.id, io, room);
           broadcastUserList(io, room);
           if (name) {
             io.to(room.id).emit('toast_notification', `${name} saiu da sala`, 'info');

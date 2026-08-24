@@ -14,6 +14,7 @@ interface AudioState {
   setYtVol: (v: number) => void;
   setMicVol: (v: number) => void;
   setRemoteVol: (v: number) => void;
+  setMicMuted: (v: boolean) => void;
   toggleMicMute: () => void;
   toggleCallMute: () => void;
   toggleNoiseSuppression: () => void;
@@ -36,6 +37,7 @@ export const useAudioStore = create<AudioState>()(
       setYtVol: (ytVol) => set({ ytVol: Math.min(100, Math.max(0, ytVol)) }),
       setMicVol: (micVol) => set({ micVol: Math.min(200, Math.max(0, micVol)) }),
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),
+      setMicMuted: (micMuted) => set({ micMuted }),
       toggleMicMute: () => set((s) => ({ micMuted: !s.micMuted })),
       toggleCallMute: () => set((s) => ({ callMuted: !s.callMuted })),
       toggleNoiseSuppression: () => set((s) => ({ noiseSuppression: !s.noiseSuppression })),

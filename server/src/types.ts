@@ -3,6 +3,8 @@ export interface UserInfo {
   name: string;
   inVoice: boolean;
   screenSharing: boolean;
+  micMuted: boolean;
+  callMuted: boolean;
 }
 
 export interface MusicItem {
@@ -18,6 +20,7 @@ export interface RoomInfo {
   createdAt: number;
   expiresAt: number;
   userCount: number;
+  adminId: string;
 }
 
 // Client → Server events
@@ -38,6 +41,10 @@ export interface ClientToServerEvents {
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   remove_from_queue: (token: number) => void;
   reorder_queue: (oldIndex: number, newIndex: number) => void;
+  update_media_state: (micMuted: boolean, callMuted: boolean) => void;
+  admin_mute_user: (targetId: string) => void;
+  admin_kick_voice: (targetId: string) => void;
+  admin_kick_room: (targetId: string) => void;
 }
 
 // Server → Client events
@@ -63,6 +70,10 @@ export interface ServerToClientEvents {
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;
   room_info: (room: RoomInfo) => void;
+  // Admin events
+  server_muted: () => void;
+  kicked_from_voice: () => void;
+  kicked_from_room: () => void;
 }
 
 export interface InterServerEvents {}

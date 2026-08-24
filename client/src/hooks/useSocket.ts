@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
@@ -26,6 +27,9 @@ interface ServerToClientEvents {
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;
   room_info: (room: RoomInfo) => void;
+  server_muted: () => void;
+  kicked_from_voice: () => void;
+  kicked_from_room: () => void;
 }
 
 interface ClientToServerEvents {
@@ -45,6 +49,10 @@ interface ClientToServerEvents {
   send_ice: (targetId: string, candidate: RTCIceCandidateInit) => void;
   start_screen_share: () => void;
   stop_screen_share: () => void;
+  update_media_state: (micMuted: boolean, callMuted: boolean) => void;
+  admin_mute_user: (targetId: string) => void;
+  admin_kick_voice: (targetId: string) => void;
+  admin_kick_room: (targetId: string) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -63,6 +71,8 @@ export interface SocketCallbacks {
   onResumeYouTube: () => void;
   onRoomJoined?: (room: RoomInfo) => void;
   onRoomError?: (msg: string) => void;
+  onKickedFromVoice?: () => void;
+  onKickedFromRoom?: () => void;
 }
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -120,6 +130,10 @@ export function useSocket(callbacks: SocketCallbacks) {
     socket.on('user_list', (users) => {
       store.setUsers(users);
       if (socket.id) store.setMyId(socket.id);
+    });
+
+    socket.on('room_info', (room) => {
+      store.setRoom(room);
     });
 
     socket.on('receive_message', (userName, message, timestamp, type, url, filename) => {
@@ -201,7 +215,33 @@ export function useSocket(callbacks: SocketCallbacks) {
       else toast(message);
     });
 
+    socket.on('server_muted', () => {
+      useAudioStore.getState().setMicMuted(true);
+      toast.error('Você foi mutado pelo Administrador');
+    });
+
+    socket.on('kicked_from_voice', () => {
+      toast.error('O admin desconectou você da voz');
+      callbacksRef.current.onKickedFromVoice?.();
+    });
+
+    socket.on('kicked_from_room', () => {
+      toast.error('O admin expulsou você da sala');
+      callbacksRef.current.onKickedFromRoom?.();
+    });
+
+    // Send initial media state
+    const { micMuted, callMuted } = useAudioStore.getState();
+    socket.emit('update_media_state', micMuted, callMuted);
+
+    const unsubAudio = useAudioStore.subscribe((state, prevState) => {
+      if (state.micMuted !== prevState.micMuted || state.callMuted !== prevState.callMuted) {
+        socket.emit('update_media_state', state.micMuted, state.callMuted);
+      }
+    });
+
     return () => {
+      unsubAudio();
       socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
