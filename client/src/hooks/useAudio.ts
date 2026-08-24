@@ -10,6 +10,7 @@ interface AudioNodes {
 }
 
 const speakingAnimations = new Map<string, number>();
+const remoteGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
@@ -50,18 +51,31 @@ export function useAudio() {
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
-      const { remoteVol, callMuted, localMutedUsers } = useAudioStore.getState();
+      const { remoteVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
+      const userVol = userVolumes[userId] ?? 100;
       
       const isLocalMuted = localMutedUsers.includes(userId);
       audioEl.srcObject = stream;
-      audioEl.volume = isLocalMuted ? 0 : (remoteVol / 100);
-      audioEl.muted = callMuted || isLocalMuted;
+      audioEl.volume = 0; // Controlled by Web Audio API GainNode instead
+      audioEl.muted = true;
       
       // Force play to overcome some browser policies
       audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
 
       // Reuse the active context for speaking detection so it isn't suspended
       const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+
+      let gainNode = remoteGains.get(userId);
+      if (!gainNode) {
+        const source = activeCtx.createMediaStreamSource(stream);
+        gainNode = activeCtx.createGain();
+        source.connect(gainNode);
+        gainNode.connect(activeCtx.destination);
+        remoteGains.set(userId, gainNode);
+      }
+
+      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
+
       monitorSpeaking(stream, userId, activeCtx);
     } catch (err) {
       console.warn('[useAudio] attachRemoteStream failed', err);
@@ -76,17 +90,29 @@ export function useAudio() {
   }, []);
 
   const applyRemoteSettings = useCallback(() => {
-    const { remoteVol, callMuted, localMutedUsers } = useAudioStore.getState();
+    const { remoteVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
       const userId = audio.id.replace('remote-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
-      audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
-      audio.muted = callMuted || isLocalMuted;
+      const userVol = userVolumes[userId] ?? 100;
+      
+      const gainNode = remoteGains.get(userId);
+      if (gainNode) {
+        gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
+      } else {
+        audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
+        audio.muted = callMuted || isLocalMuted;
+      }
     });
   }, []);
 
   const removeRemoteGain = useCallback((userId: string) => {
     stopSpeaking(userId);
+    const gain = remoteGains.get(userId);
+    if (gain) {
+      gain.disconnect();
+      remoteGains.delete(userId);
+    }
   }, []);
 
   return {

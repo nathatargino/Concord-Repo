@@ -22,7 +22,7 @@ export const Sidebar: React.FC<Props> = ({
   onAdminAction,
 }) => {
   const { users, myId, connected, room } = useAppStore();
-  const { localMutedUsers } = useAudioStore();
+  const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
 
   const voiceUsers = users.filter((u) => u.inVoice);
 
@@ -151,6 +151,21 @@ export const Sidebar: React.FC<Props> = ({
             >
               🔇 Mutar para mim
             </button>
+          )}
+
+          {users.find(u => u.id === contextMenu.targetId)?.inVoice && (
+            <div className={styles.contextMenuSlider}>
+              <label>Volume: {userVolumes[contextMenu.targetId] ?? 100}%</label>
+              <input 
+                type="range" 
+                min="0" 
+                max="200" 
+                value={userVolumes[contextMenu.targetId] ?? 100}
+                onChange={(e) => {
+                  setUserVolume(contextMenu.targetId, parseInt(e.target.value));
+                }}
+              />
+            </div>
           )}
 
           {room?.adminIds?.includes(myId) && users.find(u => u.id === contextMenu.targetId)?.inVoice && (

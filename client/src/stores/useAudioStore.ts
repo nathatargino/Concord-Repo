@@ -11,6 +11,7 @@ interface AudioState {
   callMuted: boolean;
   noiseSuppression: boolean;
   localMutedUsers: string[];
+  userVolumes: Record<string, number>;
 
   setYtVol: (v: number) => void;
   setMicVol: (v: number) => void;
@@ -20,6 +21,7 @@ interface AudioState {
   toggleCallMute: () => void;
   toggleNoiseSuppression: () => void;
   toggleLocalMuteUser: (userId: string) => void;
+  setUserVolume: (userId: string, vol: number) => void;
   resetAll: () => void;
 }
 
@@ -31,6 +33,7 @@ const defaults = {
   callMuted: false,
   noiseSuppression: true,
   localMutedUsers: [],
+  userVolumes: {},
 };
 
 export const useAudioStore = create<AudioState>()(
@@ -52,6 +55,10 @@ export const useAudioStore = create<AudioState>()(
             : [...s.localMutedUsers, userId],
         };
       }),
+      setUserVolume: (userId, vol) =>
+        set((state) => ({
+          userVolumes: { ...state.userVolumes, [userId]: vol },
+        })),
       resetAll: () => set(defaults),
     }),
     {
