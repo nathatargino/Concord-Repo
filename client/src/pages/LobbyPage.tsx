@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import styles from './LobbyPage.module.css';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -36,6 +37,7 @@ export const LobbyPage: React.FC = () => {
       const inviteUrl = `${window.location.origin}/room/${room.id}?code=${room.code}`;
       try {
         await navigator.clipboard.writeText(inviteUrl);
+        toast.success('Link de convite copiado!');
       } catch (err) {
         console.warn('Clipboard write failed:', err);
       }
