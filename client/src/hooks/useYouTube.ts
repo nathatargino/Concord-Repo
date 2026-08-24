@@ -123,11 +123,14 @@ export function useYouTube(
   const unlock = useCallback(async () => {
     if (unlockedRef.current) return;
     unlockedRef.current = true;
+    if (useAppStore.getState().isPlaying) return;
+
     try {
       const player = await ensurePlayer();
       player.mute();
       player.playVideo();
       setTimeout(() => {
+        if (useAppStore.getState().isPlaying) return;
         player.stopVideo();
         player.unMute();
       }, 500);
