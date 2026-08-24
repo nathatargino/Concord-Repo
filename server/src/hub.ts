@@ -435,6 +435,14 @@ export function registerHub(io: IoServer) {
       }
     });
 
+    socket.on('admin_unmute_user', (targetId) => {
+      const room = getCurrentRoom();
+      if (room && room.adminId === socket.id) {
+        io.to(targetId).emit('server_unmuted');
+        io.to(room.id).emit('toast_notification', `O admin desmutou um usuário`, 'info');
+      }
+    });
+
     socket.on('admin_kick_voice', (targetId) => {
       const room = getCurrentRoom();
       if (room && room.adminId === socket.id) {

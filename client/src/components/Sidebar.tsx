@@ -9,7 +9,7 @@ interface Props {
   onLeaveVoice: () => void;
   onStartScreenShare: () => void;
   onStopScreenShare: () => void;
-  onAdminAction: (action: 'mute' | 'kick_voice' | 'kick_room', targetId: string) => void;
+  onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room', targetId: string) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -128,12 +128,21 @@ export const Sidebar: React.FC<Props> = ({
         >
           {users.find(u => u.id === contextMenu.targetId)?.inVoice && (
             <>
-              <button 
-                onClick={() => { onAdminAction('mute', contextMenu.targetId); setContextMenu(null); }}
-                className={styles.contextMenuItem}
-              >
-                🔇 Mutar Microfone
-              </button>
+              {users.find(u => u.id === contextMenu.targetId)?.micMuted ? (
+                <button 
+                  onClick={() => { onAdminAction('unmute', contextMenu.targetId); setContextMenu(null); }}
+                  className={styles.contextMenuItem}
+                >
+                  🔊 Desmutar Microfone
+                </button>
+              ) : (
+                <button 
+                  onClick={() => { onAdminAction('mute', contextMenu.targetId); setContextMenu(null); }}
+                  className={styles.contextMenuItem}
+                >
+                  🔇 Mutar Microfone
+                </button>
+              )}
               <button 
                 onClick={() => { onAdminAction('kick_voice', contextMenu.targetId); setContextMenu(null); }}
                 className={styles.contextMenuItem}

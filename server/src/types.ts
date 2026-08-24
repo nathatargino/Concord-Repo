@@ -43,6 +43,7 @@ export interface ClientToServerEvents {
   reorder_queue: (oldIndex: number, newIndex: number) => void;
   update_media_state: (micMuted: boolean, callMuted: boolean) => void;
   admin_mute_user: (targetId: string) => void;
+  admin_unmute_user: (targetId: string) => void;
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
 }
@@ -72,6 +73,7 @@ export interface ServerToClientEvents {
   room_info: (room: RoomInfo) => void;
   // Admin events
   server_muted: () => void;
+  server_unmuted: () => void;
   kicked_from_voice: () => void;
   kicked_from_room: () => void;
 }

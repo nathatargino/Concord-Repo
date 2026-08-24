@@ -182,6 +182,7 @@ export default function App() {
         onStopScreenShare={screenShare.stopScreenShare}
         onAdminAction={(action, targetId) => {
           if (action === 'mute') socket.emit('admin_mute_user', targetId);
+          else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
           else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
           else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
         }}

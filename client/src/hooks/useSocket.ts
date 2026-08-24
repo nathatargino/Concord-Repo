@@ -28,6 +28,7 @@ interface ServerToClientEvents {
   room_error: (message: string) => void;
   room_info: (room: RoomInfo) => void;
   server_muted: () => void;
+  server_unmuted: () => void;
   kicked_from_voice: () => void;
   kicked_from_room: () => void;
 }
@@ -51,6 +52,7 @@ interface ClientToServerEvents {
   stop_screen_share: () => void;
   update_media_state: (micMuted: boolean, callMuted: boolean) => void;
   admin_mute_user: (targetId: string) => void;
+  admin_unmute_user: (targetId: string) => void;
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
 }
@@ -218,6 +220,11 @@ export function useSocket(callbacks: SocketCallbacks) {
     socket.on('server_muted', () => {
       useAudioStore.getState().setMicMuted(true);
       toast.error('Você foi mutado pelo Administrador');
+    });
+
+    socket.on('server_unmuted', () => {
+      useAudioStore.getState().setMicMuted(false);
+      toast.success('Você foi desmutado pelo Administrador');
     });
 
     socket.on('kicked_from_voice', () => {
