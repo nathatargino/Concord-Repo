@@ -20,6 +20,13 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;');
 }
 
+function parseLinks(text: string): string {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.replace(urlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: #60A5FA; text-decoration: underline;">${url}</a>`;
+  });
+}
+
 interface Props {
   onSendMessage: (msg: string, type?: 'text'|'image'|'giphy', url?: string) => void;
 }
@@ -30,6 +37,8 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   const [showGiphy, setShowGiphy] = useState(false);
   const [giphySearch, setGiphySearch] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
   
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -38,12 +47,40 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed) return;
-    onSendMessage(trimmed);
+    if (!trimmed && !stagedFile) return;
+
+    if (stagedFile) {
+      setIsUploading(true);
+      try {
+        const formData = new FormData();
+        formData.append('image', stagedFile.file);
+
+        const res = await fetch(`${SERVER_URL}/api/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!res.ok) throw new Error('Erro no upload');
+        const data = await res.json();
+        
+        onSendMessage(trimmed || '📷 Imagem', 'image', `${SERVER_URL}${data.url}`);
+        
+        URL.revokeObjectURL(stagedFile.previewUrl);
+        setStagedFile(null);
+      } catch (err) {
+        console.error(err);
+        alert('Falha ao enviar a imagem.');
+      } finally {
+        setIsUploading(false);
+      }
+    } else {
+      onSendMessage(trimmed);
+    }
+    
     setInput('');
-  }, [input, onSendMessage]);
+  }, [input, stagedFile, onSendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -52,10 +89,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const uploadFile = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       alert('A imagem deve ter no máximo 5MB');
       return;
@@ -85,6 +119,50 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadFile(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          if (file.size > 5 * 1024 * 1024) {
+            alert('A imagem deve ter no máximo 5MB');
+            return;
+          }
+          const previewUrl = URL.createObjectURL(file);
+          setStagedFile({ file, previewUrl });
+        }
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith('image/')) {
+        uploadFile(file);
+      }
+    }
+  };
+
   const handleGifClick = (gif: any, e: React.SyntheticEvent<HTMLElement, Event>) => {
     e.preventDefault();
     onSendMessage('GIF', 'giphy', gif.images.fixed_height.url);
@@ -100,7 +178,12 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   };
 
   return (
-    <div className={styles.panel}>
+    <div 
+      className={`${styles.panel} ${isDragging ? styles.panelDragging : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className={styles.header}>
         <span className={styles.headerIcon}>💬</span>
         <h2 className={styles.headerTitle}>Chat</h2>
@@ -120,6 +203,21 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       </div>
 
       <div className={styles.inputAreaWrapper}>
+        {stagedFile && (
+          <div className={styles.stagedFilePreview}>
+            <img src={stagedFile.previewUrl} alt="Staged" className={styles.stagedImage} />
+            <button 
+              className={styles.removeStagedBtn} 
+              onClick={() => {
+                URL.revokeObjectURL(stagedFile.previewUrl);
+                setStagedFile(null);
+              }}
+              title="Remover imagem"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         {showGiphy && (
           <div className={styles.giphyPopover}>
             <div className={styles.giphyHeader}>
@@ -187,13 +285,14 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             maxLength={2000}
           />
           <button
             id="btnSendChat"
             className={styles.sendBtn}
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={(!input.trim() && !stagedFile) || isUploading}
             title="Enviar mensagem"
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -240,13 +339,21 @@ const MessageBubble: React.FC<{ msg: ChatMessage; isMe: boolean }> = ({ msg, isM
         
         {/* Render based on type */}
         {msg.type === 'image' && msg.url ? (
-          <img src={msg.url} alt="User Upload" className={styles.msgImage} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <img src={msg.url} alt="User Upload" className={styles.msgImage} />
+            {msg.message !== '📷 Imagem' && (
+              <div
+                className={styles.msgBubble}
+                dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
+              />
+            )}
+          </div>
         ) : msg.type === 'giphy' && msg.url ? (
           <img src={msg.url} alt="Giphy" className={styles.msgGif} />
         ) : (
           <div
             className={styles.msgBubble}
-            dangerouslySetInnerHTML={{ __html: escapeHtml(msg.message) }}
+            dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
           />
         )}
         
