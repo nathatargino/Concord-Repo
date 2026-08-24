@@ -459,6 +459,17 @@ export function registerHub(io: IoServer) {
       }
     });
 
+    socket.on('admin_transfer_role', (targetId) => {
+      const room = getCurrentRoom();
+      if (room && room.adminId === socket.id) {
+        if (room.users.has(targetId)) {
+          room.adminId = targetId;
+          io.to(room.id).emit('room_info', toRoomInfo(room));
+          io.to(targetId).emit('toast_notification', 'Você recebeu o cargo de Administrador', 'success');
+        }
+      }
+    });
+
     // ─── DISCONNECT ────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`[-] Disconnected: ${socket.id}`);

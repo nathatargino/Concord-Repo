@@ -185,6 +185,8 @@ export default function App() {
           else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
           else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
           else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
+          else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
+          else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
         }}
       />
 

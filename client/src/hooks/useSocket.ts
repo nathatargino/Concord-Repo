@@ -55,6 +55,7 @@ interface ClientToServerEvents {
   admin_unmute_user: (targetId: string) => void;
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
+  admin_transfer_role: (targetId: string) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;

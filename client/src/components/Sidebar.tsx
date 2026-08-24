@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
 
@@ -9,7 +10,7 @@ interface Props {
   onLeaveVoice: () => void;
   onStartScreenShare: () => void;
   onStopScreenShare: () => void;
-  onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room', targetId: string) => void;
+  onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room' | 'give_admin' | 'local_mute', targetId: string) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -21,6 +22,7 @@ export const Sidebar: React.FC<Props> = ({
   onAdminAction,
 }) => {
   const { users, myId, connected, room } = useAppStore();
+  const { localMutedUsers } = useAudioStore();
 
   const voiceUsers = users.filter((u) => u.inVoice);
 
@@ -34,7 +36,7 @@ export const Sidebar: React.FC<Props> = ({
   }, []);
 
   const handleContextMenu = (e: React.MouseEvent, id: string) => {
-    if (room?.adminId === myId && id !== myId) {
+    if (id !== myId) {
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, targetId: id });
     }
@@ -126,21 +128,46 @@ export const Sidebar: React.FC<Props> = ({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {users.find(u => u.id === contextMenu.targetId)?.inVoice && (
+          {room?.adminId === myId && (
+            <button 
+              onClick={() => { onAdminAction('give_admin', contextMenu.targetId); setContextMenu(null); }}
+              className={styles.contextMenuItem}
+            >
+              👑 Dar Administrador
+            </button>
+          )}
+
+          {localMutedUsers.includes(contextMenu.targetId) ? (
+            <button 
+              onClick={() => { onAdminAction('local_mute', contextMenu.targetId); setContextMenu(null); }}
+              className={styles.contextMenuItem}
+            >
+              🔊 Desmutar para mim
+            </button>
+          ) : (
+            <button 
+              onClick={() => { onAdminAction('local_mute', contextMenu.targetId); setContextMenu(null); }}
+              className={styles.contextMenuItem}
+            >
+              🔇 Mutar para mim
+            </button>
+          )}
+
+          {room?.adminId === myId && users.find(u => u.id === contextMenu.targetId)?.inVoice && (
             <>
               {users.find(u => u.id === contextMenu.targetId)?.micMuted ? (
                 <button 
                   onClick={() => { onAdminAction('unmute', contextMenu.targetId); setContextMenu(null); }}
                   className={styles.contextMenuItem}
                 >
-                  🔊 Desmutar Microfone
+                  🔊 Desmutar para todos
                 </button>
               ) : (
                 <button 
                   onClick={() => { onAdminAction('mute', contextMenu.targetId); setContextMenu(null); }}
                   className={styles.contextMenuItem}
                 >
-                  🔇 Mutar Microfone
+                  🔇 Mutar para todos
                 </button>
               )}
               <button 
@@ -151,12 +178,14 @@ export const Sidebar: React.FC<Props> = ({
               </button>
             </>
           )}
-          <button 
-            onClick={() => { onAdminAction('kick_room', contextMenu.targetId); setContextMenu(null); }}
-            className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
-          >
-            🚪 Expulsar da Sala
-          </button>
+          {room?.adminId === myId && (
+            <button 
+              onClick={() => { onAdminAction('kick_room', contextMenu.targetId); setContextMenu(null); }}
+              className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
+            >
+              🚪 Expulsar da Sala
+            </button>
+          )}
         </div>
       )}
     </aside>

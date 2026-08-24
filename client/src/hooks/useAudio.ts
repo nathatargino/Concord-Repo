@@ -50,11 +50,12 @@ export function useAudio() {
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
-      const { remoteVol, callMuted } = useAudioStore.getState();
+      const { remoteVol, callMuted, localMutedUsers } = useAudioStore.getState();
       
+      const isLocalMuted = localMutedUsers.includes(userId);
       audioEl.srcObject = stream;
-      audioEl.volume = remoteVol / 100;
-      audioEl.muted = callMuted;
+      audioEl.volume = isLocalMuted ? 0 : (remoteVol / 100);
+      audioEl.muted = callMuted || isLocalMuted;
       
       // Force play to overcome some browser policies
       audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
@@ -75,10 +76,12 @@ export function useAudio() {
   }, []);
 
   const applyRemoteSettings = useCallback(() => {
-    const { remoteVol, callMuted } = useAudioStore.getState();
+    const { remoteVol, callMuted, localMutedUsers } = useAudioStore.getState();
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
-      audio.volume = remoteVol / 100;
-      audio.muted = callMuted;
+      const userId = audio.id.replace('remote-audio-', '');
+      const isLocalMuted = localMutedUsers.includes(userId);
+      audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
+      audio.muted = callMuted || isLocalMuted;
     });
   }, []);
 
