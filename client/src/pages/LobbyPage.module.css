@@ -187,44 +187,6 @@
   transform: translateX(4px);
 }
 
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: rgba(255, 255, 255, 0.2);
-  font-size: 12px;
-  margin: 4px 0;
-}
-
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.ghostBtn {
-  width: 100%;
-  padding: 12px;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.ghostBtn:hover {
-  border-color: rgba(124, 58, 237, 0.4);
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(124, 58, 237, 0.05);
-}
 
 /* ── Action Panel ── */
 .actionPanel {

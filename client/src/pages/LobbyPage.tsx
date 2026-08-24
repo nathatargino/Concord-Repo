@@ -111,15 +111,6 @@ export const LobbyPage: React.FC = () => {
               </div>
               <span className={styles.btnArrow}>→</span>
             </button>
-
-            <div className={styles.divider}><span>ou</span></div>
-
-            <button className={styles.ghostBtn} onClick={() => {
-              const url = window.location.href;
-              navigator.clipboard.writeText(url).catch(() => {});
-            }}>
-              <span>🔗</span> Copiar Link desta Página
-            </button>
           </div>
         )}
 
