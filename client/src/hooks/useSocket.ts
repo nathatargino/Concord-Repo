@@ -36,8 +36,8 @@ interface ServerToClientEvents {
 
 interface ClientToServerEvents {
   set_username: (name: string) => void;
-  create_room: () => void;
-  join_room: (roomIdOrCode: string) => void;
+  create_room: (persistentId: string) => void;
+  join_room: (roomIdOrCode: string, persistentId: string) => void;
   send_message: (message: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
@@ -101,10 +101,16 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setConnected(true);
       store.setMyId(socket.id ?? '');
 
+      let persistentId = localStorage.getItem('concord_pid');
+      if (!persistentId) {
+        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('concord_pid', persistentId);
+      }
+
       // If there's already a room in the store, re-join it after reconnect
       const currentRoom = useAppStore.getState().room;
       if (currentRoom) {
-        socket.emit('join_room', currentRoom.id);
+        socket.emit('join_room', currentRoom.id, persistentId);
       }
 
       // Auto-login with saved name

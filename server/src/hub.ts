@@ -23,6 +23,7 @@ interface RoomState {
   createdAt: number;
   expiresAt: number;
   adminIds: string[];
+  adminPersistentIds: string[];
   users: Map<string, UserInfo>;
   voiceUsers: Set<string>;
   screenSharingUsers: Set<string>;
@@ -48,7 +49,7 @@ function generateCode(): string {
   return code;
 }
 
-function createRoom(): RoomState {
+function createRoom(persistentId?: string): RoomState {
   const id = generateId();
   let code = generateCode();
   // Ensure code uniqueness
@@ -62,6 +63,7 @@ function createRoom(): RoomState {
     createdAt: now,
     expiresAt: now + ROOM_DURATION_MS,
     adminIds: [],
+    adminPersistentIds: persistentId ? [persistentId] : [],
     users: new Map(),
     voiceUsers: new Set(),
     screenSharingUsers: new Set(),
@@ -153,10 +155,16 @@ function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState
   if (room.adminIds.includes(socketId)) {
     room.adminIds = room.adminIds.filter(id => id !== socketId);
     if (room.adminIds.length === 0 && room.users.size > 0) {
-      const nextAdmin = room.users.keys().next().value;
-      if (nextAdmin) {
-        room.adminIds = [nextAdmin];
-        io.to(nextAdmin).emit('toast_notification', 'Você agora é um administrador!', 'info');
+      const nextAdminId = room.users.keys().next().value;
+      if (nextAdminId) {
+        room.adminIds = [nextAdminId];
+        const nextAdminUser = room.users.get(nextAdminId);
+        if (nextAdminUser && nextAdminUser.persistentId) {
+          if (!room.adminPersistentIds.includes(nextAdminUser.persistentId)) {
+            room.adminPersistentIds.push(nextAdminUser.persistentId);
+          }
+        }
+        io.to(nextAdminId).emit('toast_notification', 'Você agora é um administrador!', 'info');
       }
     }
     io.to(room.id).emit('room_info', toRoomInfo(room));
@@ -213,7 +221,7 @@ export function registerHub(io: IoServer) {
     });
 
     // ─── JOIN ROOM ─────────────────────────────────────────────────
-    socket.on('join_room', (roomIdOrCode: string) => {
+    socket.on('join_room', (roomIdOrCode: string, persistentId?: string) => {
       const room = getRoom(roomIdOrCode.trim());
       if (!room) {
         socket.emit('room_error', 'Sala não encontrada ou expirada. Verifique o código e tente novamente.');
@@ -238,11 +246,24 @@ export function registerHub(io: IoServer) {
       }
 
       socket.data.roomId = room.id;
-      socket.join(room.id);
-      if (room.adminIds.length === 0) {
-        room.adminIds.push(socket.id);
+      if (persistentId) {
+        socket.data.persistentId = persistentId;
       }
-      user = room.users.get(socket.id) ?? { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+      
+      socket.join(room.id);
+      
+      if (persistentId && room.adminPersistentIds.includes(persistentId)) {
+        if (!room.adminIds.includes(socket.id)) {
+          room.adminIds.push(socket.id);
+        }
+      } else if (room.adminIds.length === 0) {
+        room.adminIds.push(socket.id);
+        if (persistentId && !room.adminPersistentIds.includes(persistentId)) {
+          room.adminPersistentIds.push(persistentId);
+        }
+      }
+      
+      user = room.users.get(socket.id) ?? { id: socket.id, persistentId, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
 
       socket.emit('room_joined', toRoomInfo(room));
@@ -460,6 +481,11 @@ export function registerHub(io: IoServer) {
     socket.on('admin_kick_room', (targetId) => {
       const room = getCurrentRoom();
       if (room && room.adminIds.includes(socket.id)) {
+        // Se foi expulso, perde o direito de admin persistente
+        const targetUser = room.users.get(targetId);
+        if (targetUser && targetUser.persistentId) {
+          room.adminPersistentIds = room.adminPersistentIds.filter(id => id !== targetUser.persistentId);
+        }
         io.to(targetId).emit('kicked_from_room');
         io.to(room.id).emit('toast_notification', `Um usuário foi expulso da sala`, 'info');
       }
@@ -470,6 +496,10 @@ export function registerHub(io: IoServer) {
       if (room && room.adminIds.includes(socket.id)) {
         if (room.users.has(targetId) && !room.adminIds.includes(targetId)) {
           room.adminIds.push(targetId);
+          const targetUser = room.users.get(targetId);
+          if (targetUser && targetUser.persistentId && !room.adminPersistentIds.includes(targetUser.persistentId)) {
+            room.adminPersistentIds.push(targetUser.persistentId);
+          }
           io.to(room.id).emit('room_info', toRoomInfo(room));
           io.to(targetId).emit('toast_notification', 'Você recebeu o cargo de Administrador', 'success');
         }

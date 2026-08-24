@@ -1,5 +1,6 @@
 export interface UserInfo {
   id: string;
+  persistentId?: string;
   name: string;
   inVoice: boolean;
   screenSharing: boolean;
@@ -26,8 +27,8 @@ export interface RoomInfo {
 // Client → Server events
 export interface ClientToServerEvents {
   set_username: (name: string) => void;
-  create_room: () => void;
-  join_room: (roomIdOrCode: string) => void;
+  create_room: (persistentId: string) => void;
+  join_room: (roomIdOrCode: string, persistentId: string) => void;
   send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
@@ -84,4 +85,5 @@ export interface InterServerEvents {}
 export interface SocketData {
   user?: UserInfo;
   roomId?: string;
+  persistentId?: string;
 }

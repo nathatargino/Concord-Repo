@@ -31,7 +31,17 @@ export const LobbyPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${SERVER_URL}/api/rooms`, { method: 'POST' });
+      let persistentId = localStorage.getItem('concord_pid');
+      if (!persistentId) {
+        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('concord_pid', persistentId);
+      }
+      
+      const res = await fetch(`${SERVER_URL}/api/rooms`, { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persistentId })
+      });
       if (!res.ok) throw new Error('Falha ao criar sala');
       const room = await res.json();
       const inviteUrl = `${window.location.origin}/room/${room.id}?code=${room.code}`;

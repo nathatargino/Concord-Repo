@@ -115,8 +115,9 @@ app.get('/health', (_req, res) => {
 
 // ─── ROOM REST ENDPOINTS ──────────────────────────────────────────
 // POST /api/rooms — Create a new room (returns room info)
-app.post('/api/rooms', (_req, res) => {
-  const room = createRoom();
+app.post('/api/rooms', (req, res) => {
+  const { persistentId } = req.body;
+  const room = createRoom(persistentId);
   res.json(toRoomInfo(room));
 });
 

@@ -107,7 +107,12 @@ export default function App() {
     // If socket is connected, join the room immediately
     // useSocket also auto-rejoins on reconnect
     const tryJoin = () => {
-      socket.emit('join_room', roomId);
+      let persistentId = localStorage.getItem('concord_pid');
+      if (!persistentId) {
+        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+        localStorage.setItem('concord_pid', persistentId);
+      }
+      socket.emit('join_room', roomId, persistentId);
     };
 
     // Give socket a tick to connect
