@@ -20,6 +20,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const inVoiceRef = useRef(false);
   const iceServersRef = useRef<RTCIceServer[]>([
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -154,6 +155,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const onExistingVoiceUsers = useCallback(
     (ids: string[]) => {
+      if (!inVoiceRef.current) return;
       ids.forEach((id) => createPeerConnection(id));
     },
     [createPeerConnection]
@@ -161,6 +163,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const onUserJoinedVoice = useCallback(
     async (userId: string) => {
+      if (!inVoiceRef.current) return;
       const peerData = createPeerConnection(userId);
       try {
         peerData.makingOffer = true;
@@ -179,14 +182,21 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     const peer = peersRef.current.get(userId);
     if (!peer) return;
     peer.pc.close();
-    peer.audioEl?.remove();
-    peer.screenVideoEl?.remove();
+    if (peer.audioEl) {
+      peer.audioEl.pause();
+      peer.audioEl.srcObject = null;
+      peer.audioEl.remove();
+    }
+    if (peer.screenVideoEl) {
+      peer.screenVideoEl.srcObject = null;
+    }
     peersRef.current.delete(userId);
     pendingIceRef.current.delete(userId);
   }, []);
 
   const onReceiveOffer = useCallback(
     async (senderId: string, offer: RTCSessionDescriptionInit) => {
+      if (!inVoiceRef.current) return;
       let peerData = peersRef.current.get(senderId);
       if (!peerData) {
         peerData = createPeerConnection(senderId);
@@ -215,6 +225,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const onReceiveAnswer = useCallback(
     async (senderId: string, answer: RTCSessionDescriptionInit) => {
+      if (!inVoiceRef.current) return;
       const peer = peersRef.current.get(senderId);
       if (!peer) return;
       try {
@@ -229,6 +240,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const onReceiveIce = useCallback(
     async (senderId: string, candidate: RTCIceCandidateInit) => {
+      if (!inVoiceRef.current) return;
       const peer = peersRef.current.get(senderId);
       if (!peer || !peer.pc.remoteDescription) {
         // Buffer it
@@ -250,6 +262,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const joinVoice = useCallback(
     async (myId: string, localStream: MediaStream) => {
+      inVoiceRef.current = true;
       myIdRef.current = myId;
       localStreamRef.current = localStream;
       await fetchIceServers();
@@ -259,9 +272,17 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
   );
 
   const leaveVoice = useCallback(() => {
+    inVoiceRef.current = false;
     peersRef.current.forEach((peer) => {
       peer.pc.close();
-      peer.audioEl?.remove();
+      if (peer.audioEl) {
+        peer.audioEl.pause();
+        peer.audioEl.srcObject = null;
+        peer.audioEl.remove();
+      }
+      if (peer.screenVideoEl) {
+        peer.screenVideoEl.srcObject = null;
+      }
     });
     peersRef.current.clear();
     pendingIceRef.current.clear();
