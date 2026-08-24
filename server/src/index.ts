@@ -9,7 +9,7 @@ import {
   ServerToClientEvents,
   SocketData,
 } from './types';
-import { registerHub } from './hub';
+import { registerHub, createRoom, getRoom, toRoomInfo } from './hub';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -111,6 +111,22 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 // ─── HEALTH CHECK ─────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// ─── ROOM REST ENDPOINTS ──────────────────────────────────────────
+// POST /api/rooms — Create a new room (returns room info)
+app.post('/api/rooms', (_req, res) => {
+  const room = createRoom();
+  res.json(toRoomInfo(room));
+});
+
+// GET /api/rooms/:idOrCode — Check if room exists and is valid
+app.get('/api/rooms/:idOrCode', (req, res) => {
+  const room = getRoom(req.params.idOrCode);
+  if (!room) {
+    return res.status(404).json({ error: 'Sala não encontrada ou expirada' });
+  }
+  res.json(toRoomInfo(room));
 });
 
 // ─── START ────────────────────────────────────────────────────────

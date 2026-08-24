@@ -17,9 +17,9 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing }) =>
   // Toggle fullscreen mode
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen().catch(() => {});
+      containerRef.current?.requestFullscreen().catch(() => { });
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   };
 
@@ -84,23 +84,23 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing }) =>
               </button>
             </div>
           </div>
-        
-        <div className={styles.videoContainer}>
-          <video
-            id="screen-share-video"
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted={amSharing} // Mute self to prevent feedback loop
-            className={styles.video}
-          />
-          {amSharing && (
-            <div className={styles.sharingOverlay}>
-              <div className={styles.sharingIcon}>📡</div>
-              <p>Sua tela está sendo transmitida</p>
-            </div>
-          )}
-        </div>
+
+          <div className={styles.videoContainer}>
+            <video
+              id="screen-share-video"
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted={amSharing} // Mute self to prevent feedback loop
+              className={styles.video}
+            />
+            {amSharing && (
+              <div className={styles.sharingOverlay}>
+                <div className={styles.sharingIcon}>📡</div>
+                <p>Sua tela está sendo transmitida</p>
+              </div>
+            )}
+          </div>
         </div>
       </Draggable>
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
@@ -20,6 +21,8 @@ import { StatusBar } from './components/StatusBar';
 import styles from './App.module.css';
 
 export default function App() {
+  const { roomId } = useParams<{ roomId: string }>();
+  const navigate = useNavigate();
   const store = useAppStore();
   const [showLogin, setShowLogin] = useState(true);
 
@@ -72,6 +75,12 @@ export default function App() {
     onResumeYouTube: () => {
       if (useAppStore.getState().inVoice) yt.resumeYouTube();
     },
+    onRoomError: (msg) => {
+      // Room not found or expired → back to lobby
+      console.warn('[Room] Error:', msg);
+      store.setRoom(null);
+      navigate('/');
+    },
   });
 
   // ─── SCREEN SHARE SYSTEM ─────────────────────────────────────────
@@ -81,9 +90,27 @@ export default function App() {
     rtc.removeScreenShareTrack
   );
 
+  // ─── JOIN ROOM on mount ───────────────────────────────────────────
+  useEffect(() => {
+    if (!roomId) {
+      navigate('/');
+      return;
+    }
+
+    // If socket is connected, join the room immediately
+    // useSocket also auto-rejoins on reconnect
+    const tryJoin = () => {
+      socket.emit('join_room', roomId);
+    };
+
+    // Give socket a tick to connect
+    const timer = setTimeout(tryJoin, 100);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId]);
+
   // ─── LOGIN ───────────────────────────────────────────────────────
   useEffect(() => {
-    // If auto-logged in by socket hook, hide modal
     if (store.myName) {
       setShowLogin(false);
     }
@@ -167,7 +194,6 @@ export default function App() {
                   socket.emit('music_action', 'play');
                   return;
                 } else {
-                  // Invalid command
                   store.addMessage({
                     id: `sys-${Date.now()}`,
                     userName: 'Sistema',

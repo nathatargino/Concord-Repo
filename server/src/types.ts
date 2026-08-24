@@ -12,9 +12,19 @@ export interface MusicItem {
   title?: string;
 }
 
+export interface RoomInfo {
+  id: string;
+  code: string;
+  createdAt: number;
+  expiresAt: number;
+  userCount: number;
+}
+
 // Client → Server events
 export interface ClientToServerEvents {
   set_username: (name: string) => void;
+  create_room: () => void;
+  join_room: (roomIdOrCode: string) => void;
   send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
@@ -49,10 +59,15 @@ export interface ServerToClientEvents {
   user_stopped_screen_share: (userId: string) => void;
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
+  // Room events
+  room_joined: (room: RoomInfo) => void;
+  room_error: (message: string) => void;
+  room_info: (room: RoomInfo) => void;
 }
 
 export interface InterServerEvents {}
 
 export interface SocketData {
   user?: UserInfo;
+  roomId?: string;
 }

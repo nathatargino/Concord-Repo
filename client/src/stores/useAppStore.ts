@@ -1,10 +1,14 @@
 import { create } from 'zustand';
-import type { ChatMessage, MusicItem, UserInfo } from '../types';
+import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
 
 interface AppState {
   // Connection
   connected: boolean;
   setConnected: (v: boolean) => void;
+
+  // Room
+  room: RoomInfo | null;
+  setRoom: (room: RoomInfo | null) => void;
 
   // User
   myId: string;
@@ -45,6 +49,10 @@ export const useAppStore = create<AppState>((set) => ({
   // Connection
   connected: false,
   setConnected: (v) => set({ connected: v }),
+
+  // Room
+  room: null,
+  setRoom: (room) => set({ room }),
 
   // User
   myId: '',

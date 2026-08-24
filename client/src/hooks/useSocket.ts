@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
-import type { ChatMessage, MusicItem, UserInfo } from '../types';
+import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
 interface ServerToClientEvents {
@@ -23,10 +23,15 @@ interface ServerToClientEvents {
   user_stopped_screen_share: (userId: string) => void;
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
+  room_joined: (room: RoomInfo) => void;
+  room_error: (message: string) => void;
+  room_info: (room: RoomInfo) => void;
 }
 
 interface ClientToServerEvents {
   set_username: (name: string) => void;
+  create_room: () => void;
+  join_room: (roomIdOrCode: string) => void;
   send_message: (message: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
@@ -56,6 +61,8 @@ export interface SocketCallbacks {
   onStopYouTube: (token: number) => void;
   onPauseYouTube: () => void;
   onResumeYouTube: () => void;
+  onRoomJoined?: (room: RoomInfo) => void;
+  onRoomError?: (msg: string) => void;
 }
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -80,6 +87,12 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setConnected(true);
       store.setMyId(socket.id ?? '');
 
+      // If there's already a room in the store, re-join it after reconnect
+      const currentRoom = useAppStore.getState().room;
+      if (currentRoom) {
+        socket.emit('join_room', currentRoom.id);
+      }
+
       // Auto-login with saved name
       const savedName = localStorage.getItem('concord_username_v1');
       if (savedName) {
@@ -93,9 +106,19 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setInVoice(false);
     });
 
+    socket.on('room_joined', (room) => {
+      store.setRoom(room);
+      store.clearMessages();
+      callbacksRef.current.onRoomJoined?.(room);
+    });
+
+    socket.on('room_error', (msg) => {
+      callbacksRef.current.onRoomError?.(msg);
+      toast.error(msg);
+    });
+
     socket.on('user_list', (users) => {
       store.setUsers(users);
-      // Update myId in case of reconnect
       if (socket.id) store.setMyId(socket.id);
     });
 

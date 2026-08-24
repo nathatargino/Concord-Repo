@@ -22,3 +22,11 @@ export interface ChatMessage {
   url?: string;
   filename?: string;
 }
+
+export interface RoomInfo {
+  id: string;
+  code: string;
+  createdAt: number;
+  expiresAt: number;
+  userCount: number;
+}

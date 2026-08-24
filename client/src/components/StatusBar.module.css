@@ -1,43 +1,207 @@
 .footer {
+  height: 36px;
+  background: rgba(10, 10, 20, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  background: var(--bg-elevated);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0 16px;
+  gap: 12px;
   font-size: 12px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
 }
 
-.left, .right {
+/* ── Left ── */
+.left {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .statusDot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .connected {
-  background: var(--success-color);
-  box-shadow: 0 0 6px var(--success-color);
+  background: #22C55E;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
 }
 
 .disconnected {
-  background: var(--danger-neon);
+  background: #EF4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
 }
 
 .statusText {
-  color: var(--text-muted);
-}
-
-.userText {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.4);
+  white-space: nowrap;
 }
 
 .userName {
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+/* ── Center: Timer ── */
+.center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.roomCode {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.codeLabel {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+}
+
+.codeValue {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  letter-spacing: 2px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.timerSep {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.timer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.3s;
+}
+
+.timerIcon {
+  font-size: 11px;
+}
+
+.timerText {
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
   font-weight: 600;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+}
+
+.timerWarning {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.25);
+}
+
+.timerWarning .timerText {
+  color: #FCD34D;
+}
+
+.timerCritical {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.timerCritical .timerText {
+  color: #FCA5A5;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Right ── */
+.right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inviteBtn {
+  padding: 4px 12px;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.inviteBtn:hover {
+  background: rgba(124, 58, 237, 0.25);
+  border-color: rgba(124, 58, 237, 0.5);
+  color: white;
+}
+
+.inviteCopied {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86EFAC;
+}
+
+.inviteCopied:hover {
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.leaveBtn {
+  padding: 4px 12px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.leaveBtn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: white;
+}
+
+.userText {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.userNameRight {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .center {
+    display: none;
+  }
 }
