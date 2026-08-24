@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
+import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -267,6 +268,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       localStreamRef.current = localStream;
       await fetchIceServers();
       emit('join_voice');
+      playJoinSound();
     },
     [emit, fetchIceServers]
   );
@@ -289,6 +291,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     emit('leave_voice');
+    playLeaveSound();
   }, [emit]);
 
   // ─── SCREEN SHARE ────────────────────────────────────────────────

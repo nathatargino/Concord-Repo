@@ -1,6 +1,7 @@
 import { useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
+import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
@@ -19,6 +20,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
       emit('start_screen_share');
       useAppStore.getState().setAmSharing(true);
+      playScreenShareStartSound();
 
       // Listen for user stopping via browser UI
       stream.getVideoTracks()[0].addEventListener('ended', () => {
@@ -41,6 +43,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
     emit('stop_screen_share');
     useAppStore.getState().setAmSharing(false);
     useAppStore.getState().setScreenShare(null, null);
+    playScreenShareStopSound();
     toast('🖥️ Compartilhamento encerrado', { duration: 2000 });
   }, [emit, removeScreenShareTrack]);
 

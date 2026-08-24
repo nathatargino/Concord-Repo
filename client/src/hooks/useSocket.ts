@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
+import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
@@ -180,10 +181,12 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('user_joined_voice', (userId) => {
+      if (useAppStore.getState().inVoice) playJoinSound();
       callbacksRef.current.onUserJoinedVoice(userId);
     });
 
     socket.on('user_left_voice', (userId) => {
+      if (useAppStore.getState().inVoice) playLeaveSound();
       callbacksRef.current.onUserLeftVoice(userId);
     });
 
@@ -201,6 +204,7 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('user_started_screen_share', (userId, userName) => {
       if (userId !== socket.id) {
+        if (useAppStore.getState().inVoice) playScreenShareStartSound();
         store.setScreenShare(userId, userName);
         toast(`🖥️ ${userName} está compartilhando a tela`, { duration: 3000 });
       }
@@ -208,6 +212,7 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('user_stopped_screen_share', (userId) => {
       if (userId !== socket.id) {
+        if (useAppStore.getState().inVoice) playScreenShareStopSound();
         store.setScreenShare(null, null);
       }
     });
