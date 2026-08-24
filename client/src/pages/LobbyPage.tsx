@@ -33,6 +33,12 @@ export const LobbyPage: React.FC = () => {
       const res = await fetch(`${SERVER_URL}/api/rooms`, { method: 'POST' });
       if (!res.ok) throw new Error('Falha ao criar sala');
       const room = await res.json();
+      const inviteUrl = `${window.location.origin}/room/${room.id}?code=${room.code}`;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+      } catch (err) {
+        console.warn('Clipboard write failed:', err);
+      }
       navigate(`/room/${room.id}?code=${room.code}`);
     } catch (e) {
       setError('Não foi possível criar a sala. Tente novamente.');
