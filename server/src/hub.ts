@@ -22,7 +22,7 @@ interface RoomState {
   code: string;
   createdAt: number;
   expiresAt: number;
-  adminId: string;
+  adminIds: string[];
   users: Map<string, UserInfo>;
   voiceUsers: Set<string>;
   screenSharingUsers: Set<string>;
@@ -61,7 +61,7 @@ function createRoom(): RoomState {
     code,
     createdAt: now,
     expiresAt: now + ROOM_DURATION_MS,
-    adminId: '',
+    adminIds: [],
     users: new Map(),
     voiceUsers: new Set(),
     screenSharingUsers: new Set(),
@@ -125,7 +125,7 @@ function toRoomInfo(room: RoomState): RoomInfo {
     createdAt: room.createdAt,
     expiresAt: room.expiresAt,
     userCount: room.users.size,
-    adminId: room.adminId,
+    adminIds: room.adminIds,
   };
 }
 
@@ -150,10 +150,16 @@ function broadcastUserList(io: IoServer, room: RoomState) {
 }
 
 function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState) {
-  if (room.adminId === socketId && room.users.size > 0) {
-    room.adminId = room.users.keys().next().value!;
+  if (room.adminIds.includes(socketId)) {
+    room.adminIds = room.adminIds.filter(id => id !== socketId);
+    if (room.adminIds.length === 0 && room.users.size > 0) {
+      const nextAdmin = room.users.keys().next().value;
+      if (nextAdmin) {
+        room.adminIds = [nextAdmin];
+        io.to(nextAdmin).emit('toast_notification', 'Você agora é um administrador!', 'info');
+      }
+    }
     io.to(room.id).emit('room_info', toRoomInfo(room));
-    io.to(room.adminId).emit('toast_notification', 'Você agora é o dono da sala!', 'info');
   }
 }
 
@@ -197,7 +203,7 @@ export function registerHub(io: IoServer) {
     // ─── CREATE ROOM ───────────────────────────────────────────────
     socket.on('create_room', () => {
       const room = createRoom();
-      room.adminId = socket.id;
+      room.adminIds = [socket.id];
       socket.data.roomId = room.id;
       socket.join(room.id);
       user = { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
@@ -233,8 +239,8 @@ export function registerHub(io: IoServer) {
 
       socket.data.roomId = room.id;
       socket.join(room.id);
-      if (!room.adminId) {
-        room.adminId = socket.id;
+      if (room.adminIds.length === 0) {
+        room.adminIds.push(socket.id);
       }
       user = room.users.get(socket.id) ?? { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
@@ -429,7 +435,7 @@ export function registerHub(io: IoServer) {
 
     socket.on('admin_mute_user', (targetId) => {
       const room = getCurrentRoom();
-      if (room && room.adminId === socket.id) {
+      if (room && room.adminIds.includes(socket.id)) {
         io.to(targetId).emit('server_muted');
         io.to(room.id).emit('toast_notification', `O admin mutou um usuário`, 'info');
       }
@@ -437,7 +443,7 @@ export function registerHub(io: IoServer) {
 
     socket.on('admin_unmute_user', (targetId) => {
       const room = getCurrentRoom();
-      if (room && room.adminId === socket.id) {
+      if (room && room.adminIds.includes(socket.id)) {
         io.to(targetId).emit('server_unmuted');
         io.to(room.id).emit('toast_notification', `O admin desmutou um usuário`, 'info');
       }
@@ -445,7 +451,7 @@ export function registerHub(io: IoServer) {
 
     socket.on('admin_kick_voice', (targetId) => {
       const room = getCurrentRoom();
-      if (room && room.adminId === socket.id) {
+      if (room && room.adminIds.includes(socket.id)) {
         io.to(targetId).emit('kicked_from_voice');
         io.to(room.id).emit('toast_notification', `O admin desconectou um usuário da voz`, 'info');
       }
@@ -453,7 +459,7 @@ export function registerHub(io: IoServer) {
 
     socket.on('admin_kick_room', (targetId) => {
       const room = getCurrentRoom();
-      if (room && room.adminId === socket.id) {
+      if (room && room.adminIds.includes(socket.id)) {
         io.to(targetId).emit('kicked_from_room');
         io.to(room.id).emit('toast_notification', `Um usuário foi expulso da sala`, 'info');
       }
@@ -461,9 +467,9 @@ export function registerHub(io: IoServer) {
 
     socket.on('admin_transfer_role', (targetId) => {
       const room = getCurrentRoom();
-      if (room && room.adminId === socket.id) {
-        if (room.users.has(targetId)) {
-          room.adminId = targetId;
+      if (room && room.adminIds.includes(socket.id)) {
+        if (room.users.has(targetId) && !room.adminIds.includes(targetId)) {
+          room.adminIds.push(targetId);
           io.to(room.id).emit('room_info', toRoomInfo(room));
           io.to(targetId).emit('toast_notification', 'Você recebeu o cargo de Administrador', 'success');
         }

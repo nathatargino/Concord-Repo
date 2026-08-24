@@ -69,7 +69,7 @@ export const Sidebar: React.FC<Props> = ({
                   screenSharing={user.screenSharing}
                   micMuted={user.micMuted}
                   callMuted={user.callMuted}
-                  isAdmin={user.id === room?.adminId}
+                  isAdmin={room?.adminIds?.includes(user.id) ?? false}
                   onScreenShareClick={onScreenShareClick}
                   onContextMenu={handleContextMenu}
                 />
@@ -105,7 +105,7 @@ export const Sidebar: React.FC<Props> = ({
                   screenSharing={user.screenSharing}
                   micMuted={user.micMuted}
                   callMuted={user.callMuted}
-                  isAdmin={user.id === room?.adminId}
+                  isAdmin={room?.adminIds?.includes(user.id) ?? false}
                   onScreenShareClick={onScreenShareClick}
                   onContextMenu={handleContextMenu}
                 />
@@ -128,7 +128,7 @@ export const Sidebar: React.FC<Props> = ({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {room?.adminId === myId && (
+          {room?.adminIds?.includes(myId) && !room?.adminIds?.includes(contextMenu.targetId) && (
             <button 
               onClick={() => { onAdminAction('give_admin', contextMenu.targetId); setContextMenu(null); }}
               className={styles.contextMenuItem}
@@ -153,7 +153,7 @@ export const Sidebar: React.FC<Props> = ({
             </button>
           )}
 
-          {room?.adminId === myId && users.find(u => u.id === contextMenu.targetId)?.inVoice && (
+          {room?.adminIds?.includes(myId) && users.find(u => u.id === contextMenu.targetId)?.inVoice && (
             <>
               {users.find(u => u.id === contextMenu.targetId)?.micMuted ? (
                 <button 
@@ -178,7 +178,7 @@ export const Sidebar: React.FC<Props> = ({
               </button>
             </>
           )}
-          {room?.adminId === myId && (
+          {room?.adminIds?.includes(myId) && (
             <button 
               onClick={() => { onAdminAction('kick_room', contextMenu.targetId); setContextMenu(null); }}
               className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}

@@ -20,7 +20,7 @@ export interface RoomInfo {
   createdAt: number;
   expiresAt: number;
   userCount: number;
-  adminId: string;
+  adminIds: string[];
 }
 
 // Client → Server events
