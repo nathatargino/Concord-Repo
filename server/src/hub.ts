@@ -83,14 +83,14 @@ export function registerHub(io: IoServer) {
     });
 
     // ─── CHAT MESSAGE ──────────────────────────────────────────────
-    socket.on('send_message', (message: string, type?: 'text' | 'image' | 'giphy', url?: string) => {
+    socket.on('send_message', (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => {
       if (!user.name) return;
       const safe = message.trim().slice(0, 2000);
       const timestamp = new Date().toLocaleTimeString('pt-BR', {
         hour: '2-digit',
         minute: '2-digit',
       });
-      io.emit('receive_message', user.name, safe, timestamp, type, url);
+      io.emit('receive_message', user.name, safe, timestamp, type, url, filename);
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────

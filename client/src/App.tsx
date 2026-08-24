@@ -150,7 +150,7 @@ export default function App() {
 
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
-          <ChatPanel onSendMessage={(msg, type, url) => {
+          <ChatPanel onSendMessage={(msg, type, url, filename) => {
             if (!type && !url) {
               const command = msg.trim().toLowerCase();
               if (command.startsWith('/')) {
@@ -180,7 +180,7 @@ export default function App() {
                 }
               }
             }
-            socket.emit('send_message', msg, type, url);
+            socket.emit('send_message', msg, type, url, filename);
           }} />
         </div>
 

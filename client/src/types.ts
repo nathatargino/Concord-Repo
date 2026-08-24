@@ -18,6 +18,7 @@ export interface ChatMessage {
   message: string;
   timestamp: string;
   isSystem?: boolean;
-  type?: 'text' | 'image' | 'giphy';
+  type?: 'text' | 'image' | 'giphy' | 'file';
   url?: string;
+  filename?: string;
 }

@@ -28,7 +28,7 @@ function parseLinks(text: string): string {
 }
 
 interface Props {
-  onSendMessage: (msg: string, type?: 'text'|'image'|'giphy', url?: string) => void;
+  onSendMessage: (msg: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
 }
 
 export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
@@ -55,7 +55,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       setIsUploading(true);
       try {
         const formData = new FormData();
-        formData.append('image', stagedFile.file);
+        formData.append('file', stagedFile.file);
 
         const res = await fetch(`${SERVER_URL}/api/upload`, {
           method: 'POST',
@@ -65,7 +65,13 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
         if (!res.ok) throw new Error('Erro no upload');
         const data = await res.json();
         
-        onSendMessage(trimmed || '📷 Imagem', 'image', `${SERVER_URL}${data.url}`);
+        const isImage = stagedFile.file.type.startsWith('image/');
+        onSendMessage(
+          trimmed || (isImage ? '📷 Imagem' : `📄 ${stagedFile.file.name}`),
+          isImage ? 'image' : 'file',
+          `${SERVER_URL}${data.url}`,
+          stagedFile.file.name
+        );
         
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
@@ -89,54 +95,30 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     }
   };
 
-  const uploadFile = async (file: File) => {
+  const stageFile = (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
-      alert('A imagem deve ter no máximo 5MB');
+      alert('O arquivo deve ter no máximo 5MB');
       return;
     }
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const res = await fetch(`${SERVER_URL}/api/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) throw new Error('Erro no upload');
-      const data = await res.json();
-      
-      // Send image message
-      onSendMessage('📷 Imagem', 'image', `${SERVER_URL}${data.url}`);
-    } catch (err) {
-      console.error(err);
-      alert('Falha ao enviar a imagem.');
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    const previewUrl = URL.createObjectURL(file);
+    setStagedFile({ file, previewUrl });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    await uploadFile(file);
+    stageFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
+      if (items[i].kind === 'file') {
         const file = items[i].getAsFile();
         if (file) {
-          if (file.size > 5 * 1024 * 1024) {
-            alert('A imagem deve ter no máximo 5MB');
-            return;
-          }
-          const previewUrl = URL.createObjectURL(file);
-          setStagedFile({ file, previewUrl });
+          stageFile(file);
+          return;
         }
       }
     }
@@ -157,9 +139,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      if (file.type.startsWith('image/')) {
-        uploadFile(file);
-      }
+      stageFile(file);
     }
   };
 
@@ -205,7 +185,14 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       <div className={styles.inputAreaWrapper}>
         {stagedFile && (
           <div className={styles.stagedFilePreview}>
-            <img src={stagedFile.previewUrl} alt="Staged" className={styles.stagedImage} />
+            {stagedFile.file.type.startsWith('image/') ? (
+              <img src={stagedFile.previewUrl} alt="Staged" className={styles.stagedImage} />
+            ) : (
+              <div className={styles.stagedDocument}>
+                <span className={styles.stagedDocIcon}>📄</span>
+                <span className={styles.stagedDocName}>{stagedFile.file.name}</span>
+              </div>
+            )}
             <button 
               className={styles.removeStagedBtn} 
               onClick={() => {
@@ -255,7 +242,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
         <div className={styles.inputArea}>
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,application/x-pkcs12,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/x-rar-compressed,.pdf,.pfx,.doc,.docx,.xls,.xlsx,.zip,.rar"
             style={{ display: 'none' }}
             ref={fileInputRef}
             onChange={handleFileUpload}
@@ -263,7 +250,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
           <button 
             className={styles.iconBtn} 
             onClick={() => fileInputRef.current?.click()}
-            title="Enviar Imagem"
+            title="Enviar Arquivo"
             disabled={isUploading}
           >
             {isUploading ? '⌛' : '📎'}
@@ -342,6 +329,20 @@ const MessageBubble: React.FC<{ msg: ChatMessage; isMe: boolean }> = ({ msg, isM
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <img src={msg.url} alt="User Upload" className={styles.msgImage} />
             {msg.message !== '📷 Imagem' && (
+              <div
+                className={styles.msgBubble}
+                dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
+              />
+            )}
+          </div>
+        ) : msg.type === 'file' && msg.url ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.msgFile}>
+              <span className={styles.msgFileIcon}>📄</span>
+              <span className={styles.msgFileName}>{msg.filename || 'Documento'}</span>
+              <span className={styles.msgFileDownload}>⬇️</span>
+            </a>
+            {msg.message && !msg.message.startsWith('📄') && (
               <div
                 className={styles.msgBubble}
                 dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}

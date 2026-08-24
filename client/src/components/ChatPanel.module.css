@@ -324,6 +324,71 @@
   object-fit: cover;
 }
 
+.stagedDocument {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  color: var(--text-primary);
+  max-width: 250px;
+}
+
+.stagedDocIcon {
+  font-size: 20px;
+}
+
+.stagedDocName {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msgFile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px 14px;
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: background 0.2s;
+  max-width: 300px;
+}
+
+.msgFile:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.msgFileIcon {
+  font-size: 24px;
+}
+
+.msgFileName {
+  font-size: 14px;
+  font-weight: 500;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msgFileDownload {
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.messageMe .msgFile {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.messageMe .msgFile:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 .removeStagedBtn {
   position: absolute;
   top: -10px;

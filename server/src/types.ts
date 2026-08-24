@@ -15,7 +15,7 @@ export interface MusicItem {
 // Client → Server events
 export interface ClientToServerEvents {
   set_username: (name: string) => void;
-  send_message: (message: string, type?: 'text' | 'image' | 'giphy', url?: string) => void;
+  send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
   join_voice: () => void;
@@ -33,7 +33,7 @@ export interface ClientToServerEvents {
 // Server → Client events
 export interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
-  receive_message: (userName: string, message: string, timestamp: string, type?: 'text' | 'image' | 'giphy', url?: string) => void;
+  receive_message: (userName: string, message: string, timestamp: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
