@@ -130,6 +130,13 @@ app.get('/api/rooms/:idOrCode', (req, res) => {
   res.json(toRoomInfo(room));
 });
 
+// ─── ROOM REDIRECT (For Desktop Invite Links) ─────────────────────
+app.get('/room/:roomId', (req, res) => {
+  const code = req.query.code;
+  const redirectUrl = `${CLIENT_URL}/room/${req.params.roomId}${code ? `?code=${code}` : ''}`;
+  res.redirect(redirectUrl);
+});
+
 // ─── START ────────────────────────────────────────────────────────
 httpServer.listen(PORT, () => {
   console.log(`\n🚀 Concord Server running on http://localhost:${PORT}`);
