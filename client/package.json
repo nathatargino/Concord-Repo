@@ -43,6 +43,9 @@
   "build": {
     "appId": "com.concord.desktop",
     "icon": "build/icon.png",
+    "win": {
+      "artifactName": "Concord-Setup.exe"
+    },
     "publish": [
       {
         "provider": "github",
