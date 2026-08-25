@@ -65,7 +65,15 @@ export function useYouTube(
           ...(window.location.protocol !== 'file:' ? { origin: window.location.origin } : {})
         },
         events: {
-          onReady: () => resolve(playerRef.current!),
+          onReady: () => {
+             const { ytVol, callMuted } = useAudioStore.getState();
+             const targetVol = callMuted ? 0 : ytVol;
+             if (targetVol > 0) {
+               playerRef.current?.unMute();
+               playerRef.current?.setVolume(targetVol);
+             }
+             resolve(playerRef.current!);
+          },
           onStateChange: (event: any) => {
             if (event.data === window.YT.PlayerState.PLAYING) {
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
