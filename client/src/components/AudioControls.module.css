@@ -147,6 +147,85 @@
   cursor: not-allowed;
 }
 
+/* ─── Noise Suppression Section ─────────────────────────────────── */
+
+.noiseSection {
+  background: rgba(34, 211, 238, 0.04);
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.noiseSectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.noiseIcon {
+  font-size: 14px;
+}
+
+.noiseLabel {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* iOS-style toggle switch */
+.noiseToggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+.noiseToggleActive {
+  background: rgba(34, 211, 238, 0.35);
+  border-color: rgba(34, 211, 238, 0.5);
+}
+
+.noiseToggleKnob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.noiseToggleActive .noiseToggleKnob {
+  left: 18px;
+  background: #22d3ee;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+
+/* Noise sensitivity slider accent */
+.rangeNoise::-webkit-slider-thumb {
+  background: #22d3ee;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.4);
+}
+
+.sensitivityHints {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.6;
+  margin-top: -2px;
+}
+
 @media (min-height: 900px) {
   .header { padding: 14px 18px; }
   .headerTitle { font-size: 15px; }
@@ -157,3 +236,4 @@
   .range { height: 6px; }
   .range::-webkit-slider-thumb { width: 16px; height: 16px; }
 }
+

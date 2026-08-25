@@ -41,6 +41,7 @@ export default function App() {
     const unsub = useAudioStore.subscribe(() => {
       audio.applyMicSettings();
       audio.applyRemoteSettings();
+      audio.applyNoiseSuppressionSettings();
       yt.applyYTVolume();
     });
     return unsub;
@@ -149,7 +150,7 @@ export default function App() {
           googHighpassFilter: true,
         },
       });
-      const processedStream = audio.processMicStream(stream);
+      const processedStream = await audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
       store.setInVoice(true);
       monitorSpeaking(processedStream, store.myId);

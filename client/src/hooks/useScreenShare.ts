@@ -11,7 +11,15 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
   const startScreenShare = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 30, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        video: {
+          frameRate: { ideal: 30, max: 60 },
+          // Use large ideal values so the browser captures the native resolution
+          // of any monitor (including ultrawide 3440x1440, super ultrawide 5120x1440, 4K, etc.)
+          width: { ideal: 4096 },
+          height: { ideal: 2160 },
+          // @ts-ignore — cursor is valid but not in all TS typings
+          cursor: 'always',
+        },
         audio: true, // capture system audio if user allows
       });
 

@@ -7,6 +7,11 @@ interface AudioNodes {
   micGain: GainNode;
   destination: MediaStreamAudioDestinationNode;
   analyser: AnalyserNode;
+  // Advanced noise suppression nodes
+  highpass: BiquadFilterNode | null;
+  lowpass: BiquadFilterNode | null;
+  noiseGateNode: AudioWorkletNode | null;
+  compressor: DynamicsCompressorNode | null;
 }
 
 const speakingAnimations = new Map<string, number>();
@@ -14,6 +19,7 @@ const remoteGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
+let workletLoaded = false;
 
 function getOrCreateCtx(): AudioContext {
   if (!audioNodes) {
@@ -22,10 +28,25 @@ function getOrCreateCtx(): AudioContext {
   return (audioNodes?.ctx ?? new AudioContext()) as AudioContext;
 }
 
+/**
+ * Load the NoiseGateProcessor AudioWorklet module.
+ * Returns true on success, false on failure (e.g. browser doesn't support worklets).
+ */
+async function loadNoiseGateWorklet(ctx: AudioContext): Promise<boolean> {
+  if (workletLoaded) return true;
+  try {
+    await ctx.audioWorklet.addModule('/noise-gate-processor.js');
+    workletLoaded = true;
+    return true;
+  } catch (err) {
+    console.warn('[useAudio] Failed to load noise-gate-processor worklet:', err);
+    return false;
+  }
+}
+
 export function useAudio() {
 
-
-  const processMicStream = useCallback((rawStream: MediaStream): MediaStream => {
+  const processMicStream = useCallback(async (rawStream: MediaStream): Promise<MediaStream> => {
     const ctx = new AudioContext({ sampleRate: 48000 });
     const source = ctx.createMediaStreamSource(rawStream);
     const gainNode = ctx.createGain();
@@ -33,20 +54,77 @@ export function useAudio() {
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
 
-    source.connect(gainNode);
-    gainNode.connect(dest);
-    gainNode.connect(analyser);
-
-    const { micVol } = useAudioStore.getState();
+    const { micVol, noiseSuppression, noiseGateThreshold } = useAudioStore.getState();
     gainNode.gain.value = micVol / 100;
 
     micTrack = rawStream.getAudioTracks()[0] ?? null;
 
-    audioNodes = { ctx, micSource: source, micGain: gainNode, destination: dest, analyser };
+    // ─── Build processing chain ────────────────────────────────────
+    // Chain: source → highpass → lowpass → [noiseGate] → compressor → gainNode → analyser + dest
+    let highpass: BiquadFilterNode | null = null;
+    let lowpass: BiquadFilterNode | null = null;
+    let noiseGateNode: AudioWorkletNode | null = null;
+    let compressor: DynamicsCompressorNode | null = null;
 
-    // Ao invés de retornar o dest.stream (que perde a supressão de ruído e cancelamento 
-    // de eco por passar pela Web Audio API), retornamos o rawStream original para o WebRTC.
-    return rawStream;
+    if (noiseSuppression) {
+      // High-pass filter — removes low-frequency rumble (fans, AC, vibration)
+      highpass = ctx.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 200;
+      highpass.Q.value = 0.7;
+
+      // Low-pass filter — removes high-frequency hiss
+      lowpass = ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 8000;
+      lowpass.Q.value = 0.7;
+
+      // Dynamics compressor — smooths out volume spikes
+      compressor = ctx.createDynamicsCompressor();
+      compressor.threshold.value = -24;
+      compressor.knee.value = 12;
+      compressor.ratio.value = 4;
+      compressor.attack.value = 0.003;
+      compressor.release.value = 0.15;
+
+      // Try loading AudioWorklet for noise gate
+      const workletOk = await loadNoiseGateWorklet(ctx);
+      if (workletOk) {
+        noiseGateNode = new AudioWorkletNode(ctx, 'noise-gate-processor');
+        const thresholdParam = noiseGateNode.parameters.get('threshold');
+        if (thresholdParam) {
+          thresholdParam.value = noiseGateThreshold;
+        }
+      }
+
+      // Wire the chain: source → highpass → lowpass → [noiseGate] → compressor → gainNode
+      source.connect(highpass);
+      highpass.connect(lowpass);
+
+      if (noiseGateNode) {
+        lowpass.connect(noiseGateNode);
+        noiseGateNode.connect(compressor);
+      } else {
+        lowpass.connect(compressor);
+      }
+
+      compressor.connect(gainNode);
+    } else {
+      // No suppression — direct path
+      source.connect(gainNode);
+    }
+
+    gainNode.connect(dest);
+    gainNode.connect(analyser);
+
+    audioNodes = {
+      ctx, micSource: source, micGain: gainNode,
+      destination: dest, analyser,
+      highpass, lowpass, noiseGateNode, compressor,
+    };
+
+    // Return the processed stream (from destination node) for WebRTC
+    return dest.stream;
   }, []);
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
@@ -106,6 +184,21 @@ export function useAudio() {
     });
   }, []);
 
+  /**
+   * Update noise gate threshold in real-time.
+   * Called when the user adjusts the sensitivity slider.
+   */
+  const applyNoiseSuppressionSettings = useCallback(() => {
+    if (!audioNodes?.noiseGateNode) return;
+    const { noiseGateThreshold, noiseSuppression } = useAudioStore.getState();
+
+    const thresholdParam = audioNodes.noiseGateNode.parameters.get('threshold');
+    if (thresholdParam) {
+      // When suppression is disabled, set threshold to minimum (effectively bypassing the gate)
+      thresholdParam.value = noiseSuppression ? noiseGateThreshold : -100;
+    }
+  }, []);
+
   const removeRemoteGain = useCallback((userId: string) => {
     stopSpeaking(userId);
     const gain = remoteGains.get(userId);
@@ -120,6 +213,7 @@ export function useAudio() {
     attachRemoteStream,
     applyMicSettings,
     applyRemoteSettings,
+    applyNoiseSuppressionSettings,
     removeRemoteGain,
     getMicTrack: () => micTrack,
   };

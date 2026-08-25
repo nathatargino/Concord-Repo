@@ -10,6 +10,7 @@ interface AudioState {
   micMuted: boolean;
   callMuted: boolean;
   noiseSuppression: boolean;
+  noiseGateThreshold: number; // dBFS, range -100 to 0
   localMutedUsers: string[];
   userVolumes: Record<string, number>;
 
@@ -20,6 +21,7 @@ interface AudioState {
   toggleMicMute: () => void;
   toggleCallMute: () => void;
   toggleNoiseSuppression: () => void;
+  setNoiseGateThreshold: (v: number) => void;
   toggleLocalMuteUser: (userId: string) => void;
   setUserVolume: (userId: string, vol: number) => void;
   resetAll: () => void;
@@ -32,6 +34,7 @@ const defaults = {
   micMuted: false,
   callMuted: false,
   noiseSuppression: true,
+  noiseGateThreshold: -50,
   localMutedUsers: [],
   userVolumes: {},
 };
@@ -47,6 +50,7 @@ export const useAudioStore = create<AudioState>()(
       toggleMicMute: () => set((s) => ({ micMuted: !s.micMuted })),
       toggleCallMute: () => set((s) => ({ callMuted: !s.callMuted })),
       toggleNoiseSuppression: () => set((s) => ({ noiseSuppression: !s.noiseSuppression })),
+      setNoiseGateThreshold: (v) => set({ noiseGateThreshold: Math.min(0, Math.max(-100, v)) }),
       toggleLocalMuteUser: (userId: string) => set((s) => {
         const isMuted = s.localMutedUsers.includes(userId);
         return {
