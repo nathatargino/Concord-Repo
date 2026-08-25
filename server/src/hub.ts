@@ -292,6 +292,7 @@ export function registerHub(io: IoServer) {
       const timestamp = new Date().toLocaleTimeString('pt-BR', {
         hour: '2-digit',
         minute: '2-digit',
+        timeZone: 'America/Sao_Paulo'
       });
       io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename);
     });
