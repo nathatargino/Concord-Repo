@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 import * as fs from 'fs';
@@ -12,6 +12,9 @@ import { autoUpdater } from 'electron-updater';
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
 const isDev = !app.isPackaged;
+
+// Allow autoplay without user gesture for YouTube
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 let mainWindow: BrowserWindowType | null = null;
 
@@ -98,6 +101,39 @@ function initAutoUpdater(window: BrowserWindowType) {
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 app.whenReady().then(() => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
+    
+    // Handle media permissions for WebRTC
+    session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+        const allowedPermissions = ['media', 'display-capture', 'microphone', 'camera'];
+        if (allowedPermissions.includes(permission)) {
+            callback(true);
+        } else {
+            callback(false);
+        }
+    });
+
+    // Handle screen share requests natively
+    session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+        desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+            // Automatically grant access to the primary screen
+            callback({ video: sources[0] });
+        }).catch((err) => {
+            console.error('Error getting desktop sources:', err);
+            // @ts-ignore
+            callback({ video: null });
+        });
+    });
+
+    // Fix CORS/Origin for Giphy API
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+        { urls: ['https://api.giphy.com/*'] },
+        (details, callback) => {
+            details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
+            details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
+            callback({ requestHeaders: details.requestHeaders });
+        }
+    );
+
     createWindow();
 }).catch(err => fs.appendFileSync(logFile, `app.whenReady() ERROR: ${err}\n`));
 

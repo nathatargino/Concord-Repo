@@ -57,7 +57,12 @@ export function useYouTube(
       playerRef.current = new window.YT.Player('yt-player-inner', {
         height: '0',
         width: '0',
-        playerVars: { autoplay: 1, controls: 0, modestbranding: 1 },
+        playerVars: { 
+          autoplay: 1, 
+          controls: 0, 
+          modestbranding: 1,
+          origin: 'https://concord-repo.onrender.com' 
+        },
         events: {
           onReady: () => resolve(playerRef.current!),
           onStateChange: (e: YT.OnStateChangeEvent) => {

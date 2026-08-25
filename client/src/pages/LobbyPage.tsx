@@ -44,7 +44,12 @@ export const LobbyPage: React.FC = () => {
       });
       if (!res.ok) throw new Error('Falha ao criar sala');
       const room = await res.json();
-      const inviteUrl = `${window.location.origin}/room/${room.id}?code=${room.code}`;
+      
+      const baseUrl = window.location.protocol === 'file:' 
+        ? (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:5173')
+        : window.location.origin;
+      const inviteUrl = `${baseUrl}/room/${room.id}?code=${room.code}`;
+      
       try {
         await navigator.clipboard.writeText(inviteUrl);
         toast.success('Link de convite copiado!');
