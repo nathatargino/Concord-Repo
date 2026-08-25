@@ -37,6 +37,21 @@ export default function App() {
     }, [])
   );
 
+  // Auto-unlock audio on any user interaction anywhere on screen
+  useEffect(() => {
+    const handleGlobalInteraction = () => {
+      yt.unlock();
+    };
+    window.addEventListener('pointerdown', handleGlobalInteraction);
+    window.addEventListener('click', handleGlobalInteraction);
+    window.addEventListener('keydown', handleGlobalInteraction);
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalInteraction);
+      window.removeEventListener('click', handleGlobalInteraction);
+      window.removeEventListener('keydown', handleGlobalInteraction);
+    };
+  }, [yt]);
+
   // Sync audio volumes when store changes
   useEffect(() => {
     const unsub = useAudioStore.subscribe(() => {

@@ -166,21 +166,35 @@ export function useYouTube(
   }, []);
 
   const unlock = useCallback(async () => {
+    const { ytVol, callMuted } = useAudioStore.getState();
+    const targetVol = callMuted ? 0 : ytVol;
+
+    if (playerRef.current) {
+      if (targetVol > 0) {
+        playerRef.current.unMute();
+        playerRef.current.setVolume(targetVol);
+      }
+      if (typeof (window as any).electron?.forceUnmute === 'function') {
+        (window as any).electron.forceUnmute();
+      }
+    }
+
     if (unlockedRef.current) return;
     unlockedRef.current = true;
-    if (useAppStore.getState().isPlaying) return;
 
-    try {
-      const player = await ensurePlayer();
-      player.mute();
-      player.playVideo();
-      setTimeout(() => {
-        if (useAppStore.getState().isPlaying) return;
-        player.stopVideo();
-        player.unMute();
-      }, 500);
-    } catch {
-      // ignore
+    if (!useAppStore.getState().isPlaying) {
+      try {
+        const player = await ensurePlayer();
+        player.mute();
+        player.playVideo();
+        setTimeout(() => {
+          if (useAppStore.getState().isPlaying) return;
+          player.stopVideo();
+          if (targetVol > 0) player.unMute();
+        }, 500);
+      } catch {
+        // ignore
+      }
     }
   }, [ensurePlayer]);
 

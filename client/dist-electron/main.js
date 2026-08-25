@@ -49,6 +49,7 @@ const path = require('path');
 const isDev = !electron_1.app.isPackaged;
 // Allow autoplay without user gesture for YouTube
 electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+electron_1.app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 electron_1.app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 electron_1.app.userAgentFallback = electron_1.app.userAgentFallback.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
 let mainWindow = null;

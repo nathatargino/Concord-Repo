@@ -21,6 +21,7 @@ const isDev = !app.isPackaged;
 
 // Allow autoplay without user gesture for YouTube
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
 
 app.userAgentFallback = app.userAgentFallback.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
