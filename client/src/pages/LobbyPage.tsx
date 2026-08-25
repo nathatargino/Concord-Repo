@@ -47,7 +47,7 @@ export const LobbyPage: React.FC = () => {
       
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
-        ? 'https://concord-repo.onrender.com' 
+        ? 'https://concord-olive.vercel.app' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${room.id}?code=${room.code}`;
       

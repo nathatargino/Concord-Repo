@@ -254,9 +254,6 @@ export function useAudio() {
       }
       audioNodes = null;
     }
-
-    // Reset so the worklet is loaded into the next new AudioContext
-    workletLoaded = false;
   }, []);
 
   return {
