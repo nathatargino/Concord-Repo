@@ -40,7 +40,7 @@ export function useYouTube(
   const currentTokenRef = useRef<number | null>(null);
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
-  const volumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
