@@ -25,6 +25,7 @@ export default function App() {
   const navigate = useNavigate();
   const store = useAppStore();
   const [showLogin, setShowLogin] = useState(true);
+  const rawMicStreamRef = useRef<MediaStream | null>(null);
 
   // ─── AUDIO SYSTEM ────────────────────────────────────────────────
   const audio = useAudio();
@@ -125,6 +126,7 @@ export default function App() {
   // ─── LOGIN ───────────────────────────────────────────────────────
   useEffect(() => {
     if (store.myName) {
+      socket.emit('set_username', store.myName);
       setShowLogin(false);
     }
   }, [store.myName]);
@@ -150,6 +152,7 @@ export default function App() {
           googHighpassFilter: true,
         },
       });
+      rawMicStreamRef.current = stream;
       const processedStream = await audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
       store.setInVoice(true);
@@ -168,6 +171,12 @@ export default function App() {
     }
     yt.stopYouTube();
     stopSpeaking(store.myId);
+    
+    // Ensure the raw microphone stream is also stopped
+    if (rawMicStreamRef.current) {
+      rawMicStreamRef.current.getTracks().forEach(t => t.stop());
+      rawMicStreamRef.current = null;
+    }
   };
 
 

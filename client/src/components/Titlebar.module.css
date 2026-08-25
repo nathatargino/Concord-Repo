@@ -24,10 +24,10 @@
     gap: 8px;
 }
 
-.left svg {
-    color: #7C3AED;
+.logoImage {
     width: 14px;
     height: 14px;
+    object-fit: contain;
 }
 
 .right {

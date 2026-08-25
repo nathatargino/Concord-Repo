@@ -27,6 +27,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        minWidth: 800,
+        minHeight: 600,
         backgroundColor: '#0e0e18',
         show: false,
         webPreferences: {
@@ -40,6 +42,10 @@ function createWindow() {
         titleBarStyle: 'hidden',
         // Customize titlebar or icon here
     });
+
+    // Spoof User-Agent to bypass YouTube's Electron blocks
+    const currentUserAgent = mainWindow.webContents.userAgent;
+    mainWindow.webContents.userAgent = currentUserAgent.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
 
     const url = isDev
         ? process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'

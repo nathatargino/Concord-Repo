@@ -46,7 +46,7 @@ export const Sidebar: React.FC<Props> = ({
     <aside className={styles.sidebar}>
       <div className={styles.header}>
         <div className={styles.serverName}>
-          <span className={styles.serverIcon}>🎵</span>
+          <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
           <span>Concord</span>
         </div>
         <div className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />

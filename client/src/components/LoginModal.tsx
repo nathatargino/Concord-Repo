@@ -34,7 +34,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin }) => {
     <div className={`${styles.overlay} ${visible ? styles.visible : ''}`}>
       <div className={`${styles.modal} ${visible ? styles.modalVisible : ''}`}>
         <div className={styles.logoArea}>
-          <div className={styles.logoIcon}>🎵</div>
+          <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
           <h1 className={styles.logoText}>Concord</h1>
           <p className={styles.tagline}>Música e voz em tempo real</p>
         </div>

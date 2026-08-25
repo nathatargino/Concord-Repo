@@ -26,8 +26,10 @@
   color: var(--text-primary);
 }
 
-.serverIcon {
-  font-size: 20px;
+.logoImage {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 
 .statusDot {

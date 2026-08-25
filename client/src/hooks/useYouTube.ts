@@ -65,8 +65,18 @@ export function useYouTube(
         },
         events: {
           onReady: () => resolve(playerRef.current!),
-          onStateChange: (e: YT.OnStateChangeEvent) => {
-            if (e.data === window.YT.PlayerState.ENDED) {
+          onStateChange: (event: any) => {
+            if (event.data === window.YT.PlayerState.PLAYING) {
+              const { ytVol, callMuted } = useAudioStore.getState();
+              const targetVol = callMuted ? 0 : ytVol;
+              if (targetVol > 0) {
+                playerRef.current?.unMute();
+                playerRef.current?.setVolume(targetVol);
+              } else {
+                playerRef.current?.mute();
+              }
+            }
+            if (event.data === window.YT.PlayerState.ENDED) {
               if (!suppressEndedRef.current && currentTokenRef.current !== null) {
                 onMusicEnded(currentTokenRef.current);
               }
