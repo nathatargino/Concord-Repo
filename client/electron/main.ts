@@ -23,6 +23,8 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        backgroundColor: '#0e0e18',
+        show: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
@@ -43,8 +45,11 @@ function createWindow() {
         mainWindow!.webContents.openDevTools();
     } else {
         mainWindow!.loadFile(path.join(__dirname, '../dist/index.html'));
-        mainWindow!.webContents.openDevTools({ mode: 'detach' });
     }
+
+    mainWindow.once('ready-to-show', () => {
+        mainWindow!.show();
+    });
 
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
