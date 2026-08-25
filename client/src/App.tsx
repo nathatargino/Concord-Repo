@@ -15,6 +15,7 @@ import { ChatPanel } from './components/ChatPanel';
 
 import { MusicPanel } from './components/MusicPanel';
 import { AudioControls } from './components/AudioControls';
+import { BroadcasterScreenPanel } from './components/BroadcasterScreenPanel';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
 import { StatusBar } from './components/StatusBar';
 
@@ -264,13 +265,16 @@ export default function App() {
             inVoice={store.inVoice}
           />
           <AudioControls onUnlockAudio={yt.unlock} />
+          <BroadcasterScreenPanel
+            onStopSharing={screenShare.stopScreenShare}
+            screenStream={screenShare.streamRef.current}
+          />
         </div>
       </main>
 
       <ScreenSharePanel 
         onClose={() => store.setScreenShare(null)} 
-        onStopSharing={screenShare.stopScreenShare}
-        screenStream={store.amSharing ? screenShare.streamRef.current : (store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null)}
+        screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
       />
       
       <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>

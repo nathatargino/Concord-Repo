@@ -5,17 +5,16 @@ import styles from './ScreenSharePanel.module.css';
 
 interface Props {
   onClose: () => void;
-  onStopSharing?: () => void;
   screenStream?: MediaStream | null;
 }
 
-export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, screenStream }) => {
+export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => {
   const { screenShareUserId, screenShareUserName, amSharing } = useAppStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Bind screenStream to the video element whenever stream or sharing state changes
+  // Bind screenStream to the video element whenever stream changes
   useEffect(() => {
     const videoEl = videoRef.current;
     if (videoEl) {
@@ -30,7 +29,7 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, scre
         videoEl.srcObject = null;
       }
     }
-  }, [screenStream, amSharing]);
+  }, [screenStream]);
 
   // Toggle fullscreen mode
   const toggleFullscreen = () => {
@@ -62,15 +61,8 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, scre
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  const handleClose = () => {
-    if (amSharing && onStopSharing) {
-      onStopSharing();
-    } else {
-      onClose();
-    }
-  };
-
-  if (!screenShareUserId && !amSharing) return null;
+  // If not watching someone or if I am the one sharing, do not render floating viewer panel
+  if (!screenShareUserId || amSharing) return null;
 
   // Calculate default position (top right with 16px margin)
   const defaultPosition = { x: typeof window !== 'undefined' ? window.innerWidth - 496 : 0, y: 16 };
@@ -86,7 +78,7 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, scre
             <div className={styles.titleArea}>
               <span className={styles.icon}>🖥️</span>
               <span className={styles.title}>
-                {amSharing ? 'Você está compartilhando a tela' : `Tela de ${screenShareUserName}`}
+                Tela de {screenShareUserName}
               </span>
               <span className={styles.liveBadge}>AO VIVO</span>
             </div>
@@ -97,7 +89,7 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, scre
               <button className={styles.actionBtn} onClick={toggleFullscreen} title="Tela Cheia">
                 {isFullscreen ? '↙️' : '↗️'}
               </button>
-              <button className={styles.closeBtn} onClick={handleClose} title={amSharing ? "Parar Transmissão" : "Fechar visualização"}>
+              <button className={styles.closeBtn} onClick={onClose} title="Fechar visualização">
                 ✕
               </button>
             </div>
@@ -109,15 +101,8 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, scre
               ref={videoRef}
               autoPlay
               playsInline
-              muted={amSharing} // Mute self to prevent feedback loop
               className={styles.video}
             />
-            {amSharing && (
-              <div className={styles.sharingOverlay}>
-                <div className={styles.sharingIcon}>📡</div>
-                <p>Sua tela está sendo transmitida</p>
-              </div>
-            )}
           </div>
         </div>
       </Draggable>
