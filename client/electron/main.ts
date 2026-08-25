@@ -1,5 +1,9 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
+
+protocol.registerSchemesAsPrivileged([
+    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+]);
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -44,7 +48,7 @@ function createWindow() {
         mainWindow!.loadURL(url);
         mainWindow!.webContents.openDevTools();
     } else {
-        mainWindow!.loadFile(path.join(__dirname, '../dist/index.html'));
+        mainWindow!.loadURL('app://localhost/index.html');
     }
 
     mainWindow.once('ready-to-show', () => {
@@ -137,6 +141,13 @@ app.whenReady().then(() => {
     });
 
     // Fix CORS/Origin for Giphy API
+    protocol.handle('app', (request) => {
+        let urlPath = request.url.slice('app://localhost/'.length);
+        if (!urlPath) urlPath = 'index.html';
+        const absolutePath = path.join(__dirname, '../dist', urlPath);
+        return net.fetch('file://' + absolutePath);
+    });
+
     session.defaultSession.webRequest.onBeforeSendHeaders(
         { urls: ['https://*.giphy.com/*'] },
         (details, callback) => {
