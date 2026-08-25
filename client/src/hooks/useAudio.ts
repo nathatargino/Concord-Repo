@@ -208,6 +208,40 @@ export function useAudio() {
     }
   }, []);
 
+  /**
+   * Cleanup all audio resources when leaving a call.
+   * Stops the raw mic track, closes the AudioContext, and resets state
+   * so that a fresh pipeline can be built on rejoin.
+   */
+  const cleanup = useCallback(() => {
+    // Stop the raw microphone track so the browser releases the device
+    if (micTrack) {
+      micTrack.stop();
+      micTrack = null;
+    }
+
+    // Disconnect and close the AudioContext
+    if (audioNodes) {
+      try {
+        audioNodes.micSource.disconnect();
+        audioNodes.micGain.disconnect();
+        audioNodes.highpass?.disconnect();
+        audioNodes.lowpass?.disconnect();
+        audioNodes.noiseGateNode?.disconnect();
+        audioNodes.compressor?.disconnect();
+        audioNodes.destination.disconnect();
+        audioNodes.analyser.disconnect();
+        audioNodes.ctx.close();
+      } catch (e) {
+        // Ignore errors during teardown
+      }
+      audioNodes = null;
+    }
+
+    // Reset so the worklet is loaded into the next new AudioContext
+    workletLoaded = false;
+  }, []);
+
   return {
     processMicStream,
     attachRemoteStream,
@@ -215,6 +249,7 @@ export function useAudio() {
     applyRemoteSettings,
     applyNoiseSuppressionSettings,
     removeRemoteGain,
+    cleanup,
     getMicTrack: () => micTrack,
   };
 }

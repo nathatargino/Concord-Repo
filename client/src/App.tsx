@@ -165,6 +165,7 @@ export default function App() {
 
   handleLeaveVoice = () => {
     rtc.leaveVoice();
+    audio.cleanup();
     store.setInVoice(false);
     if (store.amSharing) {
       screenShare.stopScreenShare();
