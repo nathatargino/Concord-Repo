@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
 
 export default defineConfig({
-  base: '/',
+  base: './',
   plugins: [
     react(),
     process.env.ELECTRON === 'true' ? electron({
