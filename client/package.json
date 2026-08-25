@@ -2,7 +2,7 @@
   "name": "concord",
   "productName": "Concord",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -43,6 +43,13 @@
   "build": {
     "appId": "com.concord.desktop",
     "icon": "build/icon.png",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nathatargino",
+        "repo": "Concord-Repo"
+      }
+    ],
     "directories": {
       "output": "release"
     },
