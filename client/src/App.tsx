@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useSocket } from './hooks/useSocket';
@@ -174,7 +174,7 @@ export default function App() {
     
     // Ensure the raw microphone stream is also stopped
     if (rawMicStreamRef.current) {
-      rawMicStreamRef.current.getTracks().forEach(t => t.stop());
+      rawMicStreamRef.current.getTracks().forEach((t: MediaStreamTrack) => t.stop());
       rawMicStreamRef.current = null;
     }
   };
