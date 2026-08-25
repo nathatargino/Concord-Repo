@@ -7,6 +7,8 @@ protocol.registerSchemesAsPrivileged([
 
 import * as fs from 'fs';
 import * as os from 'os';
+import * as http from 'http';
+
 const logFile = `${os.tmpdir()}/concord-debug.log`;
 fs.writeFileSync(logFile, 'Electron Started!\n');
 
@@ -19,8 +21,52 @@ const isDev = !app.isPackaged;
 
 // Allow autoplay without user gesture for YouTube
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+
+app.userAgentFallback = app.userAgentFallback.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
 
 let mainWindow: BrowserWindowType | null = null;
+let localServerPort = 0;
+
+function startLocalServer(): Promise<number> {
+    return new Promise((resolve) => {
+        const server = http.createServer((req, res) => {
+            let urlPath = req.url === '/' ? '/index.html' : req.url;
+            urlPath = urlPath?.split('?')[0] || '/index.html';
+            
+            const absolutePath = path.join(__dirname, '../dist', urlPath);
+            fs.readFile(absolutePath, (err, data) => {
+                if (err) {
+                    fs.readFile(path.join(__dirname, '../dist/index.html'), (err2, data2) => {
+                        if (err2) {
+                            res.writeHead(404); res.end('Not found');
+                            return;
+                        }
+                        res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(data2);
+                    });
+                    return;
+                }
+                
+                const ext = path.extname(absolutePath).toLowerCase();
+                let mime = 'text/plain';
+                if (ext === '.html') mime = 'text/html';
+                else if (ext === '.js' || ext === '.mjs') mime = 'application/javascript';
+                else if (ext === '.css') mime = 'text/css';
+                else if (ext === '.svg') mime = 'image/svg+xml';
+                else if (ext === '.png') mime = 'image/png';
+                else if (ext === '.json') mime = 'application/json';
+                else if (ext === '.ico') mime = 'image/x-icon';
+
+                res.writeHead(200, { 'Content-Type': mime });
+                res.end(data);
+            });
+        });
+        
+        server.listen(0, '127.0.0.1', () => {
+            resolve((server.address() as any).port);
+        });
+    });
+}
 
 function createWindow() {
     fs.appendFileSync(logFile, 'createWindow called!\n');
@@ -44,18 +90,17 @@ function createWindow() {
     });
 
     // Spoof User-Agent to bypass YouTube's Electron blocks
-    const currentUserAgent = mainWindow.webContents.userAgent;
-    mainWindow.webContents.userAgent = currentUserAgent.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
+    // Already done globally via app.userAgentFallback
 
     const url = isDev
         ? process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
-        : `file://${path.join(__dirname, '../dist/index.html')}`;
+        : `http://127.0.0.1:${localServerPort}`;
 
     if (isDev) {
         mainWindow!.loadURL(url);
         mainWindow!.webContents.openDevTools();
     } else {
-        mainWindow!.loadURL('app://localhost/index.html');
+        mainWindow!.loadURL(url);
     }
 
     mainWindow.once('ready-to-show', () => {
@@ -138,7 +183,6 @@ app.whenReady().then(() => {
     // Handle screen share requests natively
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
         desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-            // Automatically grant access to the primary screen
             callback({ video: sources[0] });
         }).catch((err) => {
             console.error('Error getting desktop sources:', err);
@@ -148,13 +192,6 @@ app.whenReady().then(() => {
     });
 
     // Fix CORS/Origin for Giphy API
-    protocol.handle('app', (request) => {
-        let urlPath = request.url.slice('app://localhost/'.length);
-        if (!urlPath) urlPath = 'index.html';
-        const absolutePath = path.join(__dirname, '../dist', urlPath);
-        return net.fetch('file://' + absolutePath);
-    });
-
     session.defaultSession.webRequest.onBeforeSendHeaders(
         { urls: ['https://*.giphy.com/*'] },
         (details, callback) => {
@@ -164,7 +201,14 @@ app.whenReady().then(() => {
         }
     );
 
-    createWindow();
+    if (!isDev) {
+        startLocalServer().then(port => {
+            localServerPort = port;
+            createWindow();
+        });
+    } else {
+        createWindow();
+    }
 }).catch(err => fs.appendFileSync(logFile, `app.whenReady() ERROR: ${err}\n`));
 
 app.on('window-all-closed', () => {
