@@ -79,7 +79,7 @@ export interface SocketCallbacks {
   onKickedFromRoom?: () => void;
 }
 
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-olive.vercel.app' : 'http://localhost:3001');
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
 
 export function useSocket(callbacks: SocketCallbacks) {
   const socketRef = useRef<ConcordSocket | null>(null);
