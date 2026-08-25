@@ -260,9 +260,6 @@ export function useAudio() {
     }
     // Clear remote gains so next context doesn't try to use closed nodes
     remoteGains.clear();
-
-    // Reset so the worklet is loaded into the next new AudioContext
-    workletLoaded = false;
   }, []);
 
   return {
