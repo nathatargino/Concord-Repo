@@ -45,13 +45,18 @@ export const LobbyPage: React.FC = () => {
       if (!res.ok) throw new Error('Falha ao criar sala');
       const room = await res.json();
       
-      const baseUrl = window.location.protocol === 'file:' 
-        ? (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:5173')
+      const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+      const baseUrl = isElectron 
+        ? 'https://concord-repo.onrender.com' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/room/${room.id}?code=${room.code}`;
       
       try {
-        await navigator.clipboard.writeText(inviteUrl);
+        if ((window as any).electron?.copyToClipboard) {
+          (window as any).electron.copyToClipboard(inviteUrl);
+        } else {
+          await navigator.clipboard.writeText(inviteUrl);
+        }
         toast.success('Link de convite copiado!');
       } catch (err) {
         console.warn('Clipboard write failed:', err);

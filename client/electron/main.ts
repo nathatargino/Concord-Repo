@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 import * as fs from 'fs';
@@ -126,7 +126,7 @@ app.whenReady().then(() => {
 
     // Fix CORS/Origin for Giphy API
     session.defaultSession.webRequest.onBeforeSendHeaders(
-        { urls: ['https://api.giphy.com/*'] },
+        { urls: ['https://*.giphy.com/*'] },
         (details, callback) => {
             details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
             details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
@@ -148,6 +148,10 @@ app.on('activate', () => {
 // Basic IPC handlers
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.on('copy-to-clipboard', (event, text) => {
+    clipboard.writeText(text);
 });
 
 // Window controls IPC

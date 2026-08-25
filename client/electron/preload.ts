@@ -5,6 +5,10 @@ declare global {
         electron: {
             getAppVersion: () => Promise<string>;
             onUpdateMessage: (callback: (message: string) => void) => () => void;
+            minimize: () => void;
+            maximize: () => void;
+            close: () => void;
+            copyToClipboard?: (text: string) => void;
         }
     }
 }
@@ -20,5 +24,6 @@ contextBridge.exposeInMainWorld('electron', {
     },
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
-    close: () => ipcRenderer.send('window-close')
+    close: () => ipcRenderer.send('window-close'),
+    copyToClipboard: (text: string) => ipcRenderer.send('copy-to-clipboard', text)
 });

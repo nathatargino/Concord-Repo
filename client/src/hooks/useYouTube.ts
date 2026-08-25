@@ -61,7 +61,7 @@ export function useYouTube(
           autoplay: 1, 
           controls: 0, 
           modestbranding: 1,
-          origin: 'https://concord-repo.onrender.com' 
+          origin: window.location.origin 
         },
         events: {
           onReady: () => resolve(playerRef.current!),

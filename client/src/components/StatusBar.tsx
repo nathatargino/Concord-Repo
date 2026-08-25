@@ -46,11 +46,26 @@ export const StatusBar: React.FC = () => {
 
   const handleCopyInvite = useCallback(() => {
     if (!room) return;
-    const url = `${window.location.origin}/room/${room.id}?code=${room.code}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    const baseUrl = isElectron 
+      ? 'https://concord-repo.onrender.com' 
+      : window.location.origin;
+    const url = `${baseUrl}/room/${room.id}?code=${room.code}`;
+    
+    try {
+      if ((window as any).electron?.copyToClipboard) {
+        (window as any).electron.copyToClipboard(url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        navigator.clipboard.writeText(url).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        });
+      }
+    } catch (err) {
+      console.warn('Clipboard write failed:', err);
+    }
   }, [room]);
 
   const handleLeaveRoom = useCallback(() => {
