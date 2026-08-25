@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 import * as fs from 'fs';
@@ -89,12 +89,18 @@ function initAutoUpdater(window: BrowserWindowType) {
     });
     autoUpdater.on('update-downloaded', (info) => {
         window.webContents.send('update-message', 'Atualização baixada. O app será reiniciado para instalar.');
+        
+        new Notification({
+            title: 'Nova atualização pronta para instalar',
+            body: `A versão ${info.version || ''} do Concord foi baixada e será instalada automaticamente.`
+        }).show();
+
         setTimeout(() => {
             autoUpdater.quitAndInstall();
-        }, 3000);
+        }, 5000);
     });
 
-    autoUpdater.checkForUpdatesAndNotify();
+    autoUpdater.checkForUpdates();
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
 
