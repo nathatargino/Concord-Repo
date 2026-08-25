@@ -163,7 +163,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       </div>
 
       {/* Hidden YT player host */}
-      <div id="yt-host" style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0.1, pointerEvents: 'none' }} />
+      <div id="yt-host" style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '200px', height: '200px', opacity: 0.1, pointerEvents: 'none' }} />
     </div>
   );
 };

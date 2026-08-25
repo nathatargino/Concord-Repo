@@ -55,8 +55,8 @@ export function useYouTube(
       container.appendChild(div);
 
       playerRef.current = new window.YT.Player('yt-player-inner', {
-        height: '1',
-        width: '1',
+        height: '200',
+        width: '200',
         playerVars: { 
           autoplay: 1, 
           controls: 0, 
