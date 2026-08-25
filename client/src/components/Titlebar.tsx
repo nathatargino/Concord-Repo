@@ -1,4 +1,3 @@
-import React from 'react';
 import styles from './Titlebar.module.css';
 
 export function Titlebar() {

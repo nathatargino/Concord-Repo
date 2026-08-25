@@ -42,6 +42,7 @@
   },
   "build": {
     "appId": "com.concord.desktop",
+    "icon": "build/icon.png",
     "directories": {
       "output": "release"
     },
