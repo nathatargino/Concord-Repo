@@ -50,8 +50,7 @@ export const StatusBar: React.FC = () => {
     const baseUrl = isElectron 
       ? 'https://concord-repo.onrender.com' 
       : window.location.origin;
-    const url = `${baseUrl}/room/${room.id}?code=${room.code}`;
-    
+    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}`;
     try {
       if ((window as any).electron?.copyToClipboard) {
         (window as any).electron.copyToClipboard(url);

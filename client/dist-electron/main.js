@@ -34,8 +34,12 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+electron_1.protocol.registerSchemesAsPrivileged([
+    { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+]);
 const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
+const http = __importStar(require("http"));
 const logFile = `${os.tmpdir()}/concord-debug.log`;
 fs.writeFileSync(logFile, 'Electron Started!\n');
 const electron_updater_1 = require("electron-updater");
@@ -45,33 +49,89 @@ const path = require('path');
 const isDev = !electron_1.app.isPackaged;
 // Allow autoplay without user gesture for YouTube
 electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+electron_1.app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+electron_1.app.userAgentFallback = electron_1.app.userAgentFallback.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
 let mainWindow = null;
+let localServerPort = 0;
+function startLocalServer() {
+    return new Promise((resolve) => {
+        const server = http.createServer((req, res) => {
+            let urlPath = req.url === '/' ? '/index.html' : req.url;
+            urlPath = urlPath?.split('?')[0] || '/index.html';
+            const absolutePath = path.join(__dirname, '../dist', urlPath);
+            fs.readFile(absolutePath, (err, data) => {
+                if (err) {
+                    fs.readFile(path.join(__dirname, '../dist/index.html'), (err2, data2) => {
+                        if (err2) {
+                            res.writeHead(404);
+                            res.end('Not found');
+                            return;
+                        }
+                        res.writeHead(200, { 'Content-Type': 'text/html' });
+                        res.end(data2);
+                    });
+                    return;
+                }
+                const ext = path.extname(absolutePath).toLowerCase();
+                let mime = 'text/plain';
+                if (ext === '.html')
+                    mime = 'text/html';
+                else if (ext === '.js' || ext === '.mjs')
+                    mime = 'application/javascript';
+                else if (ext === '.css')
+                    mime = 'text/css';
+                else if (ext === '.svg')
+                    mime = 'image/svg+xml';
+                else if (ext === '.png')
+                    mime = 'image/png';
+                else if (ext === '.json')
+                    mime = 'application/json';
+                else if (ext === '.ico')
+                    mime = 'image/x-icon';
+                res.writeHead(200, { 'Content-Type': mime });
+                res.end(data);
+            });
+        });
+        server.listen(0, '127.0.0.1', () => {
+            resolve(server.address().port);
+        });
+    });
+}
 function createWindow() {
     fs.appendFileSync(logFile, 'createWindow called!\n');
     mainWindow = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
+        minWidth: 800,
+        minHeight: 600,
+        backgroundColor: '#0e0e18',
+        show: false,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false
+            webSecurity: false,
+            autoplayPolicy: 'no-user-gesture-required'
         },
         frame: false,
         titleBarStyle: 'hidden',
         // Customize titlebar or icon here
     });
+    // Spoof User-Agent to bypass YouTube's Electron blocks
+    // Already done globally via app.userAgentFallback
     const url = isDev
         ? process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
-        : `file://${path.join(__dirname, '../dist/index.html')}`;
+        : `http://127.0.0.1:${localServerPort}`;
     if (isDev) {
         mainWindow.loadURL(url);
         mainWindow.webContents.openDevTools();
     }
     else {
-        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-        mainWindow.webContents.openDevTools({ mode: 'detach' });
+        mainWindow.loadURL(url);
     }
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+    });
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
     });
@@ -139,7 +199,6 @@ electron_1.app.whenReady().then(() => {
     // Handle screen share requests natively
     electron_1.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
         electron_1.desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-            // Automatically grant access to the primary screen
             callback({ video: sources[0] });
         }).catch((err) => {
             console.error('Error getting desktop sources:', err);
@@ -147,13 +206,30 @@ electron_1.app.whenReady().then(() => {
             callback({ video: null });
         });
     });
-    // Fix CORS/Origin for Giphy API
-    electron_1.session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*.giphy.com/*'] }, (details, callback) => {
+    // Set clean Chrome User-Agent for session to bypass YouTube/Google Electron blocks
+    const cleanUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    electron_1.session.defaultSession.setUserAgent(cleanUserAgent);
+    // Fix CORS/Origin/Referer for Giphy and YouTube API in Electron
+    electron_1.session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [
+            'https://*.giphy.com/*',
+            'https://*.youtube.com/*',
+            'https://*.youtube-nocookie.com/*',
+            'https://*.googlevideo.com/*'
+        ] }, (details, callback) => {
         details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
         details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
+        details.requestHeaders['User-Agent'] = cleanUserAgent;
         callback({ requestHeaders: details.requestHeaders });
     });
-    createWindow();
+    if (!isDev) {
+        startLocalServer().then(port => {
+            localServerPort = port;
+            createWindow();
+        });
+    }
+    else {
+        createWindow();
+    }
 }).catch(err => fs.appendFileSync(logFile, `app.whenReady() ERROR: ${err}\n`));
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin')
@@ -183,6 +259,11 @@ electron_1.ipcMain.on('window-maximize', () => {
         else {
             mainWindow.maximize();
         }
+    }
+});
+electron_1.ipcMain.on('force-unmute', () => {
+    if (mainWindow) {
+        mainWindow.webContents.setAudioMuted(false);
     }
 });
 electron_1.ipcMain.on('window-close', () => {

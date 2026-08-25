@@ -13,5 +13,6 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     minimize: () => electron_1.ipcRenderer.send('window-minimize'),
     maximize: () => electron_1.ipcRenderer.send('window-maximize'),
     close: () => electron_1.ipcRenderer.send('window-close'),
-    copyToClipboard: (text) => electron_1.ipcRenderer.send('copy-to-clipboard', text)
+    copyToClipboard: (text) => electron_1.ipcRenderer.send('copy-to-clipboard', text),
+    forceUnmute: () => electron_1.ipcRenderer.send('force-unmute')
 });

@@ -191,12 +191,22 @@ app.whenReady().then(() => {
         });
     });
 
-    // Fix CORS/Origin for Giphy API
+    // Set clean Chrome User-Agent for session to bypass YouTube/Google Electron blocks
+    const cleanUserAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    session.defaultSession.setUserAgent(cleanUserAgent);
+
+    // Fix CORS/Origin/Referer for Giphy and YouTube API in Electron
     session.defaultSession.webRequest.onBeforeSendHeaders(
-        { urls: ['https://*.giphy.com/*'] },
+        { urls: [
+            'https://*.giphy.com/*',
+            'https://*.youtube.com/*',
+            'https://*.youtube-nocookie.com/*',
+            'https://*.googlevideo.com/*'
+        ] },
         (details, callback) => {
             details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
             details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
+            details.requestHeaders['User-Agent'] = cleanUserAgent;
             callback({ requestHeaders: details.requestHeaders });
         }
     );

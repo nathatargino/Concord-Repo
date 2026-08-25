@@ -19,24 +19,27 @@ const remoteGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
-let workletLoaded = false;
+
+let globalCtx: AudioContext | null = null;
 
 function getOrCreateCtx(): AudioContext {
-  if (!audioNodes) {
-    // Will be created on first mic access
+  if (!globalCtx || globalCtx.state === 'closed') {
+    globalCtx = new AudioContext({ sampleRate: 48000 });
   }
-  return (audioNodes?.ctx ?? new AudioContext()) as AudioContext;
+  return globalCtx;
 }
+
+const loadedWorklets = new WeakSet<AudioContext>();
 
 /**
  * Load the NoiseGateProcessor AudioWorklet module.
  * Returns true on success, false on failure (e.g. browser doesn't support worklets).
  */
 async function loadNoiseGateWorklet(ctx: AudioContext): Promise<boolean> {
-  if (workletLoaded) return true;
+  if (loadedWorklets.has(ctx)) return true;
   try {
     await ctx.audioWorklet.addModule('/noise-gate-processor.js');
-    workletLoaded = true;
+    loadedWorklets.add(ctx);
     return true;
   } catch (err) {
     console.warn('[useAudio] Failed to load noise-gate-processor worklet:', err);
@@ -47,7 +50,21 @@ async function loadNoiseGateWorklet(ctx: AudioContext): Promise<boolean> {
 export function useAudio() {
 
   const processMicStream = useCallback(async (rawStream: MediaStream): Promise<MediaStream> => {
-    const ctx = new AudioContext({ sampleRate: 48000 });
+    if (audioNodes) {
+      audioNodes.micSource.disconnect();
+      audioNodes.micGain.disconnect();
+      audioNodes.highpass?.disconnect();
+      audioNodes.lowpass?.disconnect();
+      audioNodes.noiseGateNode?.disconnect();
+      audioNodes.compressor?.disconnect();
+      audioNodes.destination.disconnect();
+      audioNodes.analyser.disconnect();
+    }
+
+    const ctx = getOrCreateCtx();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
     const source = ctx.createMediaStreamSource(rawStream);
     const gainNode = ctx.createGain();
     const dest = ctx.createMediaStreamDestination();
@@ -141,7 +158,7 @@ export function useAudio() {
       audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
 
       // Reuse the active context for speaking detection so it isn't suspended
-      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+      const activeCtx = getOrCreateCtx();
 
       let gainNode = remoteGains.get(userId);
       if (!gainNode) {
@@ -257,7 +274,7 @@ export function useAudio() {
 // ─── SPEAKING DETECTION ─────────────────────────────────────────────
 
 export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?: AudioContext) {
-  const ctx = activeCtx || new AudioContext();
+  const ctx = activeCtx || getOrCreateCtx();
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 256;

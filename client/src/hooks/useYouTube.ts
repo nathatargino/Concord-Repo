@@ -55,6 +55,10 @@ export function useYouTube(
       div.id = 'yt-player-inner';
       container.appendChild(div);
 
+      const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      const targetOrigin = (isElectron || isLocal) ? 'https://concord-repo.onrender.com' : window.location.origin;
+
       playerRef.current = new window.YT.Player('yt-player-inner', {
         height: '200',
         width: '200',
@@ -62,7 +66,8 @@ export function useYouTube(
           autoplay: 1, 
           controls: 0, 
           modestbranding: 1,
-          ...(window.location.protocol !== 'file:' ? { origin: window.location.origin } : {})
+          enablejsapi: 1,
+          origin: targetOrigin,
         },
         events: {
           onReady: () => {

@@ -49,7 +49,7 @@ export const LobbyPage: React.FC = () => {
       const baseUrl = isElectron 
         ? 'https://concord-repo.onrender.com' 
         : window.location.origin;
-      const inviteUrl = `${baseUrl}/room/${room.id}?code=${room.code}`;
+      const inviteUrl = `${baseUrl}/#/room/${room.id}?code=${room.code}`;
       
       try {
         if ((window as any).electron?.copyToClipboard) {
@@ -102,19 +102,7 @@ export const LobbyPage: React.FC = () => {
       <div className={styles.card}>
         {/* Logo */}
         <div className={styles.logoArea}>
-          <div className={styles.logoIcon}>
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-              <path d="M9 18V5l12-2v13" stroke="url(#g1)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx="6" cy="18" r="3" stroke="url(#g1)" strokeWidth="1.5" />
-              <circle cx="18" cy="16" r="3" stroke="url(#g1)" strokeWidth="1.5" />
-              <defs>
-                <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#7C3AED" />
-                  <stop offset="100%" stopColor="#06B6D4" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
+          <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
           <h1 className={styles.logoText}>Concord</h1>
           <p className={styles.tagline}>Música e voz em tempo real</p>
         </div>
