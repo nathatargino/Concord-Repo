@@ -55,13 +55,13 @@ export function useYouTube(
       container.appendChild(div);
 
       playerRef.current = new window.YT.Player('yt-player-inner', {
-        height: '0',
-        width: '0',
+        height: '1',
+        width: '1',
         playerVars: { 
           autoplay: 1, 
           controls: 0, 
           modestbranding: 1,
-          origin: window.location.origin 
+          ...(window.location.protocol !== 'file:' && { origin: window.location.origin })
         },
         events: {
           onReady: () => resolve(playerRef.current!),
