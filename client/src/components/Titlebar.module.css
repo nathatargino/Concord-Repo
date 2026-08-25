@@ -28,6 +28,7 @@
     width: 14px;
     height: 14px;
     object-fit: contain;
+    mix-blend-mode: screen;
 }
 
 .right {

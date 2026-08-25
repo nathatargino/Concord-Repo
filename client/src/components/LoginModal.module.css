@@ -45,6 +45,7 @@
   object-fit: contain;
   filter: drop-shadow(0 0 16px rgba(34, 211, 238, 0.4));
   animation: float 3s ease-in-out infinite;
+  mix-blend-mode: screen;
 }
 
 @keyframes float {

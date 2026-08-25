@@ -158,7 +158,11 @@ export function useAudio() {
       audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
 
       // Reuse the active context for speaking detection so it isn't suspended
-      const activeCtx = getOrCreateCtx();
+      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+      
+      if (activeCtx.state === 'suspended') {
+        activeCtx.resume();
+      }
 
       let gainNode = remoteGains.get(userId);
       if (!gainNode) {
@@ -254,6 +258,11 @@ export function useAudio() {
       }
       audioNodes = null;
     }
+    // Clear remote gains so next context doesn't try to use closed nodes
+    remoteGains.clear();
+
+    // Reset so the worklet is loaded into the next new AudioContext
+    workletLoaded = false;
   }, []);
 
   return {

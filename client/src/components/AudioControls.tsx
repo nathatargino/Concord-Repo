@@ -13,31 +13,16 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     remoteVol,
     micMuted,
     callMuted,
-    noiseSuppression,
-    noiseGateThreshold,
     setYtVol,
     setMicVol,
     setRemoteVol,
     toggleMicMute,
     toggleCallMute,
-    toggleNoiseSuppression,
-    setNoiseGateThreshold,
     resetAll,
   } = useAudioStore();
 
   const handlePointerDown = () => {
     onUnlockAudio();
-  };
-
-  // Convert dB threshold to a 0-100 "sensitivity" scale for the UI
-  // -100 dB = 0% sensitivity (gate barely activates, almost everything passes)
-  // 0 dB = 100% sensitivity (gate blocks almost everything)
-  // Default -50 dB = 50% sensitivity
-  const sensitivityPercent = Math.round(((noiseGateThreshold + 100) / 100) * 100);
-  const handleSensitivityChange = (pct: number) => {
-    // Convert 0-100% back to -100 to 0 dBFS
-    const db = (pct / 100) * 100 - 100;
-    setNoiseGateThreshold(db);
   };
 
   return (
@@ -70,41 +55,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
           >
             {callMuted ? '🔇 Call Mute' : '🔊 Call On'}
           </button>
-        </div>
-
-        {/* Noise Suppression Section */}
-        <div className={styles.noiseSection}>
-          <div className={styles.noiseSectionHeader}>
-            <span className={styles.noiseIcon}>🛡️</span>
-            <span className={styles.noiseLabel}>Supressão de Ruído</span>
-            <button
-              className={`${styles.noiseToggle} ${noiseSuppression ? styles.noiseToggleActive : ''}`}
-              onClick={toggleNoiseSuppression}
-              title={noiseSuppression ? 'Desativar supressão de ruído' : 'Ativar supressão de ruído'}
-            >
-              <span className={styles.noiseToggleKnob} />
-            </button>
-          </div>
-          {noiseSuppression && (
-            <div className={styles.sliderGroup}>
-              <div className={styles.sliderHeader}>
-                <span className={styles.sliderLabel}>Sensibilidade</span>
-                <span className={styles.sliderValue}>{sensitivityPercent}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={sensitivityPercent}
-                onChange={(e) => handleSensitivityChange(Number(e.target.value))}
-                className={`${styles.range} ${styles.rangeNoise}`}
-              />
-              <div className={styles.sensitivityHints}>
-                <span>Baixa</span>
-                <span>Alta</span>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Volume Sliders */}

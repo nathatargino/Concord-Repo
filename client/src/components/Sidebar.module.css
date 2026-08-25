@@ -30,6 +30,7 @@
   width: 24px;
   height: 24px;
   object-fit: contain;
+  mix-blend-mode: screen;
 }
 
 .statusDot {

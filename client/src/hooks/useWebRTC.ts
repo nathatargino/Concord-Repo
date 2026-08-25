@@ -12,6 +12,7 @@ interface PeerConnection {
   screenVideoEl?: HTMLVideoElement;
   makingOffer: boolean;
   ignoreOffer: boolean;
+  screenSender?: RTCRtpSender;
 }
 
 type AttachRemoteFn = (audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => void;
@@ -60,7 +61,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       // Add screen share track if active
       if (screenStreamRef.current) {
         for (const track of screenStreamRef.current.getTracks()) {
-          pc.addTrack(track, screenStreamRef.current);
+          const sender = pc.addTrack(track, screenStreamRef.current);
+          if (track.kind === 'video') {
+            peerData.screenSender = sender;
+          }
         }
       }
 
@@ -301,12 +305,11 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     const track = stream.getVideoTracks()[0];
     if (!track) return;
 
-    peersRef.current.forEach(({ pc }) => {
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-      if (sender) {
-        sender.replaceTrack(track);
+    peersRef.current.forEach((peer) => {
+      if (peer.screenSender) {
+        peer.screenSender.replaceTrack(track);
       } else {
-        pc.addTrack(track, stream);
+        peer.screenSender = peer.pc.addTrack(track, stream);
       }
     });
   }, []);
@@ -315,10 +318,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
 
-    peersRef.current.forEach(({ pc }) => {
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'video');
-      if (sender) {
-        sender.replaceTrack(null);
+    peersRef.current.forEach((peer) => {
+      if (peer.screenSender) {
+        peer.screenSender.replaceTrack(null);
       }
     });
   }, []);
