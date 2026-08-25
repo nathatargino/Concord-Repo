@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
@@ -9,7 +9,6 @@ type EmitFn = (event: string, ...args: unknown[]) => void;
 interface PeerConnection {
   pc: RTCPeerConnection;
   audioEl?: HTMLAudioElement;
-  screenVideoEl?: HTMLVideoElement;
   makingOffer: boolean;
   ignoreOffer: boolean;
   screenSender?: RTCRtpSender;
@@ -23,6 +22,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
   const localStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const inVoiceRef = useRef(false);
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState<Map<string, MediaStream>>(new Map());
+  const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+
   const iceServersRef = useRef<RTCIceServer[]>([
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -101,8 +103,6 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
             peerData.audioEl = audioEl;
           }
           // Always route through GainNode so the volume slider works.
-          // The bare srcObject fallback intentionally bypasses volume control,
-          // so only use it as a last resort when no audio pipeline exists.
           if (attachRemoteStream) {
             attachRemoteStream(audioEl, streams[0] ?? new MediaStream(), peerId);
           } else {
@@ -113,19 +113,23 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
         if (track.kind === 'video') {
           // This is a screen share stream
+          const stream = streams[0] || new MediaStream([track]);
+          remoteScreenStreamsRef.current.set(peerId, stream);
+          setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+
           const { setScreenShare } = useAppStore.getState();
           const users = useAppStore.getState().users;
           const user = users.find((u) => u.id === peerId);
           setScreenShare(peerId, user?.name ?? 'Usuário');
 
-          let videoEl = peerData.screenVideoEl;
-          if (!videoEl) {
-            videoEl = document.getElementById('screen-share-video') as HTMLVideoElement | null ?? undefined;
-            if (videoEl) peerData.screenVideoEl = videoEl;
-          }
-          if (videoEl) {
-            videoEl.srcObject = streams[0] ?? null;
-          }
+          track.onended = () => {
+            remoteScreenStreamsRef.current.delete(peerId);
+            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+          };
+
+          track.onunmute = () => {
+            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+          };
         }
       };
 
@@ -137,7 +141,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
       return peerData;
     },
-    [emit]
+    [emit, attachRemoteStream]
   );
 
   const flushPendingIce = useCallback(async (peerId: string) => {
@@ -192,11 +196,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       peer.audioEl.srcObject = null;
       peer.audioEl.remove();
     }
-    if (peer.screenVideoEl) {
-      peer.screenVideoEl.srcObject = null;
-    }
     peersRef.current.delete(userId);
     pendingIceRef.current.delete(userId);
+    remoteScreenStreamsRef.current.delete(userId);
+    setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
   }, []);
 
   const onReceiveOffer = useCallback(
@@ -217,7 +220,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       if (peerData.ignoreOffer) return;
 
       try {
-        await pc.setRemoteDescription(offer);
+        if (offerCollision) {
+          await Promise.all([
+            pc.setLocalDescription({ type: 'rollback' }),
+            pc.setRemoteDescription(offer),
+          ]);
+        } else {
+          await pc.setRemoteDescription(offer);
+        }
         await pc.setLocalDescription();
         emit('send_answer', senderId, pc.localDescription!);
         await flushPendingIce(senderId);
@@ -286,12 +296,11 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
         peer.audioEl.srcObject = null;
         peer.audioEl.remove();
       }
-      if (peer.screenVideoEl) {
-        peer.screenVideoEl.srcObject = null;
-      }
     });
     peersRef.current.clear();
     pendingIceRef.current.clear();
+    remoteScreenStreamsRef.current.clear();
+    setRemoteScreenStreams(new Map());
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
     emit('leave_voice');
@@ -330,6 +339,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     leaveVoice,
     addScreenShareTrack,
     removeScreenShareTrack,
+    remoteScreenStreams,
     onExistingVoiceUsers,
     onUserJoinedVoice,
     onUserLeftVoice,

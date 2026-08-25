@@ -6,13 +6,31 @@ import styles from './ScreenSharePanel.module.css';
 interface Props {
   onClose: () => void;
   onStopSharing?: () => void;
+  screenStream?: MediaStream | null;
 }
 
-export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing }) => {
+export const ScreenSharePanel: React.FC<Props> = ({ onClose, onStopSharing, screenStream }) => {
   const { screenShareUserId, screenShareUserName, amSharing } = useAppStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Bind screenStream to the video element whenever stream or sharing state changes
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (videoEl) {
+      if (screenStream) {
+        if (videoEl.srcObject !== screenStream) {
+          videoEl.srcObject = screenStream;
+        }
+        videoEl.play().catch((err) => {
+          console.debug('[ScreenSharePanel] video play error:', err);
+        });
+      } else {
+        videoEl.srcObject = null;
+      }
+    }
+  }, [screenStream, amSharing]);
 
   // Toggle fullscreen mode
   const toggleFullscreen = () => {

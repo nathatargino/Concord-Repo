@@ -270,6 +270,7 @@ export default function App() {
       <ScreenSharePanel 
         onClose={() => store.setScreenShare(null)} 
         onStopSharing={screenShare.stopScreenShare}
+        screenStream={store.amSharing ? screenShare.streamRef.current : (store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null)}
       />
       
       <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
