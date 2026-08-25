@@ -40,6 +40,7 @@ export function useYouTube(
   const currentTokenRef = useRef<number | null>(null);
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
+  const volumeIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
@@ -67,20 +68,41 @@ export function useYouTube(
           onReady: () => resolve(playerRef.current!),
           onStateChange: (event: any) => {
             if (event.data === window.YT.PlayerState.PLAYING) {
-              const { ytVol, callMuted } = useAudioStore.getState();
-              const targetVol = callMuted ? 0 : ytVol;
-              if (targetVol > 0) {
-                playerRef.current?.unMute();
-                playerRef.current?.setVolume(targetVol);
-              } else {
-                playerRef.current?.mute();
-              }
+              // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
+              if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+              
+              let attempts = 0;
+              volumeIntervalRef.current = setInterval(() => {
+                attempts++;
+                if (attempts > 10) {
+                  if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+                  return;
+                }
+                
+                if (typeof (window as any).electron?.forceUnmute === 'function') {
+                  (window as any).electron.forceUnmute();
+                }
+                
+                const { ytVol, callMuted } = useAudioStore.getState();
+                const targetVol = callMuted ? 0 : ytVol;
+                if (targetVol > 0) {
+                  playerRef.current?.unMute();
+                  playerRef.current?.setVolume(targetVol);
+                } else {
+                  playerRef.current?.mute();
+                }
+              }, 300);
             }
+            
             if (event.data === window.YT.PlayerState.ENDED) {
+              if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
               if (!suppressEndedRef.current && currentTokenRef.current !== null) {
                 onMusicEnded(currentTokenRef.current);
               }
               useAppStore.getState().setIsPlaying(false);
+            }
+            if (event.data === window.YT.PlayerState.PAUSED) {
+               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
             }
           },
         },

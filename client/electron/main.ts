@@ -199,6 +199,12 @@ ipcMain.on('window-maximize', () => {
     }
 });
 
+ipcMain.on('force-unmute', () => {
+    if (mainWindow) {
+        mainWindow.webContents.setAudioMuted(false);
+    }
+});
+
 ipcMain.on('window-close', () => {
     if (mainWindow) mainWindow.close();
 });

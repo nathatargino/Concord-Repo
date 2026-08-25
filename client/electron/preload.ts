@@ -9,6 +9,7 @@ declare global {
             maximize: () => void;
             close: () => void;
             copyToClipboard?: (text: string) => void;
+            forceUnmute?: () => void;
         }
     }
 }
@@ -25,5 +26,6 @@ contextBridge.exposeInMainWorld('electron', {
     minimize: () => ipcRenderer.send('window-minimize'),
     maximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
-    copyToClipboard: (text: string) => ipcRenderer.send('copy-to-clipboard', text)
+    copyToClipboard: (text: string) => ipcRenderer.send('copy-to-clipboard', text),
+    forceUnmute: () => ipcRenderer.send('force-unmute')
 });
