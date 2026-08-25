@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styles from './LobbyPage.module.css';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-olive.vercel.app' : 'http://localhost:3001');
 
 type Tab = 'home' | 'create' | 'join';
 
@@ -36,8 +36,8 @@ export const LobbyPage: React.FC = () => {
         persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
         localStorage.setItem('concord_pid', persistentId);
       }
-      
-      const res = await fetch(`${SERVER_URL}/api/rooms`, { 
+
+      const res = await fetch(`${SERVER_URL}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ persistentId })
@@ -94,13 +94,13 @@ export const LobbyPage: React.FC = () => {
         <div className={styles.logoArea}>
           <div className={styles.logoIcon}>
             <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-              <path d="M9 18V5l12-2v13" stroke="url(#g1)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="6" cy="18" r="3" stroke="url(#g1)" strokeWidth="1.5"/>
-              <circle cx="18" cy="16" r="3" stroke="url(#g1)" strokeWidth="1.5"/>
+              <path d="M9 18V5l12-2v13" stroke="url(#g1)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <circle cx="6" cy="18" r="3" stroke="url(#g1)" strokeWidth="1.5" />
+              <circle cx="18" cy="16" r="3" stroke="url(#g1)" strokeWidth="1.5" />
               <defs>
                 <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#7C3AED"/>
-                  <stop offset="100%" stopColor="#06B6D4"/>
+                  <stop offset="0%" stopColor="#7C3AED" />
+                  <stop offset="100%" stopColor="#06B6D4" />
                 </linearGradient>
               </defs>
             </svg>

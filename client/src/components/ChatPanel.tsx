@@ -8,7 +8,7 @@ import styles from './ChatPanel.module.css';
 // Using Giphy API Key from .env or fallback
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
 const gf = new GiphyFetch(GIPHY_API_KEY || 'GlVGYHqc3SyCEGpo3sZa1n5aD1bZ0vE4');
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-olive.vercel.app' : 'http://localhost:3001');
 
 function escapeHtml(text: string): string {
   if (!text) return '';
@@ -28,7 +28,7 @@ function parseLinks(text: string): string {
 }
 
 interface Props {
-  onSendMessage: (msg: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
+  onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
 }
 
 export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
@@ -39,7 +39,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
-  
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -64,7 +64,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
 
         if (!res.ok) throw new Error('Erro no upload');
         const data = await res.json();
-        
+
         const isImage = stagedFile.file.type.startsWith('image/');
         onSendMessage(
           trimmed || (isImage ? '📷 Imagem' : `📄 ${stagedFile.file.name}`),
@@ -72,7 +72,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
           `${SERVER_URL}${data.url}`,
           stagedFile.file.name
         );
-        
+
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
       } catch (err) {
@@ -84,7 +84,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     } else {
       onSendMessage(trimmed);
     }
-    
+
     setInput('');
   }, [input, stagedFile, onSendMessage]);
 
@@ -158,7 +158,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   };
 
   return (
-    <div 
+    <div
       className={`${styles.panel} ${isDragging ? styles.panelDragging : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -193,8 +193,8 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
                 <span className={styles.stagedDocName}>{stagedFile.file.name}</span>
               </div>
             )}
-            <button 
-              className={styles.removeStagedBtn} 
+            <button
+              className={styles.removeStagedBtn}
               onClick={() => {
                 URL.revokeObjectURL(stagedFile.previewUrl);
                 setStagedFile(null);
@@ -222,7 +222,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
               {!GIPHY_API_KEY ? (
                 <div style={{ padding: '20px', textAlign: 'center', color: '#F43F5E', fontSize: '13px' }}>
                   <p>🔑 <b>Chave do Giphy ausente!</b></p>
-                  <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Crie um arquivo <b>.env</b> na pasta <i>client</i> com:<br/><br/><code>VITE_GIPHY_API_KEY=sua_chave_aqui</code><br/><br/>Obtenha sua chave gratuita em <a href="https://developers.giphy.com/" target="_blank" style={{color: '#22D3EE'}}>developers.giphy.com</a></p>
+                  <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Crie um arquivo <b>.env</b> na pasta <i>client</i> com:<br /><br /><code>VITE_GIPHY_API_KEY=sua_chave_aqui</code><br /><br />Obtenha sua chave gratuita em <a href="https://developers.giphy.com/" target="_blank" style={{ color: '#22D3EE' }}>developers.giphy.com</a></p>
                 </div>
               ) : (
                 <Grid
@@ -247,16 +247,16 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
             ref={fileInputRef}
             onChange={handleFileUpload}
           />
-          <button 
-            className={styles.iconBtn} 
+          <button
+            className={styles.iconBtn}
             onClick={() => fileInputRef.current?.click()}
             title="Enviar Arquivo"
             disabled={isUploading}
           >
             {isUploading ? '⌛' : '📎'}
           </button>
-          
-          <button 
+
+          <button
             className={`${styles.iconBtn} ${showGiphy ? styles.activeIconBtn : ''}`}
             onClick={() => setShowGiphy(!showGiphy)}
             title="Enviar GIF"
@@ -323,7 +323,7 @@ const MessageBubble: React.FC<{ msg: ChatMessage; isMe: boolean }> = ({ msg, isM
             <span className={styles.msgTime}>{msg.timestamp}</span>
           </div>
         )}
-        
+
         {/* Render based on type */}
         {msg.type === 'image' && msg.url ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -357,7 +357,7 @@ const MessageBubble: React.FC<{ msg: ChatMessage; isMe: boolean }> = ({ msg, isM
             dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
           />
         )}
-        
+
         {isMe && <span className={styles.msgTimeMe}>{msg.timestamp}</span>}
       </div>
     </div>

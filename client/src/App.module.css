@@ -6,7 +6,9 @@
   color: var(--text-primary);
   overflow: hidden;
   position: relative;
-  padding-bottom: 35px; /* Space for StatusBar */
+  padding-top: 32px;
+  padding-bottom: 35px;
+  /* Space for StatusBar */
 }
 
 .mainContent {
@@ -49,11 +51,11 @@
     padding: 16px;
     gap: 16px;
   }
-  
+
   .chatSection {
     min-height: 400px;
   }
-  
+
   .sidePanels {
     width: 100%;
     min-width: auto;
@@ -61,8 +63,8 @@
     flex-wrap: wrap;
     overflow-y: visible;
   }
-  
-  .sidePanels > * {
+
+  .sidePanels>* {
     flex: 1;
     min-width: 320px;
   }
@@ -73,7 +75,7 @@
     padding: 24px;
     gap: 24px;
   }
-  
+
   .sidePanels {
     width: 380px;
     min-width: 380px;

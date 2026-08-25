@@ -9,7 +9,7 @@ import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
 // We re-declare minimal event interfaces here to avoid importing server types
 interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
-  receive_message: (userName: string, message: string, timestamp: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
+  receive_message: (userName: string, message: string, timestamp: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
@@ -38,7 +38,7 @@ interface ClientToServerEvents {
   set_username: (name: string) => void;
   create_room: (persistentId: string) => void;
   join_room: (roomIdOrCode: string, persistentId: string) => void;
-  send_message: (message: string, type?: 'text'|'image'|'giphy'|'file', url?: string, filename?: string) => void;
+  send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   remove_from_queue: (token: number) => void;
@@ -79,7 +79,7 @@ export interface SocketCallbacks {
   onKickedFromRoom?: () => void;
 }
 
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-olive.vercel.app' : 'http://localhost:3001');
 
 export function useSocket(callbacks: SocketCallbacks) {
   const socketRef = useRef<ConcordSocket | null>(null);

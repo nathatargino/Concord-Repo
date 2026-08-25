@@ -1,0 +1,65 @@
+.titlebar {
+    width: 100vw;
+    height: 32px;
+    background: #101017;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    -webkit-app-region: drag;
+    user-select: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.left {
+    display: flex;
+    align-items: center;
+    padding-left: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #a4a4b8;
+    gap: 8px;
+}
+
+.left svg {
+    color: #7C3AED;
+    width: 14px;
+    height: 14px;
+}
+
+.right {
+    display: flex;
+    height: 100%;
+    -webkit-app-region: no-drag;
+}
+
+.controlButton {
+    width: 46px;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: transparent;
+    border: none;
+    color: #a4a4b8;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.controlButton svg {
+    width: 12px;
+    height: 12px;
+}
+
+.controlButton:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.controlClose:hover {
+    background: #e81123;
+    color: white;
+}
