@@ -243,7 +243,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             setButtonLoading(btn, false);
 
             if (error) {
-                showMessage(tabContentPassword, 'Erro ao enviar e-mail de redefinição: ' + error.message, true);
+                let msg = error.message;
+                if (error.message.toLowerCase().includes('rate limit') || error.status === 429) {
+                    msg = 'Limite de envios temporário atingido. Por segurança do servidor de e-mail contra spam, aguarde alguns minutos antes de tentar novamente.';
+                }
+                showMessage(tabContentPassword, msg, true);
                 return;
             }
 
