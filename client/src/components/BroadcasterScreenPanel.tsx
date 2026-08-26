@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import styles from './BroadcasterScreenPanel.module.css';
 
@@ -7,25 +7,8 @@ interface Props {
   screenStream?: MediaStream | null;
 }
 
-export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, screenStream }) => {
+export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing }) => {
   const { amSharing } = useAppStore();
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (videoEl) {
-      if (screenStream) {
-        if (videoEl.srcObject !== screenStream) {
-          videoEl.srcObject = screenStream;
-        }
-        videoEl.play().catch((err) => {
-          console.debug('[BroadcasterScreenPanel] video play error:', err);
-        });
-      } else {
-        videoEl.srcObject = null;
-      }
-    }
-  }, [screenStream]);
 
   if (!amSharing) return null;
 
@@ -47,18 +30,10 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, screenS
       </div>
 
       <div className={styles.videoWrapper}>
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className={styles.video}
-        />
-        <div className={styles.overlayInfo}>
-          <div className={styles.statusTag}>
-            <span className={styles.statusDot} />
-            Transmitindo tela
-          </div>
+        <div className={styles.placeholderContainer}>
+          <div className={styles.pulseIcon}>📡</div>
+          <span className={styles.placeholderTitle}>Sua tela está sendo transmitida</span>
+          <span className={styles.placeholderSubtitle}>Prévia desativada para economia de desempenho</span>
         </div>
       </div>
 
