@@ -71,7 +71,7 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => 
 
   return (
     <div className={styles.overlay}>
-      <Draggable nodeRef={containerRef} handle=".drag-handle" bounds="parent" defaultPosition={defaultPosition}>
+      <Draggable nodeRef={containerRef as any} handle=".drag-handle" bounds="parent" defaultPosition={defaultPosition}>
         <div
           ref={containerRef}
           className={`${styles.panel} ${isFullscreen ? styles.fullscreen : ''}`}

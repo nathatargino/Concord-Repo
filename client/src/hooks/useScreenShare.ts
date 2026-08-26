@@ -31,7 +31,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
       playScreenShareStartSound();
 
       // Listen for user stopping via browser UI
-      stream.getVideoTracks()[0].addEventListener('ended', () => {
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopScreenShare();
       });
 
@@ -63,7 +63,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
       addScreenShareTrack(stream);
 
       // Listen for user stopping via browser UI
-      stream.getVideoTracks()[0].addEventListener('ended', () => {
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopScreenShare();
       });
 

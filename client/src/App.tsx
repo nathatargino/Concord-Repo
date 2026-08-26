@@ -269,7 +269,6 @@ export default function App() {
           <BroadcasterScreenPanel
             onStopSharing={screenShare.stopScreenShare}
             onChangeSharing={screenShare.changeScreenShare}
-            screenStream={screenShare.streamRef.current}
           />
         </div>
       </main>

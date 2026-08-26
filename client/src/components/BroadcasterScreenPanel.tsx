@@ -5,7 +5,6 @@ import styles from './BroadcasterScreenPanel.module.css';
 interface Props {
   onStopSharing: () => void;
   onChangeSharing?: () => void;
-  screenStream?: MediaStream | null;
 }
 
 export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
