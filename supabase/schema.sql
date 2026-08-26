@@ -7,10 +7,14 @@
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     username TEXT NOT NULL,
+    email TEXT,
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure email column exists if table was created previously
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
 
 -- Enable RLS on profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -28,15 +32,25 @@ CREATE POLICY "Users can update their own profile."
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.profiles (id, username, avatar_url)
+    INSERT INTO public.profiles (id, username, email, avatar_url)
     VALUES (
         NEW.id,
         COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+        NEW.email,
         NEW.raw_user_meta_data->>'avatar_url'
-    );
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET email = EXCLUDED.email,
+        username = COALESCE(EXCLUDED.username, public.profiles.username);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Backfill email for existing profiles
+UPDATE public.profiles p
+SET email = u.email
+FROM auth.users u
+WHERE p.id = u.id AND p.email IS NULL;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
