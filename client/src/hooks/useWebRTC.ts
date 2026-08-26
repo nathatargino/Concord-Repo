@@ -9,14 +9,16 @@ type EmitFn = (event: string, ...args: unknown[]) => void;
 interface PeerConnection {
   pc: RTCPeerConnection;
   audioEl?: HTMLAudioElement;
+  screenAudioEl?: HTMLAudioElement;
   makingOffer: boolean;
   ignoreOffer: boolean;
   screenSender?: RTCRtpSender;
+  screenAudioSender?: RTCRtpSender;
 }
 
 type AttachRemoteFn = (audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => void;
 
-export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
+export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, attachRemoteScreenAudio?: AttachRemoteFn) {
   const peersRef = useRef<Map<string, PeerConnection>>(new Map());
   const pendingIceRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -60,12 +62,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
         }
       }
 
-      // Add screen share track if active
+      // Add screen share tracks if active
       if (screenStreamRef.current) {
         for (const track of screenStreamRef.current.getTracks()) {
           const sender = pc.addTrack(track, screenStreamRef.current);
           if (track.kind === 'video') {
             peerData.screenSender = sender;
+          } else if (track.kind === 'audio') {
+            peerData.screenAudioSender = sender;
           }
         }
       }
@@ -93,21 +97,38 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       // Remote tracks
       pc.ontrack = ({ track, streams }) => {
         if (track.kind === 'audio') {
-          let audioEl = peerData.audioEl;
-          if (!audioEl) {
-            audioEl = document.createElement('audio');
-            audioEl.id = `remote-audio-${peerId}`;
-            audioEl.autoplay = true;
+          const isScreenAudio = (streams[0]?.getVideoTracks().length ?? 0) > 0;
+          if (isScreenAudio) {
+            let screenAudioEl = peerData.screenAudioEl;
+            if (!screenAudioEl) {
+              screenAudioEl = document.createElement('audio');
+              screenAudioEl.id = `remote-screen-audio-${peerId}`;
+              screenAudioEl.autoplay = true;
 
-            document.getElementById('remote-audios')?.appendChild(audioEl);
-            peerData.audioEl = audioEl;
-          }
-          // Always route through GainNode so the volume slider works.
-          if (attachRemoteStream) {
-            attachRemoteStream(audioEl, streams[0] ?? new MediaStream(), peerId);
+              document.getElementById('remote-audios')?.appendChild(screenAudioEl);
+              peerData.screenAudioEl = screenAudioEl;
+            }
+            if (attachRemoteScreenAudio) {
+              attachRemoteScreenAudio(screenAudioEl, streams[0] ?? new MediaStream([track]), peerId);
+            } else {
+              screenAudioEl.srcObject = streams[0] ?? new MediaStream([track]);
+            }
           } else {
-            // Fallback: no GainNode — volume slider will NOT affect this stream.
-            audioEl.srcObject = streams[0] ?? null;
+            let audioEl = peerData.audioEl;
+            if (!audioEl) {
+              audioEl = document.createElement('audio');
+              audioEl.id = `remote-audio-${peerId}`;
+              audioEl.autoplay = true;
+
+              document.getElementById('remote-audios')?.appendChild(audioEl);
+              peerData.audioEl = audioEl;
+            }
+            // Always route through GainNode so the volume slider works.
+            if (attachRemoteStream) {
+              attachRemoteStream(audioEl, streams[0] ?? new MediaStream([track]), peerId);
+            } else {
+              audioEl.srcObject = streams[0] ?? null;
+            }
           }
         }
 
@@ -116,6 +137,25 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
           const stream = streams[0] || new MediaStream([track]);
           remoteScreenStreamsRef.current.set(peerId, stream);
           setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+
+          // If stream also contains screen audio track, connect it to screen audio
+          const screenAudioTrack = stream.getAudioTracks()[0];
+          if (screenAudioTrack) {
+            let screenAudioEl = peerData.screenAudioEl;
+            if (!screenAudioEl) {
+              screenAudioEl = document.createElement('audio');
+              screenAudioEl.id = `remote-screen-audio-${peerId}`;
+              screenAudioEl.autoplay = true;
+
+              document.getElementById('remote-audios')?.appendChild(screenAudioEl);
+              peerData.screenAudioEl = screenAudioEl;
+            }
+            if (attachRemoteScreenAudio) {
+              attachRemoteScreenAudio(screenAudioEl, stream, peerId);
+            } else {
+              screenAudioEl.srcObject = stream;
+            }
+          }
 
           const { setScreenShare } = useAppStore.getState();
           const users = useAppStore.getState().users;
@@ -141,7 +181,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
       return peerData;
     },
-    [emit, attachRemoteStream]
+    [emit, attachRemoteStream, attachRemoteScreenAudio]
   );
 
   const flushPendingIce = useCallback(async (peerId: string) => {
@@ -195,6 +235,11 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
       peer.audioEl.pause();
       peer.audioEl.srcObject = null;
       peer.audioEl.remove();
+    }
+    if (peer.screenAudioEl) {
+      peer.screenAudioEl.pause();
+      peer.screenAudioEl.srcObject = null;
+      peer.screenAudioEl.remove();
     }
     peersRef.current.delete(userId);
     pendingIceRef.current.delete(userId);
@@ -296,6 +341,11 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
         peer.audioEl.srcObject = null;
         peer.audioEl.remove();
       }
+      if (peer.screenAudioEl) {
+        peer.screenAudioEl.pause();
+        peer.screenAudioEl.srcObject = null;
+        peer.screenAudioEl.remove();
+      }
     });
     peersRef.current.clear();
     pendingIceRef.current.clear();
@@ -311,14 +361,26 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
 
   const addScreenShareTrack = useCallback((stream: MediaStream) => {
     screenStreamRef.current = stream;
-    const track = stream.getVideoTracks()[0];
-    if (!track) return;
+    const videoTrack = stream.getVideoTracks()[0];
+    const audioTrack = stream.getAudioTracks()[0];
 
     peersRef.current.forEach((peer) => {
-      if (peer.screenSender) {
-        peer.screenSender.replaceTrack(track);
-      } else {
-        peer.screenSender = peer.pc.addTrack(track, stream);
+      if (videoTrack) {
+        if (peer.screenSender) {
+          peer.screenSender.replaceTrack(videoTrack);
+        } else {
+          peer.screenSender = peer.pc.addTrack(videoTrack, stream);
+        }
+      }
+
+      if (audioTrack) {
+        if (peer.screenAudioSender) {
+          peer.screenAudioSender.replaceTrack(audioTrack);
+        } else {
+          peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+        }
+      } else if (peer.screenAudioSender) {
+        peer.screenAudioSender.replaceTrack(null);
       }
     });
   }, []);
@@ -330,6 +392,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn) {
     peersRef.current.forEach((peer) => {
       if (peer.screenSender) {
         peer.screenSender.replaceTrack(null);
+      }
+      if (peer.screenAudioSender) {
+        peer.screenAudioSender.replaceTrack(null);
       }
     });
   }, []);

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Draggable from 'react-draggable';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import styles from './ScreenSharePanel.module.css';
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 
 export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => {
   const { screenShareUserId, screenShareUserName, amSharing } = useAppStore();
+  const { screenShareVol, setScreenShareVol } = useAudioStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -83,6 +85,18 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => 
               <span className={styles.liveBadge}>AO VIVO</span>
             </div>
             <div className={styles.actions}>
+              <div className={styles.volControl} title="Volume da Transmissão">
+                <span className={styles.volIcon}>🔊</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="200"
+                  value={screenShareVol}
+                  onChange={(e) => setScreenShareVol(Number(e.target.value))}
+                  className={styles.volSlider}
+                />
+                <span className={styles.volText}>{screenShareVol}%</span>
+              </div>
               <button className={styles.actionBtn} onClick={togglePiP} title="Picture-in-Picture">
                 📌
               </button>
@@ -101,6 +115,7 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => 
               ref={videoRef}
               autoPlay
               playsInline
+              muted
               className={styles.video}
             />
           </div>

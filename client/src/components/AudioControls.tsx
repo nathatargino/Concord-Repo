@@ -11,11 +11,13 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     ytVol,
     micVol,
     remoteVol,
+    screenShareVol,
     micMuted,
     callMuted,
     setYtVol,
     setMicVol,
     setRemoteVol,
+    setScreenShareVol,
     toggleMicMute,
     toggleCallMute,
     resetAll,
@@ -102,6 +104,22 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
               max="100"
               value={ytVol}
               onChange={(e) => setYtVol(Number(e.target.value))}
+              className={styles.range}
+              disabled={callMuted}
+            />
+          </div>
+
+          <div className={styles.sliderGroup}>
+            <div className={styles.sliderHeader}>
+              <span className={styles.sliderLabel}>Áudio da Transmissão</span>
+              <span className={styles.sliderValue}>{screenShareVol}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={screenShareVol}
+              onChange={(e) => setScreenShareVol(Number(e.target.value))}
               className={styles.range}
               disabled={callMuted}
             />

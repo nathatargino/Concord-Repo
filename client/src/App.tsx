@@ -67,7 +67,8 @@ export default function App() {
   // ─── WEBRTC SYSTEM ───────────────────────────────────────────────
   const rtc = useWebRTC(
     (event, ...args) => socket.emit(event as any, ...args),
-    audio.attachRemoteStream
+    audio.attachRemoteStream,
+    audio.attachRemoteScreenAudio
   );
 
   let handleLeaveVoice = () => {};
@@ -267,6 +268,7 @@ export default function App() {
           <AudioControls onUnlockAudio={yt.unlock} />
           <BroadcasterScreenPanel
             onStopSharing={screenShare.stopScreenShare}
+            onChangeSharing={screenShare.changeScreenShare}
             screenStream={screenShare.streamRef.current}
           />
         </div>

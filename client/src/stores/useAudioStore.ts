@@ -7,6 +7,7 @@ interface AudioState {
   ytVol: number;
   micVol: number;
   remoteVol: number;
+  screenShareVol: number;
   micMuted: boolean;
   callMuted: boolean;
   noiseSuppression: boolean;
@@ -17,6 +18,7 @@ interface AudioState {
   setYtVol: (v: number) => void;
   setMicVol: (v: number) => void;
   setRemoteVol: (v: number) => void;
+  setScreenShareVol: (v: number) => void;
   setMicMuted: (v: boolean) => void;
   toggleMicMute: () => void;
   toggleCallMute: () => void;
@@ -29,6 +31,7 @@ const defaults = {
   ytVol: 80,
   micVol: 100,
   remoteVol: 100,
+  screenShareVol: 100,
   micMuted: false,
   callMuted: false,
   noiseSuppression: true,
@@ -44,6 +47,7 @@ export const useAudioStore = create<AudioState>()(
       setYtVol: (ytVol) => set({ ytVol: Math.min(100, Math.max(0, ytVol)) }),
       setMicVol: (micVol) => set({ micVol: Math.min(200, Math.max(0, micVol)) }),
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),
+      setScreenShareVol: (screenShareVol) => set({ screenShareVol: Math.min(200, Math.max(0, screenShareVol)) }),
       setMicMuted: (micMuted) => set({ micMuted }),
       toggleMicMute: () => set((s) => ({ micMuted: !s.micMuted })),
       toggleCallMute: () => set((s) => ({ callMuted: !s.callMuted })),
@@ -66,3 +70,4 @@ export const useAudioStore = create<AudioState>()(
     }
   )
 );
+

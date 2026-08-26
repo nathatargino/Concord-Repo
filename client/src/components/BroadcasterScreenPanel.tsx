@@ -4,10 +4,11 @@ import styles from './BroadcasterScreenPanel.module.css';
 
 interface Props {
   onStopSharing: () => void;
+  onChangeSharing?: () => void;
   screenStream?: MediaStream | null;
 }
 
-export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing }) => {
+export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
   const { amSharing } = useAppStore();
 
   if (!amSharing) return null;
@@ -38,11 +39,21 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing }) => {
       </div>
 
       <div className={styles.footer}>
+        {onChangeSharing && (
+          <button
+            className={styles.changeBtn}
+            onClick={onChangeSharing}
+            title="Trocar janela, guia ou tela inteira"
+          >
+            🔄 Trocar Tela
+          </button>
+        )}
         <button
           className={styles.stopBtn}
           onClick={onStopSharing}
+          title="Encerrar compartilhamento"
         >
-          🛑 Parar Compartilhamento
+          🛑 Parar
         </button>
       </div>
     </div>

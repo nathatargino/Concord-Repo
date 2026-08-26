@@ -82,7 +82,58 @@
 
 .actions {
   display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.volControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+  margin-right: 4px;
+}
+
+.volIcon {
+  font-size: 11px;
+}
+
+.volSlider {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--neon-color, #22d3ee);
+  cursor: pointer;
+}
+
+.volSlider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--neon-color, #22d3ee);
+  border: none;
+  cursor: pointer;
+}
+
+.volText {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 28px;
 }
 
 .actionBtn, .closeBtn {

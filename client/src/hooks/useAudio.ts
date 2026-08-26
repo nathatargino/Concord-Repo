@@ -16,6 +16,7 @@ interface AudioNodes {
 
 const speakingAnimations = new Map<string, number>();
 const remoteGains = new Map<string, GainNode>();
+const screenAudioGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
@@ -181,6 +182,35 @@ export function useAudio() {
     }
   }, []);
 
+  const attachRemoteScreenAudio = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
+    try {
+      const { screenShareVol, callMuted, localMutedUsers } = useAudioStore.getState();
+      const isLocalMuted = localMutedUsers.includes(userId);
+      audioEl.srcObject = stream;
+      audioEl.volume = 0;
+      audioEl.muted = true;
+      audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
+
+      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+      if (activeCtx.state === 'suspended') {
+        activeCtx.resume();
+      }
+
+      let gainNode = screenAudioGains.get(userId);
+      if (!gainNode) {
+        const source = activeCtx.createMediaStreamSource(stream);
+        gainNode = activeCtx.createGain();
+        source.connect(gainNode);
+        gainNode.connect(activeCtx.destination);
+        screenAudioGains.set(userId, gainNode);
+      }
+
+      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+    } catch (err) {
+      console.warn('[useAudio] attachRemoteScreenAudio failed', err);
+    }
+  }, []);
+
   const applyMicSettings = useCallback(() => {
     if (!audioNodes) return;
     const { micVol, micMuted } = useAudioStore.getState();
@@ -189,7 +219,7 @@ export function useAudio() {
   }, []);
 
   const applyRemoteSettings = useCallback(() => {
-    const { remoteVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
+    const { remoteVol, screenShareVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
       const userId = audio.id.replace('remote-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
@@ -202,6 +232,11 @@ export function useAudio() {
         audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
         audio.muted = callMuted || isLocalMuted;
       }
+    });
+
+    screenAudioGains.forEach((gainNode, userId) => {
+      const isLocalMuted = localMutedUsers.includes(userId);
+      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
     });
   }, []);
 
@@ -227,6 +262,11 @@ export function useAudio() {
       gain.disconnect();
       remoteGains.delete(userId);
     }
+    const screenGain = screenAudioGains.get(userId);
+    if (screenGain) {
+      screenGain.disconnect();
+      screenAudioGains.delete(userId);
+    }
   }, []);
 
   /**
@@ -240,6 +280,12 @@ export function useAudio() {
       micTrack.stop();
       micTrack = null;
     }
+
+    screenAudioGains.forEach((gain) => gain.disconnect());
+    screenAudioGains.clear();
+
+    remoteGains.forEach((gain) => gain.disconnect());
+    remoteGains.clear();
 
     // Disconnect and close the AudioContext
     if (audioNodes) {
@@ -265,6 +311,7 @@ export function useAudio() {
   return {
     processMicStream,
     attachRemoteStream,
+    attachRemoteScreenAudio,
     applyMicSettings,
     applyRemoteSettings,
     applyNoiseSuppressionSettings,
