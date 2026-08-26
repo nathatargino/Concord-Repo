@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styles from './LobbyPage.module.css';
+import { createRoomInSupabase, findRoomInSupabase } from '../lib/supabase';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
 
@@ -37,19 +38,32 @@ export const LobbyPage: React.FC = () => {
         localStorage.setItem('concord_pid', persistentId);
       }
 
-      const res = await fetch(`${SERVER_URL}/api/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ persistentId })
-      });
-      if (!res.ok) throw new Error('Falha ao criar sala');
-      const room = await res.json();
-      
+      let room: { id: string; code: string } | null = null;
+
+      try {
+        const res = await fetch(`${SERVER_URL}/api/rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ persistentId })
+        });
+        if (res.ok) {
+          room = await res.json();
+        }
+      } catch (err) {
+        console.warn('Server room creation fallback:', err);
+      }
+
+      const generatedCode = room?.code || Math.random().toString(36).substring(2, 8).toUpperCase();
+      const roomId = room?.id || crypto.randomUUID();
+
+      // Persist created room to Supabase DB
+      await createRoomInSupabase('Sala Concord', generatedCode);
+
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
         ? 'https://concord-olive.vercel.app' 
         : window.location.origin;
-      const inviteUrl = `${baseUrl}/#/room/${room.id}?code=${room.code}`;
+      const inviteUrl = `${baseUrl}/#/room/${roomId}?code=${generatedCode}`;
       
       try {
         if ((window as any).electron?.copyToClipboard) {
@@ -61,7 +75,7 @@ export const LobbyPage: React.FC = () => {
       } catch (err) {
         console.warn('Clipboard write failed:', err);
       }
-      navigate(`/room/${room.id}?code=${room.code}`);
+      navigate(`/room/${roomId}?code=${generatedCode}`);
     } catch (e) {
       setError('Não foi possível criar a sala. Tente novamente.');
     } finally {
@@ -78,13 +92,27 @@ export const LobbyPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${SERVER_URL}/api/rooms/${trimmed}`);
-      if (!res.ok) {
-        setError('Sala não encontrada ou expirada. Verifique o código.');
-        return;
+      // 1. Try querying Supabase room table first
+      const supabaseRoom = await findRoomInSupabase(trimmed);
+
+      // 2. Fallback check on server API
+      let serverRoom = null;
+      try {
+        const res = await fetch(`${SERVER_URL}/api/rooms/${trimmed}`);
+        if (res.ok) {
+          serverRoom = await res.json();
+        }
+      } catch (err) {
+        console.warn('Server room lookup fallback:', err);
       }
-      const room = await res.json();
-      navigate(`/room/${room.id}?code=${room.code}`);
+
+      if (supabaseRoom || serverRoom) {
+        const roomId = serverRoom?.id || supabaseRoom?.id || crypto.randomUUID();
+        const roomCode = serverRoom?.code || supabaseRoom?.code || trimmed;
+        navigate(`/room/${roomId}?code=${roomCode}`);
+      } else {
+        setError('Sala não encontrada ou expirada. Verifique o código.');
+      }
     } catch (e) {
       setError('Erro ao verificar a sala. Tente novamente.');
     } finally {

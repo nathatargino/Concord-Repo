@@ -16,14 +16,15 @@
   "dependencies": {
     "@giphy/js-fetch-api": "^5.8.0",
     "@giphy/react-components": "^10.1.2",
+    "@supabase/supabase-js": "^2.112.4",
+    "electron-updater": "^6.8.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-draggable": "^4.7.1",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.2",
     "socket.io-client": "^4.8.3",
-    "zustand": "^5.0.15",
-    "electron-updater": "^6.8.9"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
