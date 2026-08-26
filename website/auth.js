@@ -276,13 +276,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-                redirectTo: window.location.origin + '/login.html'
+                redirectTo: window.location.origin + '/reset-password.html'
             });
 
             if (error) {
-                showAuthMessage(loginForm, 'Erro ao enviar e-mail de recuperação. Tente novamente.', true);
+                showAuthMessage(loginForm, 'Erro ao enviar e-mail de recuperação: ' + error.message, true);
             } else {
-                showAuthMessage(loginForm, 'E-mail de recuperação enviado! Verifique sua caixa de entrada.', false);
+                showAuthMessage(loginForm, 'E-mail de recuperação enviado com sucesso! Verifique sua caixa de entrada.', false);
             }
         } catch (err) {
             showAuthMessage(loginForm, 'Erro de conexão. Tente novamente.', true);
@@ -290,12 +290,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ============================================
-    //  SESSÃO — Se já estiver logado, redirecionar
+    //  SESSÃO & URL PARAMS
     // ============================================
-    async function checkSession() {
+    async function checkSessionAndParams() {
+        // Se a URL contiver hash de recuperação, redirecionar para reset-password.html
+        if (window.location.hash.includes('type=recovery')) {
+            window.location.href = 'reset-password.html' + window.location.hash;
+            return;
+        }
+
+        // Se veio de uma redefinição com sucesso
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('reset') === 'success' && loginForm) {
+            showAuthMessage(loginForm, 'Sua senha foi redefinida com sucesso! Por favor, faça login com sua nova senha.', false);
+        }
+
         try {
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) {
+            if (session && urlParams.get('reset') !== 'success') {
                 // Já está logado, ir direto para o site
                 window.location.href = 'index.html';
             }
@@ -303,6 +315,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // Ignora erro silenciosamente
         }
     }
-    checkSession();
+    checkSessionAndParams();
 
 });

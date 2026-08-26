@@ -530,10 +530,190 @@
     cursor: pointer;
     transition: all var(--transition-fast);
     font-family: inherit;
+    text-decoration: none;
 }
 
 .dropdown-item:hover {
-    background: rgba(255, 45, 85, 0.1);
-    color: #ff4d6a;
+    background: rgba(0, 212, 255, 0.1);
+    color: var(--accent-cyan);
 }
+
+.dropdown-item-danger:hover {
+    background: rgba(255, 45, 85, 0.1) !important;
+    color: #ff4d6a !important;
+}
+
+/* ================================================
+   PROFILE & ACCOUNT MANAGEMENT STYLES
+   ================================================ */
+
+.profile-card {
+    max-width: 520px;
+}
+
+.profile-user-summary {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg-card-subtle, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+}
+
+.profile-avatar-large {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--gradient-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+}
+
+.profile-user-details {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.profile-user-details .user-display-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile-user-details .user-display-email {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.profile-tabs {
+    display: flex;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 6px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: 24px;
+}
+
+[data-theme="light"] .profile-tabs {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.profile-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: inherit;
+}
+
+.profile-tab:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.profile-tab.active {
+    background: var(--bg-card);
+    color: var(--accent-cyan);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-hover);
+}
+
+.profile-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.profile-tab-content.active {
+    display: block;
+}
+
+.input-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+    line-height: 1.4;
+}
+
+.password-info-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    background: rgba(0, 212, 255, 0.08);
+    border: 1px solid rgba(0, 212, 255, 0.25);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+
+.password-info-box svg {
+    color: var(--accent-cyan);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.auth-state-box {
+    text-align: center;
+    padding: 24px 16px;
+}
+
+.auth-state-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 18px;
+    background: rgba(0, 212, 255, 0.1);
+    color: var(--accent-cyan);
+}
+
+.auth-state-icon.success {
+    background: rgba(52, 199, 89, 0.12);
+    color: #34c759;
+}
+
+.auth-state-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: var(--text-primary);
+}
+
+.auth-state-desc {
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 24px;
+}
+
 

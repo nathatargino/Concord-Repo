@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Gerencie seu perfil, altere seu nome de usuário ou redefina sua senha no Concord.">
+    <title>Editar Perfil — Concord</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="assets/logo-light.png?v=4">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="auth.css">
+</head>
+<body class="auth-page">
+    <div class="auth-page-bg">
+        <div class="hero-orb hero-orb-1"></div>
+        <div class="hero-orb hero-orb-2"></div>
+        <div class="hero-orb hero-orb-3"></div>
+        <div class="hero-grid"></div>
+    </div>
+
+    <div class="auth-page-container">
+        <!-- Left Side — Branding & Profile Context -->
+        <div class="auth-branding">
+            <a href="index.html" class="auth-back-link">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                Voltar para a página inicial
+            </a>
+            <a href="index.html" class="nav-logo">
+                <img src="assets/logo.png" alt="Concord Logo" class="main-logo-auth logo-dark">
+                <img src="assets/logo-light.png" alt="Concord Logo" class="main-logo-auth logo-light">
+            </a>
+            <h1 class="auth-branding-title">Editar Perfil</h1>
+            <p class="auth-branding-desc">Gerencie os detalhes da sua conta Concord. Altere seu nome visível ou solicite uma redefinição segura de senha.</p>
+
+            <div class="auth-branding-features">
+                <div class="auth-feature">
+                    <div class="auth-feature-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    </div>
+                    <div>
+                        <h4>Identidade Exclusiva</h4>
+                        <p>Nomes únicos para você ser facilmente encontrado</p>
+                    </div>
+                </div>
+                <div class="auth-feature">
+                    <div class="auth-feature-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    </div>
+                    <div>
+                        <h4>Segurança Avançada</h4>
+                        <p>Autenticação protegida e verificação criptográfica</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side — Edit Profile Card -->
+        <div class="auth-form-wrapper">
+            <div class="auth-card profile-card">
+                
+                <!-- Account Summary -->
+                <div class="profile-user-summary">
+                    <div class="profile-avatar-large" id="profileAvatar">?</div>
+                    <div class="profile-user-details">
+                        <span class="user-display-name" id="profileDisplayName">Carregando...</span>
+                        <span class="user-display-email" id="profileDisplayEmail">...</span>
+                    </div>
+                </div>
+
+                <!-- Tabs: Alterar Nome vs Alterar Senha -->
+                <div class="profile-tabs">
+                    <button type="button" class="profile-tab active" id="tabBtnUsername" data-tab="username">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        Alterar Nome de Usuário
+                    </button>
+                    <button type="button" class="profile-tab" id="tabBtnPassword" data-tab="password">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        Alterar Senha
+                    </button>
+                </div>
+
+                <!-- TAB 1: Alterar Nome de Usuário -->
+                <div class="profile-tab-content active" id="tabContentUsername">
+                    <div class="auth-card-header" style="text-align: left; margin-bottom: 20px;">
+                        <h2 style="font-size: 1.3rem;">Nome de Usuário</h2>
+                        <p>Escolha um novo nome de usuário disponível.</p>
+                    </div>
+
+                    <form class="auth-form" id="changeUsernameForm">
+                        <div class="form-group">
+                            <label for="newUsernameInput">Novo Nome de Usuário</label>
+                            <div class="input-wrapper">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                <input type="text" id="newUsernameInput" placeholder="Seu novo nome de usuário" minlength="2" maxlength="32" required>
+                            </div>
+                            <p class="input-hint">Deve ter entre 2 e 32 caracteres. Nomes já em uso não são permitidos.</p>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-full btn-auth" id="saveUsernameBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                            Salvar Alterações
+                        </button>
+                    </form>
+                </div>
+
+                <!-- TAB 2: Alterar Senha -->
+                <div class="profile-tab-content" id="tabContentPassword">
+                    <div class="auth-card-header" style="text-align: left; margin-bottom: 20px;">
+                        <h2 style="font-size: 1.3rem;">Alterar Senha</h2>
+                        <p>Solicite a redefinição de segurança para criar uma nova senha.</p>
+                    </div>
+
+                    <div id="passwordRequestState">
+                        <div class="password-info-box">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            <div>
+                                Por motivos de segurança, enviaremos um link de autenticação direta para o seu e-mail cadastrado (<strong id="passwordTargetEmail">...</strong>).
+                            </div>
+                        </div>
+
+                        <button type="button" class="btn btn-primary btn-full btn-auth" id="sendResetEmailBtn">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            Enviar E-mail de Redefinição
+                        </button>
+                    </div>
+
+                    <!-- Beautiful Email Sent Notification State -->
+                    <div class="auth-state-box" id="passwordSentState" style="display: none;">
+                        <div class="auth-state-icon success">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        </div>
+                        <h3 class="auth-state-title">E-mail Enviado com Sucesso!</h3>
+                        <p class="auth-state-desc">
+                            Enviamos as instruções e o link seguro de redefinição para <strong id="sentConfirmEmail" style="color: var(--accent-cyan);"></strong>.<br><br>
+                            Acesse a sua caixa de entrada e clique no link para definir sua nova senha.
+                        </p>
+                        <button type="button" class="btn btn-outline btn-full btn-sm" id="resendEmailBtn">
+                            Reenviar E-mail
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase.js"></script>
+    <script src="profile.js"></script>
+</body>
+</html>

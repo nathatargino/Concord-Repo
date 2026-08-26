@@ -180,16 +180,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const heroCtaBtn = document.getElementById('heroCtaBtn');
     const heroCtaText = document.getElementById('heroCtaText');
 
-    function updateNavForUser(user) {
+    async function updateNavForUser(user) {
         if (!navAuth || !navUser) return;
 
         if (user) {
             const meta = user.user_metadata || {};
-            const displayName = meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
-            const initials = getInitials(displayName);
-            const avatarUrl = meta.avatar_url;
+            let displayName = localStorage.getItem('concord_username') || meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
+            let avatarUrl = meta.avatar_url;
 
-            // Update nav
+            // Update nav with initial known values
             navAuth.style.display = 'none';
             navUser.style.display = 'flex';
             navUserName.textContent = displayName;
@@ -198,12 +197,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 navUserAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 if (dropdownAvatar) dropdownAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
             } else {
-                navUserAvatar.textContent = initials;
-                if (dropdownAvatar) dropdownAvatar.textContent = initials;
+                navUserAvatar.textContent = getInitials(displayName);
+                if (dropdownAvatar) dropdownAvatar.textContent = getInitials(displayName);
             }
 
             if (dropdownName) dropdownName.textContent = displayName;
             if (dropdownEmail) dropdownEmail.textContent = user.email;
+
+            // Fetch latest profile from Supabase profiles table
+            try {
+                const { data: profile } = await supabaseClient
+                    .from('profiles')
+                    .select('username, avatar_url')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (profile?.username && profile.username !== displayName) {
+                    displayName = profile.username;
+                    navUserName.textContent = displayName;
+                    if (dropdownName) dropdownName.textContent = displayName;
+                    if (!profile.avatar_url) {
+                        navUserAvatar.textContent = getInitials(displayName);
+                        if (dropdownAvatar) dropdownAvatar.textContent = getInitials(displayName);
+                    }
+                }
+            } catch (err) {
+                // Ignore silent fetch error
+            }
 
             // Update Hero button
             if (heroCtaBtn && heroCtaText) {
@@ -234,79 +254,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('click', (e) => {
             if (userDropdown && !userDropdown.contains(e.target) && !userMenuBtn.contains(e.target)) {
                 userDropdown.classList.remove('active');
-            }
-        });
-    }
-
-    // Alterar Nome de Usuário
-    const changeUsernameBtn = document.getElementById('changeUsernameBtn');
-    if (changeUsernameBtn) {
-        changeUsernameBtn.addEventListener('click', async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session?.user) return;
-
-            const newUsername = prompt('Digite o seu novo Nome de Usuário:');
-            if (!newUsername || !newUsername.trim()) return;
-
-            const trimmedName = newUsername.trim();
-            if (trimmedName.length < 2 || trimmedName.length > 32) {
-                alert('O nome de usuário deve ter entre 2 e 32 caracteres.');
-                return;
-            }
-
-            // Verificar se o nome de usuário já está em uso
-            const { data: existingUser } = await supabaseClient
-                .from('profiles')
-                .select('id')
-                .ilike('username', trimmedName)
-                .neq('id', session.user.id)
-                .maybeSingle();
-
-            if (existingUser) {
-                alert('Este nome de usuário já está em uso por outra conta. Escolha outro.');
-                return;
-            }
-
-            // Atualizar na tabela profiles
-            const { error: profileErr } = await supabaseClient
-                .from('profiles')
-                .update({ username: trimmedName, updated_at: new Date().toISOString() })
-                .eq('id', session.user.id);
-
-            if (profileErr) {
-                alert('Erro ao atualizar nome no perfil: ' + profileErr.message);
-                return;
-            }
-
-            // Atualizar no auth metadata
-            await supabaseClient.auth.updateUser({
-                data: { username: trimmedName, display_name: trimmedName }
-            });
-
-            localStorage.setItem('concord_username', trimmedName);
-            alert('Nome de usuário alterado com sucesso para "' + trimmedName + '"!');
-            window.location.reload();
-        });
-    }
-
-    // Alterar Senha com confirmação por e-mail
-    const changePasswordBtn = document.getElementById('changePasswordBtn');
-    if (changePasswordBtn) {
-        changePasswordBtn.addEventListener('click', async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session?.user?.email) return;
-
-            const confirmAction = confirm('Enviaremos um e-mail de redefinição de senha com um link de segurança para: ' + session.user.email + '.\n\nDeseja continuar?');
-            if (!confirmAction) return;
-
-            const { error } = await supabaseClient.auth.resetPasswordForEmail(session.user.email, {
-                redirectTo: window.location.origin + '/login.html'
-            });
-
-            if (error) {
-                alert('Erro ao enviar e-mail de redefinição: ' + error.message);
-            } else {
-                alert('E-mail enviado com sucesso! Verifique a sua caixa de entrada para redefinir a senha.');
             }
         });
     }
