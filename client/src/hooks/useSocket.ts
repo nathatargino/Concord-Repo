@@ -114,7 +114,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
 
       // Auto-login with saved name
-      const savedName = localStorage.getItem('concord_username_v1');
+      const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
       if (savedName) {
         store.setMyName(savedName);
         socket.emit('set_username', savedName);

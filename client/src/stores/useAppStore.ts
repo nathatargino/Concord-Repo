@@ -56,7 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   // User
   myId: '',
-  myName: localStorage.getItem('concord_username_v1') || '',
+  myName: localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '',
   setMyId: (id) => set({ myId: id }),
   setMyName: (name) => set({ myName: name }),
 

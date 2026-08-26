@@ -150,6 +150,7 @@ export default function App() {
 
   const handleLogin = (name: string) => {
     store.setMyName(name);
+    localStorage.setItem('concord_username', name);
     localStorage.setItem('concord_username_v1', name);
     socket.emit('set_username', name);
     setShowLogin(false);
