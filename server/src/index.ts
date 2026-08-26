@@ -3,6 +3,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import { createClient } from '@supabase/supabase-js';
 import {
   ClientToServerEvents,
   InterServerEvents,
@@ -20,6 +21,13 @@ const httpServer = createServer(app);
 
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 const PORT = process.env.PORT || 3001;
+
+let rawServerUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+if (rawServerUrl && !rawServerUrl.startsWith('http://') && !rawServerUrl.startsWith('https://')) {
+  rawServerUrl = `https://${rawServerUrl}`;
+}
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabase = (rawServerUrl && supabaseKey) ? createClient(rawServerUrl, supabaseKey) : null;
 
 // ─── MIDDLEWARE ────────────────────────────────────────────────────
 app.use(cors({ origin: CLIENT_URL, credentials: true }));
@@ -115,10 +123,25 @@ app.get('/health', (_req, res) => {
 
 // ─── ROOM REST ENDPOINTS ──────────────────────────────────────────
 // POST /api/rooms — Create a new room (returns room info)
-app.post('/api/rooms', (req, res) => {
+app.post('/api/rooms', async (req, res) => {
   const { persistentId } = req.body;
   const room = createRoom(persistentId);
-  res.json(toRoomInfo(room));
+  const info = toRoomInfo(room);
+
+  // Asynchronously persist room to Supabase DB if server environment variables are set
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('rooms').insert({
+        code: info.code,
+        name: 'Sala Concord',
+      });
+      if (error) console.error('[Server Supabase] Room insert error:', error.message);
+    } catch (err: any) {
+      console.error('[Server Supabase] Room insert exception:', err);
+    }
+  }
+
+  res.json(info);
 });
 
 // GET /api/rooms/:idOrCode — Check if room exists and is valid

@@ -1,26 +1,41 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
+// Sanitize URL (ensure https:// prefix)
+let supabaseUrl = rawUrl.trim();
+if (supabaseUrl && !supabaseUrl.startsWith('http://') && !supabaseUrl.startsWith('https://')) {
+  supabaseUrl = `https://${supabaseUrl}`;
+}
+
+const isConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+if (!isConfigured) {
   console.warn(
     '[Concord Supabase] VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY não configuradas no .env. Algumas funcionalidades persistentes usarão modo local fallback.'
   );
 }
 
-// Global Supabase client instance
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseAnonKey || 'placeholder-key',
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
+// Safely initialize client instance to prevent top-level script crashes
+export const supabase = (() => {
+  try {
+    return createClient(
+      supabaseUrl || 'https://placeholder.supabase.co',
+      supabaseAnonKey || 'placeholder-key',
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      }
+    );
+  } catch (err) {
+    console.error('[Concord Supabase] Erro ao inicializar Supabase client:', err);
+    return createClient('https://placeholder.supabase.co', 'placeholder-key');
   }
-);
+})();
 
 // Helper type definitions
 export interface DbRoom {
