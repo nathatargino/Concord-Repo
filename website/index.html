@@ -13,6 +13,12 @@
     <link rel="icon" type="image/png" href="assets/logo-light.png?v=4">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="auth.css">
+    <script>
+        // Redireciona imediatamente para tela de redefinição se vier de link do e-mail do Supabase
+        if (window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery')) {
+            window.location.replace('reset-password.html' + window.location.search + window.location.hash);
+        }
+    </script>
 </head>
 <body>
     <!-- =================== NAVBAR =================== -->

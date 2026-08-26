@@ -1,7 +1,8 @@
 /* ================================================
    CONCORD — Reset Password Page Logic
    Detects recovery token, verifies duplicate password,
-   updates password in Supabase Auth, signs out and redirects.
+   clears inputs on duplicate, updates password in Supabase Auth,
+   shows 2s loading state, signs out and redirects to login.
    ================================================ */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -55,7 +56,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 <svg class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                 </svg>
-                Salvando alterações...
+                Processando...
             `;
         } else {
             btn.disabled = false;
@@ -75,9 +76,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     let currentUser = null;
     let isRecoveryMode = false;
 
-    // Check if URL hash contains recovery token or access_token
+    // Check if URL hash or query contains recovery token
     const hash = window.location.hash;
-    const isRecoveryHash = hash.includes('type=recovery') || hash.includes('access_token=');
+    const search = window.location.search;
+    const isRecoveryHash = hash.includes('type=recovery') || hash.includes('access_token=') || search.includes('type=recovery');
 
     // Listen for Auth state changes (Supabase handles recovery session automatically from hash)
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
@@ -98,7 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('Session check warning:', e);
     }
 
-    // If after 1.5s there is no session and no hash token, show invalid state
+    // If after 1.8s there is no session and no hash token, show invalid state
     setTimeout(() => {
         if (!currentUser && !isRecoveryHash) {
             if (resetPasswordForm) resetPasswordForm.style.display = 'none';
@@ -106,7 +108,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (resetFooter) resetFooter.style.display = 'none';
             if (invalidTokenState) invalidTokenState.style.display = 'block';
         }
-    }, 1500);
+    }, 1800);
 
     // Form Submit
     if (resetPasswordForm) {
@@ -145,21 +147,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (!currentUser?.email) {
                     setButtonLoading(savePasswordBtn, false);
-                    showMessage(resetPasswordForm, 'Sessão de recuperação expirada. Solicite um novo link.', true);
+                    showMessage(resetPasswordForm, 'Sessão de recuperação expirada ou inválida. Solicite um novo link.', true);
                     return;
                 }
 
                 // 1. Check if newPassword is the exact same password already in use
-                // Test login with current email and newPassword
-                const { data: testSign, error: testErr } = await supabaseClient.auth.signInWithPassword({
-                    email: currentUser.email,
-                    password: newPassword
-                });
+                let isSamePassword = false;
+                try {
+                    const { data: testSign, error: testErr } = await supabaseClient.auth.signInWithPassword({
+                        email: currentUser.email,
+                        password: newPassword
+                    });
 
-                if (!testErr && testSign?.user) {
-                    // Login succeeded -> It is the SAME password as before!
+                    if (!testErr && testSign?.user) {
+                        isSamePassword = true;
+                    }
+                } catch (signCheckErr) {
+                    console.warn('Password duplicate check warning:', signCheckErr);
+                }
+
+                if (isSamePassword) {
+                    // Password already in use -> clear inputs, alert user and focus
                     setButtonLoading(savePasswordBtn, false);
-                    showMessage(resetPasswordForm, 'Esta senha já está em uso na sua conta. Por favor, escolha uma senha diferente.', true);
+                    showMessage(resetPasswordForm, 'Esta senha já está em uso na sua conta. Por favor, digite uma nova senha.', true);
+                    newPasswordInput.value = '';
+                    confirmNewPasswordInput.value = '';
+                    newPasswordInput.focus();
                     return;
                 }
 
@@ -174,16 +187,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
-                // 3. Success! Show message, sign out user and redirect to login
-                showMessage(resetPasswordForm, 'Senha alterada com sucesso! Desconectando sua conta para que você faça login com a nova senha...', false);
+                // 3. Success! Show confirmation and maintain loading state for 2 seconds
+                showMessage(resetPasswordForm, 'Senha redefinida com sucesso! Redirecionando para o login...', false);
+                setButtonLoading(savePasswordBtn, true);
+                savePasswordBtn.innerHTML = `
+                    <svg class="spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                    Senha alterada! Redirecionando...
+                `;
 
-                // Sign out
+                // Desloga o usuário para exigir login com a nova senha
                 await supabaseClient.auth.signOut();
 
-                // Redirect to login with success flag
+                // Aguarda 2 segundos carregando antes de redirecionar para a tela de login
                 setTimeout(() => {
                     window.location.href = 'login.html?reset=success';
-                }, 1800);
+                }, 2000);
 
             } catch (err) {
                 console.error('Password reset error:', err);
