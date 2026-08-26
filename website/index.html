@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Concord — Comunicação descentralizada e sem fronteiras. Conecte-se com seus amigos em chamadas de voz, vídeo e chat em tempo real.">
+    <meta name="keywords" content="Concord, comunicação, chamadas de voz, chat, descentralizado">
+    <meta name="author" content="Nathã Targino, Pedro Brandão">
+    <title>Concord — Comunicação Descentralizada & Sem Fronteiras</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="assets/logo-light.png?v=4">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="auth.css">
+</head>
+<body>
+    <!-- =================== NAVBAR =================== -->
+    <nav class="navbar" id="navbar">
+        <div class="nav-container">
+            <a href="#hero" class="nav-logo">
+                <img src="assets/logo.png" alt="Concord Logo" class="main-logo logo-dark">
+                <img src="assets/logo-light.png" alt="Concord Logo" class="main-logo logo-light">
+                <span class="logo-text"><span class="logo-highlight">Con</span>cord</span>
+            </a>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="#features" class="nav-link">Recursos</a></li>
+                <li><a href="#tutorial" class="nav-link">Tutorial</a></li>
+                <li><a href="#download" class="nav-link">Download</a></li>
+                <li><a href="#support" class="nav-link">Suporte</a></li>
+                <li><a href="#developers" class="nav-link">Desenvolvedores</a></li>
+            </ul>
+            <div class="nav-actions">
+                <button class="theme-toggle" id="themeToggle" aria-label="Alternar tema">
+                    <svg class="icon-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5"/>
+                        <line x1="12" y1="1" x2="12" y2="3"/>
+                        <line x1="12" y1="21" x2="12" y2="23"/>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                        <line x1="1" y1="12" x2="3" y2="12"/>
+                        <line x1="21" y1="12" x2="23" y2="12"/>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                    </svg>
+                    <svg class="icon-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                    </svg>
+                </button>
+                <div class="nav-auth" id="navAuth">
+                    <a href="login.html" class="btn btn-outline btn-sm" id="navLoginBtn">Entrar</a>
+                    <a href="register.html" class="btn btn-primary btn-sm" id="navRegisterBtn">Criar Conta</a>
+                </div>
+                <div class="nav-user" id="navUser" style="display: none; gap: 12px; align-items: center;">
+                    <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="font-weight: 700;">Entrar no Concord</a>
+                    <button class="user-menu-btn" id="userMenuBtn">
+                        <div class="nav-user-avatar" id="navUserAvatar"></div>
+                        <span class="nav-user-name" id="navUserName">Usuário</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                    <div class="user-dropdown" id="userDropdown">
+                        <div class="dropdown-header">
+                            <div class="dropdown-avatar" id="dropdownAvatar"></div>
+                            <div class="dropdown-info">
+                                <span class="dropdown-name" id="dropdownName">Usuário</span>
+                                <span class="dropdown-email" id="dropdownEmail">email@example.com</span>
+                            </div>
+                        </div>
+                        <div class="dropdown-divider"></div>
+                        <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="dropdown-item" style="color: var(--accent-cyan); text-decoration: none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            Entrar no Concord
+                        </a>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item" id="changeUsernameBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            Alterar Nome de Usuário
+                        </button>
+                        <button class="dropdown-item" id="changePasswordBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            Alterar Senha
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <button class="dropdown-item" id="logoutBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                            Sair da conta
+                        </button>
+                    </div>
+                </div>
+                <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Menu">
+                    <span></span><span></span><span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- =================== HERO =================== -->
+    <section class="hero" id="hero">
+        <div class="hero-bg">
+            <div class="hero-orb hero-orb-1"></div>
+            <div class="hero-orb hero-orb-2"></div>
+            <div class="hero-orb hero-orb-3"></div>
+            <div class="hero-grid"></div>
+        </div>
+        <div class="container hero-content">
+            <div class="hero-badge">
+                <span class="badge-dot"></span>
+                Comunicação Descentralizada & Sem Fronteiras
+            </div>
+            <h1 class="hero-title">
+                Conecte-se com<br>
+                seus amigos no<br>
+                <span class="gradient-text">Concord</span>
+            </h1>
+            <p class="hero-subtitle">
+                Chamadas de voz, vídeo e chat em tempo real. Crie servidores, 
+                entre em canais e converse com quem importa — tudo de graça, 
+                sem limites e sem fronteiras.
+            </p>
+            <div class="hero-buttons">
+                <a href="login.html" class="btn btn-primary btn-lg" id="heroCtaBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    <span id="heroCtaText">Começar Agora</span>
+                </a>
+                <a href="#tutorial" class="btn btn-glass btn-lg">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    Ver Tutorial
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-number" data-count="100">0</span><span class="stat-suffix">%</span>
+                    <span class="stat-label">Gratuito</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat">
+                    <span class="stat-number" data-count="24">0</span><span class="stat-suffix">/7</span>
+                    <span class="stat-label">Suporte</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat">
+                    <span class="stat-number" data-count="0">0</span><span class="stat-suffix"> Limites</span>
+                    <span class="stat-label">Sem Restrições</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-scroll-indicator">
+            <span>Scroll</span>
+            <div class="scroll-line"></div>
+        </div>
+    </section>
+
+    <!-- =================== FEATURES =================== -->
+    <section class="section" id="features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Recursos</span>
+                <h2 class="section-title">Tudo que você precisa para se <span class="gradient-text">conectar</span></h2>
+                <p class="section-desc">O Concord oferece as melhores ferramentas para comunicação em grupo — rápido, seguro e sem complicação.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card" data-aos="fade-up">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Canais de Voz</h3>
+                    <p class="feature-desc">Entre em canais de voz com seus amigos e converse em tempo real com áudio cristalino e baixa latência.</p>
+                </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Chat em Tempo Real</h3>
+                    <p class="feature-desc">Envie mensagens instantâneas, compartilhe arquivos e reaja com emojis — tudo sincronizado em tempo real.</p>
+                </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Servidores e Grupos</h3>
+                    <p class="feature-desc">Crie servidores personalizados com canais de texto e voz para organizar sua comunidade.</p>
+                </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Segurança Total</h3>
+                    <p class="feature-desc">Comunicação descentralizada com criptografia ponta-a-ponta para manter suas conversas privadas.</p>
+                </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="400">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Ultra Rápido</h3>
+                    <p class="feature-desc">Infraestrutura otimizada para garantir conexões estáveis e ultra rápidas em qualquer dispositivo.</p>
+                </div>
+                <div class="feature-card" data-aos="fade-up" data-aos-delay="500">
+                    <div class="feature-icon">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                            <line x1="8" y1="21" x2="16" y2="21"/>
+                            <line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Multiplataforma</h3>
+                    <p class="feature-desc">Disponível para desktop e web. Use no navegador ou baixe o aplicativo para a melhor experiência.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =================== TUTORIAL =================== -->
+    <section class="section section-alt" id="tutorial">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Tutorial</span>
+                <h2 class="section-title">Como usar o <span class="gradient-text">Concord</span></h2>
+                <p class="section-desc">Comece a usar o Concord em poucos minutos. Veja como é simples se conectar com seus amigos.</p>
+            </div>
+            <div class="tutorial-timeline">
+                <div class="tutorial-step" data-aos="fade-right">
+                    <div class="step-number">01</div>
+                    <div class="step-content">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="8.5" cy="7" r="4"/>
+                                <line x1="20" y1="8" x2="20" y2="14"/>
+                                <line x1="23" y1="11" x2="17" y2="11"/>
+                            </svg>
+                        </div>
+                        <h3>Crie sua conta</h3>
+                        <p>Registre-se gratuitamente usando seu e-mail ou entre com sua conta Google. É rápido e fácil!</p>
+                    </div>
+                </div>
+                <div class="tutorial-step" data-aos="fade-left">
+                    <div class="step-number">02</div>
+                    <div class="step-content">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <line x1="12" y1="8" x2="12" y2="16"/>
+                                <line x1="8" y1="12" x2="16" y2="12"/>
+                            </svg>
+                        </div>
+                        <h3>Crie ou entre em um servidor</h3>
+                        <p>Crie seu próprio servidor ou entre em um existente usando um convite. Organize canais de texto e voz como quiser.</p>
+                    </div>
+                </div>
+                <div class="tutorial-step" data-aos="fade-right">
+                    <div class="step-number">03</div>
+                    <div class="step-content">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                        </div>
+                        <h3>Convide seus amigos</h3>
+                        <p>Compartilhe o link do seu servidor e convide seus amigos para se juntarem à conversa.</p>
+                    </div>
+                </div>
+                <div class="tutorial-step" data-aos="fade-left">
+                    <div class="step-number">04</div>
+                    <div class="step-content">
+                        <div class="step-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        </div>
+                        <h3>Comece a conversar!</h3>
+                        <p>Entre em um canal de voz, ligue a câmera ou mande mensagens. Está tudo pronto para a diversão!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <!-- =================== DOWNLOAD =================== -->
+    <section class="section section-alt" id="download">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Download</span>
+                <h2 class="section-title">Baixe o <span class="gradient-text">Concord</span></h2>
+                <p class="section-desc">Prefira a experiência nativa? Baixe o aplicativo para desktop e aproveite todas as funcionalidades.</p>
+            </div>
+            <div class="download-container">
+                <div class="download-card">
+                    <div class="download-icon">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                            <line x1="8" y1="21" x2="16" y2="21"/>
+                            <line x1="12" y1="17" x2="12" y2="21"/>
+                        </svg>
+                    </div>
+                    <h3>Desktop</h3>
+                    <p>Windows, macOS & Linux</p>
+                    <div class="download-coming-soon">
+                        <div class="coming-soon-badge">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Em breve
+                        </div>
+                        <p class="coming-soon-text">O aplicativo desktop está em desenvolvimento. Enquanto isso, use o Concord pelo navegador!</p>
+                    </div>
+                    <button class="btn btn-glass btn-full" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download Indisponível
+                    </button>
+                </div>
+                <div class="download-card download-card-web">
+                    <div class="download-icon active">
+                        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="2" y1="12" x2="22" y2="12"/>
+                            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+                        </svg>
+                    </div>
+                    <h3>Web App</h3>
+                    <p>Use direto no navegador</p>
+                    <div class="download-available">
+                        <div class="available-badge">
+                            <span class="pulse-dot"></span>
+                            Disponível agora
+                        </div>
+                        <p class="available-text">Acesse o Concord diretamente pelo seu navegador sem precisar instalar nada.</p>
+                    </div>
+                    <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-full">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        Abrir no Navegador
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =================== SUPPORT =================== -->
+    <section class="section" id="support">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Suporte</span>
+                <h2 class="section-title">Precisa de <span class="gradient-text">ajuda</span>?</h2>
+                <p class="section-desc">Nossa equipe está pronta para te ajudar. Entre em contato por e-mail ou WhatsApp.</p>
+            </div>
+            <div class="support-grid">
+                <div class="support-card" data-aos="fade-up">
+                    <div class="support-icon email-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                            <polyline points="22,6 12,13 2,6"/>
+                        </svg>
+                    </div>
+                    <h3>E-mail</h3>
+                    <p>Envie sua dúvida por e-mail e responderemos o mais rápido possível.</p>
+                    <div class="support-contacts">
+                        <a href="mailto:pedrohabrandao12@gmail.com" class="support-link">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            pedrohabrandao12@gmail.com
+                        </a>
+                        <a href="mailto:nathatargino.dev@gmail.com" class="support-link">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                            nathatargino.dev@gmail.com
+                        </a>
+                    </div>
+                </div>
+                <div class="support-card" data-aos="fade-up" data-aos-delay="100">
+                    <div class="support-icon whatsapp-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                        </svg>
+                    </div>
+                    <h3>WhatsApp</h3>
+                    <p>Prefere um atendimento mais rápido? Fale conosco pelo WhatsApp.</p>
+                    <div class="support-contacts">
+                        <a href="https://wa.me/5511945936876?text=Estou%20com%20dificuldade%20ao%20acessar%20o%20site%20Concord." target="_blank" rel="noopener noreferrer" class="support-link whatsapp-link" id="whatsappLink">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                            </svg>
+                            (11) 94593-6876
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =================== DEVELOPERS =================== -->
+    <section class="section section-alt" id="developers">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-tag">Equipe</span>
+                <h2 class="section-title">Nossos <span class="gradient-text">Desenvolvedores</span></h2>
+                <p class="section-desc">Conheça as pessoas por trás do Concord.</p>
+            </div>
+            <div class="developers-grid">
+                <div class="developer-card" data-aos="fade-up">
+                    <div class="dev-avatar">
+                        <img src="assets/natha.jpg" alt="Nathã Targino" class="dev-avatar-inner" style="object-fit: cover;">
+                        <div class="dev-avatar-ring"></div>
+                    </div>
+                    <h3 class="dev-name">Nathã Targino</h3>
+                    <span class="dev-role">Co-Fundador & Desenvolvedor</span>
+                    <p class="dev-bio">Desenvolvedor apaixonado por criar soluções tecnológicas inovadoras e acessíveis.</p>
+                    <div class="dev-links">
+                        <a href="mailto:nathatargino.dev@gmail.com" class="dev-link" title="E-mail">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        </a>
+                    </div>
+                </div>
+                <div class="developer-card" data-aos="fade-up" data-aos-delay="150">
+                    <div class="dev-avatar">
+                        <img src="assets/pedro.jpg" alt="Pedro Brandão" class="dev-avatar-inner" style="object-fit: cover;">
+                        <div class="dev-avatar-ring"></div>
+                    </div>
+                    <h3 class="dev-name">Pedro Brandão</h3>
+                    <span class="dev-role">Co-Fundador & Desenvolvedor</span>
+                    <p class="dev-bio">Desenvolvedor focado em experiência do usuário e interfaces modernas e intuitivas.</p>
+                    <div class="dev-links">
+                        <a href="mailto:pedrohabrandao12@gmail.com" class="dev-link" title="E-mail">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =================== FOOTER =================== -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <a href="#hero" class="footer-logo">
+                        <img src="assets/logo.png" alt="Concord Logo" class="main-logo-footer logo-dark">
+                        <img src="assets/logo-light.png" alt="Concord Logo" class="main-logo-footer logo-light">
+                        <span class="logo-text"><span class="logo-highlight">Con</span>cord</span>
+                    </a>
+                    <p class="footer-desc">Comunicação Descentralizada & Sem Fronteiras</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-col">
+                        <h4>Navegação</h4>
+                        <a href="#features">Recursos</a>
+                        <a href="#tutorial">Tutorial</a>
+                        <a href="#download">Download</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Conta</h4>
+                        <a href="register.html">Criar Conta</a>
+                        <a href="login.html">Entrar</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Contato</h4>
+                        <a href="#support">Suporte</a>
+                        <a href="#developers">Desenvolvedores</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 Concord. Todos os direitos reservados.</p>
+                <p>Feito com 💜 por Nathã Targino & Pedro Brandão</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
