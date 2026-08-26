@@ -10,7 +10,7 @@
     "concurrently": "^8.2.2"
   },
   "pnpm": {
-    "builtDependencies": [
+    "onlyBuiltDependencies": [
       "electron-winstaller"
     ]
   }

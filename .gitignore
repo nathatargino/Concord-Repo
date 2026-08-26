@@ -4,3 +4,5 @@ dist/
 .DS_Store
 *.log
 node_modules
+client/release/
+client/dist-electron/
