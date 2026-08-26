@@ -10,6 +10,7 @@ interface PeerConnection {
   pc: RTCPeerConnection;
   audioEl?: HTMLAudioElement;
   screenAudioEl?: HTMLAudioElement;
+  micTrack?: MediaStreamTrack;
   makingOffer: boolean;
   ignoreOffer: boolean;
   screenSender?: RTCRtpSender;
@@ -104,7 +105,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
       // Remote tracks
       pc.ontrack = ({ track, streams }) => {
         if (track.kind === 'audio') {
-          const isScreenAudio = (streams[0]?.getVideoTracks().length ?? 0) > 0;
+          const hasVideoInStream = (streams[0]?.getVideoTracks().length ?? 0) > 0;
+          const isSecondAudio = peerData.micTrack && peerData.micTrack !== track;
+          const isScreenAudio = hasVideoInStream || isSecondAudio;
+
           if (isScreenAudio) {
             let screenAudioEl = peerData.screenAudioEl;
             if (!screenAudioEl) {
@@ -115,12 +119,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
               document.getElementById('remote-audios')?.appendChild(screenAudioEl);
               peerData.screenAudioEl = screenAudioEl;
             }
+            const stream = streams[0] || new MediaStream([track]);
             if (attachRemoteScreenAudio) {
-              attachRemoteScreenAudio(screenAudioEl, streams[0] ?? new MediaStream([track]), peerId);
+              attachRemoteScreenAudio(screenAudioEl, stream, peerId);
             } else {
-              screenAudioEl.srcObject = streams[0] ?? new MediaStream([track]);
+              screenAudioEl.srcObject = stream;
             }
           } else {
+            peerData.micTrack = track;
             let audioEl = peerData.audioEl;
             if (!audioEl) {
               audioEl = document.createElement('audio');
@@ -130,11 +136,12 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
               document.getElementById('remote-audios')?.appendChild(audioEl);
               peerData.audioEl = audioEl;
             }
+            const stream = streams[0] || new MediaStream([track]);
             // Always route through GainNode so the volume slider works.
             if (attachRemoteStream) {
-              attachRemoteStream(audioEl, streams[0] ?? new MediaStream([track]), peerId);
+              attachRemoteStream(audioEl, stream, peerId);
             } else {
-              audioEl.srcObject = streams[0] ?? null;
+              audioEl.srcObject = stream;
             }
           }
         }

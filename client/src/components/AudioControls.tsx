@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAudioStore } from '../stores/useAudioStore';
+import { useAppStore } from '../stores/useAppStore';
 import styles from './AudioControls.module.css';
 
 interface Props {
@@ -22,6 +23,11 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     toggleCallMute,
     resetAll,
   } = useAudioStore();
+
+  const { isPlaying, currentVideoId, screenShareUserId, amSharing } = useAppStore();
+
+  const isMusicActive = isPlaying || currentVideoId !== null;
+  const isScreenShareActive = screenShareUserId !== null && !amSharing;
 
   const handlePointerDown = () => {
     onUnlockAudio();
@@ -93,39 +99,44 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
             />
           </div>
 
-          <div className={styles.sliderGroup}>
-            <div className={styles.sliderHeader}>
-              <span className={styles.sliderLabel}>YouTube</span>
-              <span className={styles.sliderValue}>{ytVol}%</span>
+          {isMusicActive && (
+            <div className={styles.sliderGroup}>
+              <div className={styles.sliderHeader}>
+                <span className={styles.sliderLabel}>YouTube</span>
+                <span className={styles.sliderValue}>{ytVol}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={ytVol}
+                onChange={(e) => setYtVol(Number(e.target.value))}
+                className={styles.range}
+                disabled={callMuted}
+              />
             </div>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={ytVol}
-              onChange={(e) => setYtVol(Number(e.target.value))}
-              className={styles.range}
-              disabled={callMuted}
-            />
-          </div>
+          )}
 
-          <div className={styles.sliderGroup}>
-            <div className={styles.sliderHeader}>
-              <span className={styles.sliderLabel}>Áudio da Transmissão</span>
-              <span className={styles.sliderValue}>{screenShareVol}%</span>
+          {isScreenShareActive && (
+            <div className={styles.sliderGroup}>
+              <div className={styles.sliderHeader}>
+                <span className={styles.sliderLabel}>Áudio da Transmissão</span>
+                <span className={styles.sliderValue}>{screenShareVol}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={screenShareVol}
+                onChange={(e) => setScreenShareVol(Number(e.target.value))}
+                className={styles.range}
+                disabled={callMuted}
+              />
             </div>
-            <input
-              type="range"
-              min="0"
-              max="200"
-              value={screenShareVol}
-              onChange={(e) => setScreenShareVol(Number(e.target.value))}
-              className={styles.range}
-              disabled={callMuted}
-            />
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
+

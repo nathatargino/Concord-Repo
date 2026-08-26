@@ -186,26 +186,35 @@ export function useAudio() {
     try {
       const { screenShareVol, callMuted, localMutedUsers } = useAudioStore.getState();
       const isLocalMuted = localMutedUsers.includes(userId);
+      const targetVol = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+
       audioEl.srcObject = stream;
-      audioEl.volume = 0;
-      audioEl.muted = true;
+      audioEl.volume = Math.min(1, targetVol);
+      audioEl.muted = false;
       audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
 
       const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
       if (activeCtx.state === 'suspended') {
-        activeCtx.resume();
+        activeCtx.resume().catch(() => {});
       }
 
       let gainNode = screenAudioGains.get(userId);
       if (!gainNode) {
-        const source = activeCtx.createMediaStreamSource(stream);
-        gainNode = activeCtx.createGain();
-        source.connect(gainNode);
-        gainNode.connect(activeCtx.destination);
-        screenAudioGains.set(userId, gainNode);
+        try {
+          const source = activeCtx.createMediaStreamSource(stream);
+          gainNode = activeCtx.createGain();
+          source.connect(gainNode);
+          gainNode.connect(activeCtx.destination);
+          screenAudioGains.set(userId, gainNode);
+          audioEl.muted = true; // Web Audio API handles playback with amplification up to 200%
+        } catch (e) {
+          audioEl.muted = false;
+        }
       }
 
-      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+      if (gainNode) {
+        gainNode.gain.value = targetVol;
+      }
     } catch (err) {
       console.warn('[useAudio] attachRemoteScreenAudio failed', err);
     }
@@ -230,6 +239,20 @@ export function useAudio() {
         gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
       } else {
         audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
+        audio.muted = callMuted || isLocalMuted;
+      }
+    });
+
+    document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((audio) => {
+      const userId = audio.id.replace('remote-screen-audio-', '');
+      const isLocalMuted = localMutedUsers.includes(userId);
+      const targetVol = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+
+      const gainNode = screenAudioGains.get(userId);
+      if (gainNode) {
+        gainNode.gain.value = targetVol;
+      } else {
+        audio.volume = Math.min(1, targetVol);
         audio.muted = callMuted || isLocalMuted;
       }
     });
