@@ -8,6 +8,7 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
+import { supabase } from './lib/supabase';
 
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
@@ -141,6 +142,21 @@ export default function App() {
   }, [roomId]);
 
   // ─── LOGIN ───────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
+        if (defaultName) {
+          store.setMyName(defaultName);
+          localStorage.setItem('concord_username', defaultName);
+          localStorage.setItem('concord_username_v1', defaultName);
+          socket.emit('set_username', defaultName);
+          setShowLogin(false);
+        }
+      }
+    }).catch((err) => console.warn('Supabase getUser error:', err));
+  }, []);
+
   useEffect(() => {
     if (store.myName) {
       socket.emit('set_username', store.myName);
