@@ -16,28 +16,21 @@ export const LoginModal: React.FC<Props> = ({ onLogin }) => {
     setTimeout(() => setVisible(true), 50);
     setTimeout(() => inputRef.current?.focus(), 200);
 
-    // Check localStorage saved username first
-    const savedName = localStorage.getItem('concord_username');
+    const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
     if (savedName && savedName.trim()) {
-      setName(savedName);
-      onLogin(savedName.trim());
-      return;
-    }
-
-    // Auto-detect Supabase logged in user from shared session / website
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
-        if (defaultName) {
-          setName(defaultName);
-          localStorage.setItem('concord_username', defaultName);
-          onLogin(defaultName);
+      setName(savedName.trim());
+    } else {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
+          if (defaultName) {
+            setName(defaultName);
+            localStorage.setItem('concord_username', defaultName);
+          }
         }
-      }
-    }).catch(err => {
-      console.warn('Supabase auth session check warning:', err);
-    });
-  }, [onLogin]);
+      }).catch((err) => console.warn('Supabase auth session check warning:', err));
+    }
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
