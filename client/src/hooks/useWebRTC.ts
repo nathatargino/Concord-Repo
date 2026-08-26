@@ -64,15 +64,17 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // Add screen share tracks if active
       if (screenStreamRef.current) {
-        const videoTrack = screenStreamRef.current.getVideoTracks()[0];
-        const audioTrack = screenStreamRef.current.getAudioTracks()[0];
-
-        if (videoTrack) {
-          peerData.screenSender = pc.addTrack(videoTrack, screenStreamRef.current);
-        }
-        if (audioTrack) {
-          const audioOnlyStream = new MediaStream([audioTrack]);
-          peerData.screenAudioSender = pc.addTrack(audioTrack, audioOnlyStream);
+        for (const track of screenStreamRef.current.getTracks()) {
+          try {
+            const sender = pc.addTrack(track, screenStreamRef.current);
+            if (track.kind === 'video') {
+              peerData.screenSender = sender;
+            } else if (track.kind === 'audio') {
+              peerData.screenAudioSender = sender;
+            }
+          } catch (err) {
+            console.warn('[WebRTC] Error adding initial screen track:', err);
+          }
         }
       }
 
@@ -369,10 +371,6 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
 
-    // Create a dedicated stream for the audio track to avoid WebRTC
-    // conflicts when video and audio come from the same getDisplayMedia stream
-    const audioOnlyStream = audioTrack ? new MediaStream([audioTrack]) : null;
-
     peersRef.current.forEach((peer) => {
       try {
         if (videoTrack) {
@@ -387,11 +385,13 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
       }
 
       try {
-        if (audioTrack && audioOnlyStream) {
+        if (audioTrack) {
           if (peer.screenAudioSender) {
             peer.screenAudioSender.replaceTrack(audioTrack).catch(() => {});
           } else {
-            peer.screenAudioSender = peer.pc.addTrack(audioTrack, audioOnlyStream);
+            // Add audio to the SAME stream as video so the receiver
+            // can detect it as screen audio (stream has video tracks)
+            peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
           }
         } else if (peer.screenAudioSender) {
           peer.screenAudioSender.replaceTrack(null).catch(() => {});

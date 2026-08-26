@@ -5,27 +5,6 @@ import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/so
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
-/**
- * Attempts to get a display media stream.
- * First tries with audio, falls back to video-only if that fails.
- */
-async function acquireDisplayStream(): Promise<MediaStream> {
-  try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true,
-    });
-  } catch (err: unknown) {
-    // If the user explicitly cancelled, propagate immediately
-    if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
-      throw err;
-    }
-    // Otherwise try without audio as fallback (some browsers reject audio+fullscreen)
-    console.warn('[ScreenShare] getDisplayMedia with audio failed, retrying video-only:', err);
-    return await navigator.mediaDevices.getDisplayMedia({ video: true });
-  }
-}
-
 export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -42,7 +21,13 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const startScreenShare = useCallback(async () => {
     try {
-      const stream = await acquireDisplayStream();
+      // Single getDisplayMedia call — never retry to avoid a second picker dialog.
+      // audio:true lets the browser offer system/tab audio; if the user declines,
+      // the stream simply won't have an audio track (which is fine).
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
 
       streamRef.current = stream;
       addScreenShareTrack(stream);
@@ -56,8 +41,12 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
         stopScreenShare();
       });
 
-      toast.success('🖥️ Compartilhamento de tela iniciado!');
+      const hasAudio = stream.getAudioTracks().length > 0;
+      toast.success(hasAudio
+        ? '🖥️ Compartilhamento de tela com áudio iniciado!'
+        : '🖥️ Compartilhamento de tela iniciado!');
     } catch (err: unknown) {
+      // NotAllowedError / AbortError = user cancelled the picker → silent
       if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         toast.error('Erro ao compartilhar tela');
         console.error('[ScreenShare] startScreenShare error:', err);
@@ -67,7 +56,10 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const changeScreenShare = useCallback(async () => {
     try {
-      const stream = await acquireDisplayStream();
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
 
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());
