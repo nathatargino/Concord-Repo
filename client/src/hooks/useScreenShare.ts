@@ -8,6 +8,17 @@ type EmitFn = (event: string, ...args: unknown[]) => void;
 export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
+  const stopScreenShare = useCallback(() => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    removeScreenShareTrack();
+    emit('stop_screen_share');
+    useAppStore.getState().setAmSharing(false);
+    useAppStore.getState().setScreenShare(null, null);
+    playScreenShareStopSound();
+    toast('🖥️ Compartilhamento encerrado', { duration: 2000 });
+  }, [emit, removeScreenShareTrack]);
+
   const startScreenShare = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -42,7 +53,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
         console.error(err);
       }
     }
-  }, [emit, addScreenShareTrack]);
+  }, [emit, addScreenShareTrack, stopScreenShare]);
 
   const changeScreenShare = useCallback(async () => {
     try {
@@ -75,17 +86,6 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
       }
     }
   }, [addScreenShareTrack, stopScreenShare]);
-
-  const stopScreenShare = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    removeScreenShareTrack();
-    emit('stop_screen_share');
-    useAppStore.getState().setAmSharing(false);
-    useAppStore.getState().setScreenShare(null, null);
-    playScreenShareStopSound();
-    toast('🖥️ Compartilhamento encerrado', { duration: 2000 });
-  }, [emit, removeScreenShareTrack]);
 
   return { startScreenShare, stopScreenShare, changeScreenShare, streamRef };
 }

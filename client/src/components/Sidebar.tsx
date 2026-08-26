@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
 
@@ -21,6 +22,7 @@ export const Sidebar: React.FC<Props> = ({
   onAdminAction,
 }) => {
   const { users, myId, connected, room } = useAppStore();
+  const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
 
   const voiceUsers = users.filter((u) => u.inVoice);
 
