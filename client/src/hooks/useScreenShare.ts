@@ -5,28 +5,6 @@ import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/so
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
-async function getMediaDisplayStream(): Promise<MediaStream> {
-  try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        frameRate: { ideal: 30, max: 60 },
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-      },
-      audio: true,
-    });
-  } catch (err: unknown) {
-    if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
-      throw err;
-    }
-    // Fallback with standard constraints if specific resolution + audio caused constraint rejection
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true,
-    });
-  }
-}
-
 export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -43,7 +21,10 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const startScreenShare = useCallback(async () => {
     try {
-      const stream = await getMediaDisplayStream();
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
 
       streamRef.current = stream;
       addScreenShareTrack(stream);
@@ -68,7 +49,10 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const changeScreenShare = useCallback(async () => {
     try {
-      const stream = await getMediaDisplayStream();
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true,
+      });
 
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());
