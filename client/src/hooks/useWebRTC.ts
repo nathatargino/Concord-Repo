@@ -84,6 +84,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
       // Negotiation needed
       pc.onnegotiationneeded = async () => {
         try {
+          if (pc.signalingState !== 'stable') {
+            return;
+          }
           peerData.makingOffer = true;
           await pc.setLocalDescription();
           emit('send_offer', peerId, pc.localDescription!);
@@ -365,22 +368,26 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const audioTrack = stream.getAudioTracks()[0];
 
     peersRef.current.forEach((peer) => {
-      if (videoTrack) {
-        if (peer.screenSender) {
-          peer.screenSender.replaceTrack(videoTrack);
-        } else {
-          peer.screenSender = peer.pc.addTrack(videoTrack, stream);
+      try {
+        if (videoTrack) {
+          if (peer.screenSender) {
+            peer.screenSender.replaceTrack(videoTrack).catch(() => {});
+          } else {
+            peer.screenSender = peer.pc.addTrack(videoTrack, stream);
+          }
         }
-      }
 
-      if (audioTrack) {
-        if (peer.screenAudioSender) {
-          peer.screenAudioSender.replaceTrack(audioTrack);
-        } else {
-          peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+        if (audioTrack) {
+          if (peer.screenAudioSender) {
+            peer.screenAudioSender.replaceTrack(audioTrack).catch(() => {});
+          } else {
+            peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+          }
+        } else if (peer.screenAudioSender) {
+          peer.screenAudioSender.replaceTrack(null).catch(() => {});
         }
-      } else if (peer.screenAudioSender) {
-        peer.screenAudioSender.replaceTrack(null);
+      } catch (err) {
+        console.warn('[WebRTC] Error adding screen share track:', err);
       }
     });
   }, []);
@@ -390,11 +397,15 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     screenStreamRef.current = null;
 
     peersRef.current.forEach((peer) => {
-      if (peer.screenSender) {
-        peer.screenSender.replaceTrack(null);
-      }
-      if (peer.screenAudioSender) {
-        peer.screenAudioSender.replaceTrack(null);
+      try {
+        if (peer.screenSender) {
+          peer.screenSender.replaceTrack(null).catch(() => {});
+        }
+        if (peer.screenAudioSender) {
+          peer.screenAudioSender.replaceTrack(null).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('[WebRTC] Error removing screen track:', err);
       }
     });
   }, []);

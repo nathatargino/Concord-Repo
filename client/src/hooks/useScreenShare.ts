@@ -5,6 +5,28 @@ import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/so
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
+async function getMediaDisplayStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: { ideal: 30, max: 60 },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+      },
+      audio: true,
+    });
+  } catch (err: unknown) {
+    if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+      throw err;
+    }
+    // Fallback with standard constraints if specific resolution + audio caused constraint rejection
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true,
+    });
+  }
+}
+
 export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -21,18 +43,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const startScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          frameRate: { ideal: 30, max: 60 },
-          // Use large ideal values so the browser captures the native resolution
-          // of any monitor (including ultrawide 3440x1440, super ultrawide 5120x1440, 4K, etc.)
-          width: { ideal: 4096 },
-          height: { ideal: 2160 },
-          // @ts-ignore — cursor is valid but not in all TS typings
-          cursor: 'always',
-        },
-        audio: true, // capture system audio if user allows
-      });
+      const stream = await getMediaDisplayStream();
 
       streamRef.current = stream;
       addScreenShareTrack(stream);
@@ -48,25 +59,16 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
       toast.success('🖥️ Compartilhamento de tela iniciado!');
     } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'NotAllowedError') {
+      if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         toast.error('Erro ao compartilhar tela');
-        console.error(err);
+        console.error('[ScreenShare] startScreenShare error:', err);
       }
     }
   }, [emit, addScreenShareTrack, stopScreenShare]);
 
   const changeScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 4096 },
-          height: { ideal: 2160 },
-          // @ts-ignore
-          cursor: 'always',
-        },
-        audio: true,
-      });
+      const stream = await getMediaDisplayStream();
 
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -80,9 +82,9 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
       toast.success('🖥️ Transmissão de tela alterada!');
     } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'NotAllowedError') {
+      if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         toast.error('Erro ao trocar tela');
-        console.error(err);
+        console.error('[ScreenShare] changeScreenShare error:', err);
       }
     }
   }, [addScreenShareTrack, stopScreenShare]);
