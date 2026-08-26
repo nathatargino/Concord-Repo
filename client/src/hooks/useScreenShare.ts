@@ -5,6 +5,27 @@ import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/so
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 
+/**
+ * Attempts to get a display media stream.
+ * First tries with audio, falls back to video-only if that fails.
+ */
+async function acquireDisplayStream(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: true,
+    });
+  } catch (err: unknown) {
+    // If the user explicitly cancelled, propagate immediately
+    if (err instanceof Error && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+      throw err;
+    }
+    // Otherwise try without audio as fallback (some browsers reject audio+fullscreen)
+    console.warn('[ScreenShare] getDisplayMedia with audio failed, retrying video-only:', err);
+    return await navigator.mediaDevices.getDisplayMedia({ video: true });
+  }
+}
+
 export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -21,10 +42,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const startScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      const stream = await acquireDisplayStream();
 
       streamRef.current = stream;
       addScreenShareTrack(stream);
@@ -49,10 +67,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
 
   const changeScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      const stream = await acquireDisplayStream();
 
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());

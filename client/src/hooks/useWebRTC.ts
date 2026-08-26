@@ -64,13 +64,15 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // Add screen share tracks if active
       if (screenStreamRef.current) {
-        for (const track of screenStreamRef.current.getTracks()) {
-          const sender = pc.addTrack(track, screenStreamRef.current);
-          if (track.kind === 'video') {
-            peerData.screenSender = sender;
-          } else if (track.kind === 'audio') {
-            peerData.screenAudioSender = sender;
-          }
+        const videoTrack = screenStreamRef.current.getVideoTracks()[0];
+        const audioTrack = screenStreamRef.current.getAudioTracks()[0];
+
+        if (videoTrack) {
+          peerData.screenSender = pc.addTrack(videoTrack, screenStreamRef.current);
+        }
+        if (audioTrack) {
+          const audioOnlyStream = new MediaStream([audioTrack]);
+          peerData.screenAudioSender = pc.addTrack(audioTrack, audioOnlyStream);
         }
       }
 
@@ -367,6 +369,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
 
+    // Create a dedicated stream for the audio track to avoid WebRTC
+    // conflicts when video and audio come from the same getDisplayMedia stream
+    const audioOnlyStream = audioTrack ? new MediaStream([audioTrack]) : null;
+
     peersRef.current.forEach((peer) => {
       try {
         if (videoTrack) {
@@ -376,18 +382,22 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             peer.screenSender = peer.pc.addTrack(videoTrack, stream);
           }
         }
+      } catch (err) {
+        console.warn('[WebRTC] Error adding screen video track:', err);
+      }
 
-        if (audioTrack) {
+      try {
+        if (audioTrack && audioOnlyStream) {
           if (peer.screenAudioSender) {
             peer.screenAudioSender.replaceTrack(audioTrack).catch(() => {});
           } else {
-            peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+            peer.screenAudioSender = peer.pc.addTrack(audioTrack, audioOnlyStream);
           }
         } else if (peer.screenAudioSender) {
           peer.screenAudioSender.replaceTrack(null).catch(() => {});
         }
       } catch (err) {
-        console.warn('[WebRTC] Error adding screen share track:', err);
+        console.warn('[WebRTC] Error adding screen audio track:', err);
       }
     });
   }, []);
