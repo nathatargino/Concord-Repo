@@ -16,18 +16,28 @@ export const LoginModal: React.FC<Props> = ({ onLogin }) => {
     setTimeout(() => setVisible(true), 50);
     setTimeout(() => inputRef.current?.focus(), 200);
 
+    // Check localStorage saved username first
+    const savedName = localStorage.getItem('concord_username');
+    if (savedName && savedName.trim()) {
+      setName(savedName);
+      onLogin(savedName.trim());
+      return;
+    }
+
     // Auto-detect Supabase logged in user from shared session / website
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
-        const defaultName = user.user_metadata?.username || user.email?.split('@')[0];
+        const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
         if (defaultName) {
           setName(defaultName);
+          localStorage.setItem('concord_username', defaultName);
+          onLogin(defaultName);
         }
       }
     }).catch(err => {
       console.warn('Supabase auth session check warning:', err);
     });
-  }, []);
+  }, [onLogin]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +50,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin }) => {
       setError('Nome muito longo (máximo 32 caracteres)');
       return;
     }
+    localStorage.setItem('concord_username', trimmed);
     onLogin(trimmed);
   };
 

@@ -124,8 +124,8 @@ app.get('/health', (_req, res) => {
 // ─── ROOM REST ENDPOINTS ──────────────────────────────────────────
 // POST /api/rooms — Create a new room (returns room info)
 app.post('/api/rooms', async (req, res) => {
-  const { persistentId } = req.body;
-  const room = createRoom(persistentId);
+  const { persistentId, code, id } = req.body;
+  const room = createRoom(persistentId, code, id);
   const info = toRoomInfo(room);
 
   // Asynchronously persist room to Supabase DB if server environment variables are set

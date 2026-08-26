@@ -49,12 +49,14 @@ function generateCode(): string {
   return code;
 }
 
-function createRoom(persistentId?: string): RoomState {
-  const id = generateId();
-  let code = generateCode();
-  // Ensure code uniqueness
-  while (codeToRoomId.has(code)) {
-    code = generateCode();
+function createRoom(persistentId?: string, customCode?: string, customId?: string): RoomState {
+  const id = customId || generateId();
+  let code = customCode ? customCode.toUpperCase() : generateCode();
+  // Ensure code uniqueness if auto-generated
+  if (!customCode) {
+    while (codeToRoomId.has(code)) {
+      code = generateCode();
+    }
   }
   const now = Date.now();
   const room: RoomState = {

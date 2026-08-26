@@ -19,6 +19,9 @@ export const LobbyPage: React.FC = () => {
   useEffect(() => {
     setTimeout(() => setVisible(true), 50);
 
+    // Pre-warm backend server silently on page load to eliminate cold-start delay
+    fetch(`${SERVER_URL}/health`).catch(() => {});
+
     // Auto-detect invite link: ?room=CODE or #CODE in URL
     const params = new URLSearchParams(window.location.search);
     const roomCode = params.get('room');
@@ -38,26 +41,20 @@ export const LobbyPage: React.FC = () => {
         localStorage.setItem('concord_pid', persistentId);
       }
 
-      let room: { id: string; code: string } | null = null;
+      // Generate room ID & code INSTANTLY on client
+      const generatedCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const roomId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
 
-      try {
-        const res = await fetch(`${SERVER_URL}/api/rooms`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ persistentId })
-        });
-        if (res.ok) {
-          room = await res.json();
-        }
-      } catch (err) {
-        console.warn('Server room creation fallback:', err);
-      }
+      // Fire server room creation and Supabase persistence in background without blocking navigation
+      fetch(`${SERVER_URL}/api/rooms`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persistentId, code: generatedCode, id: roomId })
+      }).catch((err) => console.warn('Server room creation background ping:', err));
 
-      const generatedCode = room?.code || Math.random().toString(36).substring(2, 8).toUpperCase();
-      const roomId = room?.id || crypto.randomUUID();
-
-      // Persist created room to Supabase DB
-      await createRoomInSupabase('Sala Concord', generatedCode);
+      createRoomInSupabase('Sala Concord', generatedCode).catch((err) =>
+        console.warn('Supabase room creation background:', err)
+      );
 
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
