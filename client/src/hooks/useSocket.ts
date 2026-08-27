@@ -18,7 +18,6 @@ interface ServerToClientEvents {
     filename?: string,
     channelId?: string
   ) => void;
-  channel_created: (channel: ServerChannel) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
