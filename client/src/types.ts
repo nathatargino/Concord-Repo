@@ -44,6 +44,7 @@ export interface RoomInfo {
   id: string;
   code: string;
   name?: string;
+  iconUrl?: string;
   isServer?: boolean;
   channels?: ServerChannel[];
   createdAt: number;

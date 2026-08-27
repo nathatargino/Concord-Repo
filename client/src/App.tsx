@@ -263,6 +263,7 @@ export default function App() {
         onStartScreenShare={screenShare.startScreenShare}
         onStopScreenShare={screenShare.stopScreenShare}
         onCreateChannel={(name) => socket.emit('create_channel', name)}
+        onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
         onAdminAction={(action, targetId) => {
           if (action === 'mute') socket.emit('admin_mute_user', targetId);
           else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
@@ -275,38 +276,14 @@ export default function App() {
 
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
-          <ChatPanel onSendMessage={(msg, type, url, filename, channelId) => {
-            if (!type && !url) {
-              const command = msg.trim().toLowerCase();
-              if (command.startsWith('/')) {
-                if (command === '/clear') {
-                  socket.emit('music_action', 'clear');
-                  return;
-                } else if (command === '/skip') {
-                  socket.emit('music_action', 'skip');
-                  return;
-                } else if (command === '/pause') {
-                  socket.emit('music_action', 'pause');
-                  return;
-                } else if (command === '/play') {
-                  socket.emit('music_action', 'play');
-                  return;
-                } else {
-                  store.addMessage({
-                    id: `sys-${Date.now()}`,
-                    userName: 'Sistema',
-                    message: 'Comando não reconhecido. Comandos válidos: /clear, /skip, /pause, /play',
-                    timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-                    isSystem: true,
-                    type: 'text',
-                    channelId: channelId || store.activeChannelId,
-                  });
-                  return;
-                }
-              }
-            }
-            socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId);
-          }} />
+          <ChatPanel 
+            onSendMessage={(msg, type, url, filename, channelId) => {
+              socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId);
+            }}
+            onMusicAction={(action) => {
+              socket.emit('music_action', action);
+            }}
+          />
         </div>
 
         <div className={styles.sidePanels}>

@@ -19,6 +19,7 @@ interface ServerToClientEvents {
     channelId?: string
   ) => void;
   channel_created: (channel: ServerChannel) => void;
+  server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
@@ -61,6 +62,7 @@ interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   remove_from_queue: (token: number) => void;
@@ -92,6 +94,7 @@ export interface SocketCallbacks {
   onReceiveAnswer: (senderId: string, answer: RTCSessionDescriptionInit) => void;
   onReceiveIce: (senderId: string, candidate: RTCIceCandidateInit) => void;
   onPlayYouTube: (videoId: string, startSeconds: number, token: number) => void;
+  onPauseYouTubeFromHub: (videoId: string, atSeconds: number, token: number) => void;
   onStopYouTube: (token: number) => void;
   onPauseYouTube: () => void;
   onResumeYouTube: () => void;
@@ -146,44 +149,64 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('disconnect', () => {
       store.setConnected(false);
-      store.setInVoice(false);
     });
 
     socket.on('room_joined', (room) => {
       store.setRoom(room);
+      if (room.isServer) {
+        store.setIsServer(true);
+        if (room.name) store.setServerName(room.name);
+        if (room.iconUrl) store.setServerIconUrl(room.iconUrl);
+      }
       callbacksRef.current.onRoomJoined?.(room);
-    });
-
-    socket.on('room_error', (msg) => {
-      callbacksRef.current.onRoomError?.(msg);
-      toast.error(msg);
-    });
-
-    socket.on('user_list', (users) => {
-      store.setUsers(users);
-      if (socket.id) store.setMyId(socket.id);
     });
 
     socket.on('room_info', (room) => {
       store.setRoom(room);
+      if (room.isServer) {
+        store.setIsServer(true);
+        if (room.name) store.setServerName(room.name);
+        if (room.iconUrl) store.setServerIconUrl(room.iconUrl);
+      }
     });
 
-    socket.on('channel_created', (channel) => {
-      store.addChannel(channel);
+    socket.on('server_updated', (data) => {
+      const currentRoom = useAppStore.getState().room;
+      if (currentRoom && currentRoom.id === data.serverId) {
+        useAppStore.getState().setRoom({
+          ...currentRoom,
+          name: data.name || currentRoom.name,
+          iconUrl: data.iconUrl !== undefined ? data.iconUrl : currentRoom.iconUrl,
+        });
+      }
+      if (data.name) useAppStore.getState().setServerName(data.name);
+      if (data.iconUrl !== undefined) useAppStore.getState().setServerIconUrl(data.iconUrl || null);
+    });
+
+    socket.on('room_error', (msg) => {
+      callbacksRef.current.onRoomError?.(msg);
+    });
+
+    socket.on('user_list', (users) => {
+      store.setUsers(users);
     });
 
     socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId) => {
-      const msg: ChatMessage = {
-        id: `${Date.now()}-${Math.random()}`,
+      const newMsg: ChatMessage = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         userName,
         message,
         timestamp,
-        type,
+        type: type || 'text',
         url,
         filename,
         channelId: channelId || 'ch-geral',
       };
-      store.addMessage(msg);
+      store.addMessage(newMsg);
+    });
+
+    socket.on('channel_created', (channel) => {
+      store.addChannel(channel);
     });
 
     socket.on('music_queue_update', (queue) => {
@@ -191,13 +214,14 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('play_youtube', (videoId, startSeconds, token) => {
-      store.setCurrentVideoId(videoId);
-      store.setIsPlaying(true);
       callbacksRef.current.onPlayYouTube(videoId, startSeconds, token);
     });
 
+    socket.on('pause_youtube', (videoId, atSeconds, token) => {
+      callbacksRef.current.onPauseYouTubeFromHub(videoId, atSeconds, token);
+    });
+
     socket.on('stop_youtube', (token) => {
-      store.setIsPlaying(false);
       callbacksRef.current.onStopYouTube(token);
     });
 
@@ -209,8 +233,8 @@ export function useSocket(callbacks: SocketCallbacks) {
       callbacksRef.current.onResumeYouTube();
     });
 
-    socket.on('existing_voice_users', (ids) => {
-      callbacksRef.current.onExistingVoiceUsers(ids);
+    socket.on('existing_voice_users', (userIds) => {
+      callbacksRef.current.onExistingVoiceUsers(userIds);
     });
 
     socket.on('user_joined_voice', (userId) => {
@@ -288,5 +312,8 @@ export function useSocket(callbacks: SocketCallbacks) {
     []
   );
 
-  return { emit, socket: socketRef.current };
+  return {
+    socket: socketRef.current,
+    emit,
+  };
 }

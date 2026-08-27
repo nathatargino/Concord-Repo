@@ -42,6 +42,7 @@ export interface DbRoom {
   id: string;
   code: string;
   name: string;
+  icon_url?: string | null;
   is_server?: boolean;
   created_by?: string | null;
   is_private?: boolean;
@@ -84,8 +85,17 @@ export interface DbProfile {
   created_at: string;
 }
 
+export interface SavedServer {
+  id: string;
+  code: string;
+  name: string;
+  icon_url?: string | null;
+  role?: string;
+  joined_at?: string;
+}
+
 // ==========================================
-// ROOMS (Temporárias)
+// SALAS (Temporárias de 14h)
 // ==========================================
 export async function createRoomInSupabase(name: string, code: string): Promise<DbRoom | null> {
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -104,7 +114,7 @@ export async function createRoomInSupabase(name: string, code: string): Promise<
     const { data, error } = await supabase
       .from('rooms')
       .insert({
-        code,
+        code: code.toUpperCase(),
         name,
         is_server: false,
         created_by: user?.id || null,
@@ -113,43 +123,45 @@ export async function createRoomInSupabase(name: string, code: string): Promise<
       .single();
 
     if (error) {
-      console.error('[Supabase] Erro ao criar sala:', error.message);
+      console.warn('[Supabase] Aviso ao criar sala temporária:', error.message);
       return null;
     }
 
     return data as DbRoom;
   } catch (err) {
-    console.error('[Supabase] Exceção ao criar sala:', err);
+    console.warn('[Supabase] Exceção ao criar sala temporária:', err);
     return null;
   }
 }
 
-export async function findRoomInSupabase(code: string): Promise<DbRoom | null> {
+export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | null> {
   if (!supabaseUrl || !supabaseAnonKey) {
     return {
-      id: `local-${code}`,
-      code,
-      name: `Sala ${code}`,
+      id: codeOrId,
+      code: codeOrId.toUpperCase(),
+      name: `Sala ${codeOrId}`,
       is_server: false,
       created_at: new Date().toISOString(),
     };
   }
 
   try {
+    const clean = codeOrId.trim();
+    // Tenta primeiro por código, depois por ID
     const { data, error } = await supabase
       .from('rooms')
       .select('*')
-      .eq('code', code.toUpperCase())
+      .or(`code.eq.${clean.toUpperCase()},id.eq.${clean}`)
       .maybeSingle();
 
     if (error) {
-      console.error('[Supabase] Erro ao buscar sala por código:', error.message);
+      console.warn('[Supabase] Erro ao buscar sala/servidor:', error.message);
       return null;
     }
 
     return data as DbRoom | null;
   } catch (err) {
-    console.error('[Supabase] Exceção ao buscar sala:', err);
+    console.warn('[Supabase] Exceção ao buscar sala/servidor:', err);
     return null;
   }
 }
@@ -161,7 +173,7 @@ export async function findRoomInSupabase(code: string): Promise<DbRoom | null> {
 /**
  * Verifica se já existe um servidor com este nome (case-insensitive)
  */
-export async function checkServerNameAvailable(serverName: string): Promise<{ available: boolean; message?: string }> {
+export async function checkServerNameAvailable(serverName: string, excludeServerId?: string): Promise<{ available: boolean; message?: string }> {
   const trimmed = serverName.trim();
   if (!trimmed || trimmed.length < 2 || trimmed.length > 40) {
     return { available: false, message: 'O nome do servidor deve ter entre 2 e 40 caracteres.' };
@@ -172,12 +184,17 @@ export async function checkServerNameAvailable(serverName: string): Promise<{ av
   }
 
   try {
-    const { data: existing, error } = await supabase
+    let query = supabase
       .from('rooms')
       .select('id, name')
       .eq('is_server', true)
-      .ilike('name', trimmed)
-      .maybeSingle();
+      .ilike('name', trimmed);
+
+    if (excludeServerId) {
+      query = query.neq('id', excludeServerId);
+    }
+
+    const { data: existing, error } = await query.maybeSingle();
 
     if (error) {
       console.warn('[Supabase] Aviso ao verificar nome de servidor:', error);
@@ -199,19 +216,21 @@ export async function checkServerNameAvailable(serverName: string): Promise<{ av
 }
 
 /**
- * Cria um novo servidor permanente no Supabase com canal padrão '# geral'
+ * Cria um novo servidor permanente no Supabase com canal padrão '#Geral'
  */
 export async function createServerInSupabase(serverName: string, code: string): Promise<DbRoom | null> {
   const trimmed = serverName.trim();
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return {
+    const mock = {
       id: `local-srv-${Date.now()}`,
       code,
       name: trimmed,
       is_server: true,
       created_at: new Date().toISOString(),
     };
+    saveMyServer({ id: mock.id, code: mock.code, name: mock.name, role: 'owner' });
+    return mock;
   }
 
   try {
@@ -221,7 +240,7 @@ export async function createServerInSupabase(serverName: string, code: string): 
     const { data: serverData, error: serverErr } = await supabase
       .from('rooms')
       .insert({
-        code,
+        code: code.toUpperCase(),
         name: trimmed,
         is_server: true,
         created_by: user?.id || null,
@@ -236,21 +255,21 @@ export async function createServerInSupabase(serverName: string, code: string): 
 
     const createdServer = serverData as DbRoom;
 
-    // 2. Criar canal padrão '# geral'
+    // 2. Criar canal padrão '#Geral'
     try {
       await supabase
         .from('server_channels')
         .insert({
           server_id: createdServer.id,
-          name: 'geral',
+          name: 'Geral',
         });
     } catch (chErr) {
-      console.warn('[Supabase] Falha ao criar canal geral:', chErr);
+      console.warn('[Supabase] Falha ao criar canal Geral:', chErr);
     }
 
     // 3. Registrar o criador como membro Dono
+    const username = user?.user_metadata?.username || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Admin';
     if (user?.id) {
-      const username = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0] || 'Admin';
       try {
         await supabase
           .from('server_members')
@@ -265,10 +284,160 @@ export async function createServerInSupabase(serverName: string, code: string): 
       }
     }
 
+    // 4. Salvar localmente em "Meus Servidores"
+    saveMyServer({
+      id: createdServer.id,
+      code: createdServer.code,
+      name: createdServer.name,
+      icon_url: createdServer.icon_url,
+      role: 'owner',
+    });
+
     return createdServer;
   } catch (err) {
     console.error('[Supabase] Exceção ao criar servidor:', err);
     return null;
+  }
+}
+
+/**
+ * Atualiza o nome do servidor (apenas para o dono)
+ */
+export async function updateServerNameInSupabase(serverId: string, newName: string): Promise<{ success: boolean; message?: string }> {
+  const check = await checkServerNameAvailable(newName, serverId);
+  if (!check.available) {
+    return { success: false, message: check.message };
+  }
+
+  const trimmed = newName.trim();
+  saveMyServer({ id: serverId, name: trimmed, code: '' });
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { success: true };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('rooms')
+      .update({ name: trimmed })
+      .eq('id', serverId);
+
+    if (error) {
+      return { success: false, message: error.message };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Atualiza a logo/ícone do servidor
+ */
+export async function updateServerLogoInSupabase(serverId: string, iconUrl: string): Promise<boolean> {
+  saveMyServer({ id: serverId, icon_url: iconUrl, name: '', code: '' });
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return true;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('rooms')
+      .update({ icon_url: iconUrl })
+      .eq('id', serverId);
+
+    return !error;
+  } catch (err) {
+    console.warn('[Supabase] Falha ao atualizar logo:', err);
+    return false;
+  }
+}
+
+// ==========================================
+// HISTÓRICO: MEUS SERVIDORES
+// ==========================================
+
+const MY_SERVERS_KEY = 'concord_my_servers_list';
+
+export function saveMyServer(server: Partial<SavedServer> & { id: string }): void {
+  try {
+    const raw = localStorage.getItem(MY_SERVERS_KEY);
+    let list: SavedServer[] = raw ? JSON.parse(raw) : [];
+
+    const existingIndex = list.findIndex(s => s.id === server.id);
+    if (existingIndex >= 0) {
+      list[existingIndex] = {
+        ...list[existingIndex],
+        ...server,
+        joined_at: new Date().toISOString(),
+      };
+    } else {
+      list.unshift({
+        id: server.id,
+        code: server.code || '',
+        name: server.name || 'Servidor Concord',
+        icon_url: server.icon_url || null,
+        role: server.role || 'member',
+        joined_at: new Date().toISOString(),
+      });
+    }
+
+    localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(list.slice(0, 50)));
+  } catch (err) {
+    console.warn('Erro ao salvar servidor local:', err);
+  }
+}
+
+export async function getMyServers(): Promise<SavedServer[]> {
+  try {
+    const raw = localStorage.getItem(MY_SERVERS_KEY);
+    let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
+
+    // Se estiver conectado ao Supabase, tenta sincronizar dados mais recentes
+    if (supabaseUrl && supabaseAnonKey) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: remoteMembers } = await supabase
+            .from('server_members')
+            .select('server_id, role, rooms (id, code, name, icon_url)')
+            .eq('user_id', user.id);
+
+          if (remoteMembers && remoteMembers.length > 0) {
+            remoteMembers.forEach((rm: any) => {
+              if (rm.rooms) {
+                const s = rm.rooms;
+                const idx = localList.findIndex(l => l.id === s.id);
+                if (idx >= 0) {
+                  localList[idx] = { ...localList[idx], name: s.name, code: s.code, icon_url: s.icon_url, role: rm.role };
+                } else {
+                  localList.unshift({ id: s.id, code: s.code, name: s.name, icon_url: s.icon_url, role: rm.role });
+                }
+              }
+            });
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Sync MyServers Supabase warning:', syncErr);
+      }
+    }
+
+    return localList;
+  } catch {
+    return [];
+  }
+}
+
+export function removeMyServer(serverId: string): void {
+  try {
+    const raw = localStorage.getItem(MY_SERVERS_KEY);
+    if (!raw) return;
+    let list: SavedServer[] = JSON.parse(raw);
+    list = list.filter(s => s.id !== serverId);
+    localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(list));
+  } catch (err) {
+    console.warn('Erro ao remover servidor salvo:', err);
   }
 }
 
@@ -278,7 +447,7 @@ export async function createServerInSupabase(serverName: string, code: string): 
 
 export async function fetchServerChannels(serverId: string): Promise<DbChannel[]> {
   if (!supabaseUrl || !supabaseAnonKey) {
-    return [{ id: 'local-ch-1', server_id: serverId, name: 'geral', created_at: new Date().toISOString() }];
+    return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
   }
 
   try {
@@ -289,19 +458,18 @@ export async function fetchServerChannels(serverId: string): Promise<DbChannel[]
       .order('created_at', { ascending: true });
 
     if (error || !data || data.length === 0) {
-      // Se não houver canais, garante pelo menos o '# geral'
-      return [{ id: 'ch-geral', server_id: serverId, name: 'geral', created_at: new Date().toISOString() }];
+      return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
     }
 
     return data as DbChannel[];
   } catch (err) {
     console.warn('[Supabase] Erro ao buscar canais do servidor:', err);
-    return [{ id: 'ch-geral', server_id: serverId, name: 'geral', created_at: new Date().toISOString() }];
+    return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
   }
 }
 
 export async function createChannelInSupabase(serverId: string, channelName: string): Promise<DbChannel | null> {
-  const cleanName = channelName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '');
+  const cleanName = channelName.trim().replace(/\s+/g, '-');
   if (!cleanName) return null;
 
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -339,11 +507,13 @@ export async function createChannelInSupabase(serverId: string, channelName: str
 // MEMBROS DO SERVIDOR (Offline, Online, Na Call)
 // ==========================================
 
-export async function registerServerMember(serverId: string, username: string, userId?: string | null): Promise<void> {
+export async function registerServerMember(serverId: string, username: string, userId?: string | null, role: string = 'member'): Promise<void> {
+  // Salva no histórico de "Meus Servidores"
+  saveMyServer({ id: serverId, role });
+
   if (!supabaseUrl || !supabaseAnonKey) return;
 
   try {
-    // Se tiver usuário autenticado, vincula
     let uid = userId;
     if (!uid) {
       const { data: { user } } = await supabase.auth.getUser();
@@ -357,6 +527,7 @@ export async function registerServerMember(serverId: string, username: string, u
           server_id: serverId,
           user_id: uid,
           username,
+          role,
           joined_at: new Date().toISOString(),
         }, { onConflict: 'server_id,user_id' });
     }
@@ -396,11 +567,11 @@ export async function fetchChannelMessages(serverId: string, channelId?: string 
       .select('*')
       .eq('room_id', serverId);
 
-    if (channelId) {
+    if (channelId && channelId !== 'ch-geral') {
       query = query.eq('channel_id', channelId);
     }
 
-    const { data, error } = await query.order('created_at', { ascending: true }).limit(200);
+    const { data, error } = await query.order('created_at', { ascending: true }).limit(300);
 
     if (error || !data) return [];
     return data as DbMessage[];
@@ -428,7 +599,7 @@ export async function saveMessageToSupabase(
       .from('messages')
       .insert({
         room_id: serverId,
-        channel_id: channelId || null,
+        channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
         user_id: user?.id || null,
         sender_name: senderName,
         content,

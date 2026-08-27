@@ -30,9 +30,10 @@ function parseLinks(text: string): string {
 
 interface Props {
   onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
+  onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
 }
 
-export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
+export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => {
   const { 
     messages, 
     setMessages,
@@ -59,14 +60,14 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
 
   // Obter o canal ativo atual
   const activeChannel = useMemo(() => {
-    return channels.find(c => c.id === activeChannelId) || { id: activeChannelId || 'ch-geral', name: 'geral' };
+    return channels.find(c => c.id === activeChannelId) || { id: activeChannelId || 'ch-geral', name: 'Geral' };
   }, [channels, activeChannelId]);
 
-  // Carregar histórico do Supabase ao mudar de canal ou servidor
+  // Carregar histórico do Supabase ao mudar de canal ou sala/servidor
   useEffect(() => {
-    if (!room?.id || !isServer) return;
+    if (!room?.id) return;
 
-    fetchChannelMessages(room.id, activeChannelId).then((history) => {
+    fetchChannelMessages(room.id, isServer ? activeChannelId : undefined).then((history) => {
       if (history && history.length > 0) {
         const formatted: ChatMessage[] = history.map((h) => ({
           id: h.id,
@@ -83,13 +84,10 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
           channelId: h.channel_id || 'ch-geral',
         }));
 
-        // Manter mensagens já na memória sem duplicar IDs
-        const existingMap = new Map(messages.map(m => [m.id, m]));
-        formatted.forEach(m => existingMap.set(m.id, m));
-        setMessages(Array.from(existingMap.values()));
+        setMessages(formatted);
       }
     });
-  }, [room?.id, isServer, activeChannelId]);
+  }, [room?.id, isServer, activeChannelId, setMessages]);
 
   // Filtrar mensagens para o canal ativo
   const channelMessages = useMemo(() => {
@@ -98,7 +96,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       (m) =>
         !m.channelId ||
         m.channelId === activeChannelId ||
-        (activeChannelId === 'ch-geral' && (m.channelId === 'geral' || m.channelId === 'ch-geral'))
+        (activeChannelId === 'ch-geral' && (m.channelId === 'geral' || m.channelId === 'Geral' || m.channelId === 'ch-geral'))
     );
   }, [messages, isServer, activeChannelId]);
 
@@ -123,6 +121,19 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     const trimmed = input.trim();
     if (!trimmed && !stagedFile) return;
 
+    // Interceptação direta dos comandos de música
+    if (!stagedFile && trimmed.startsWith('/')) {
+      const cmd = trimmed.toLowerCase();
+      if (cmd === '/pause' || cmd === '/play' || cmd === '/skip' || cmd === '/clear') {
+        const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
+        if (onMusicAction) {
+          onMusicAction(action);
+        }
+        setInput('');
+        return;
+      }
+    }
+
     const currentChannel = activeChannelId || 'ch-geral';
 
     if (stagedFile) {
@@ -146,7 +157,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
         const msgType = isImage ? 'image' : 'file';
 
         // Salvar no Supabase
-        if (room?.id && isServer) {
+        if (room?.id) {
           saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
         }
 
@@ -162,7 +173,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       }
     } else {
       // Salvar no Supabase
-      if (room?.id && isServer) {
+      if (room?.id) {
         saveMessageToSupabase(room.id, myName, trimmed, currentChannel, 'text');
       }
 
@@ -170,7 +181,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     }
 
     setInput('');
-  }, [input, stagedFile, onSendMessage, activeChannelId, room?.id, isServer, myName]);
+  }, [input, stagedFile, onSendMessage, onMusicAction, activeChannelId, room?.id, myName]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -195,22 +206,9 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].kind === 'file') {
-        const file = items[i].getAsFile();
-        if (file) {
-          stageFile(file);
-          return;
-        }
-      }
-    }
-  };
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (!isDragging) setIsDragging(true);
+    setIsDragging(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
@@ -221,49 +219,52 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
       stageFile(file);
     }
   };
 
-  const handleGifClick = (gif: any, e: React.SyntheticEvent<HTMLElement, Event>) => {
-    e.preventDefault();
+  const handleSelectGif = (gif: any) => {
     const gifUrl = gif.images.fixed_height.url;
     const currentChannel = activeChannelId || 'ch-geral';
-
-    if (room?.id && isServer) {
+    
+    if (room?.id) {
       saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
     }
 
     onSendMessage('GIF', 'giphy', gifUrl, undefined, currentChannel);
     setShowGiphy(false);
-    setGiphySearch('');
   };
 
   const fetchGifs = (offset: number) => {
-    if (giphySearch) {
+    if (giphySearch.trim()) {
       return gf.search(giphySearch, { offset, limit: 10 });
     }
     return gf.trending({ offset, limit: 10 });
   };
 
   return (
-    <div
-      className={`${styles.panel} ${isDragging ? styles.panelDragging : ''}`}
+    <div 
+      className={`${styles.chatPanel} ${isDragging ? styles.dragging : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* ── CABEÇALHO COM CANAL E BUSCA ── */}
-      <div className={styles.header}>
-        <div className={styles.headerTitleArea}>
-          <span className={styles.headerIcon}>
-            {isServer ? '#' : '💬'}
-          </span>
-          <h2 className={styles.headerTitle}>
-            {isServer ? activeChannel.name : 'Chat da Sala'}
-          </h2>
+      {/* ── CABEÇALHO DO CHAT COM NOME DO CANAL E BARRA DE PESQUISA ── */}
+      <div className={styles.chatHeader}>
+        <div className={styles.headerTitle}>
+          {isServer ? (
+            <>
+              <span className={styles.headerHash}>#</span>
+              <span className={styles.headerChannelName}>{activeChannel.name}</span>
+            </>
+          ) : (
+            <>
+              <span className={styles.headerIcon}>💬</span>
+              <span className={styles.headerChannelName}>Chat da Sala</span>
+            </>
+          )}
         </div>
 
         <div className={styles.headerActions}>
@@ -272,15 +273,15 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
               <span className={styles.searchIcon}>🔍</span>
               <input
                 type="text"
+                className={styles.searchInput}
                 placeholder="Pesquisar mensagens..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className={styles.searchInput}
                 autoFocus
               />
               {searchQuery && (
-                <span className={styles.searchCount}>
-                  {displayedMessages.length}
+                <span className={styles.searchResultsBadge}>
+                  {displayedMessages.length} {displayedMessages.length === 1 ? 'resultado' : 'resultados'}
                 </span>
               )}
               <button 
@@ -293,9 +294,9 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
             </div>
           ) : (
             <button 
-              className={styles.toggleSearchBtn}
+              className={styles.searchToggleBtn} 
               onClick={() => setShowSearch(true)}
-              title="Pesquisar mensagens"
+              title="Pesquisar mensagens neste chat"
             >
               🔍
             </button>
@@ -303,204 +304,207 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
         </div>
       </div>
 
-      {/* ── LISTAGEM DE MENSAGENS ── */}
-      <div className={styles.messages} id="chat-messages">
-        {displayedMessages.length === 0 && (
-          <div className={styles.empty}>
-            <span className={styles.emptyIcon}>
-              {searchQuery ? '🔍' : '👋'}
-            </span>
-            <p>
-              {searchQuery 
-                ? `Nenhuma mensagem encontrada para "${searchQuery}"` 
-                : `Bem-vindo ao #${activeChannel.name}! Seja o primeiro a falar!`}
-            </p>
+      {isDragging && (
+        <div className={styles.dragOverlay}>
+          <div className={styles.dragMessage}>
+            <span className={styles.dragIcon}>📁</span>
+            <span>Solte o arquivo aqui para enviar</span>
           </div>
+        </div>
+      )}
+
+      {/* Message list */}
+      <div className={styles.messageList}>
+        {displayedMessages.length === 0 ? (
+          <div className={styles.emptyMessages}>
+            {searchQuery ? (
+              <p>Nenhuma mensagem encontrada para &quot;{searchQuery}&quot;</p>
+            ) : (
+              <>
+                <div className={styles.emptyIcon}>👋</div>
+                <p>
+                  {isServer
+                    ? `Bem-vindo ao #${activeChannel.name}! Seja o primeiro a falar!`
+                    : 'Nenhuma mensagem ainda. Diga oi!'}
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          displayedMessages.map((msg) => {
+            const isMe = msg.userName === myName;
+            return (
+              <div
+                key={msg.id}
+                className={`${styles.messageWrapper} ${
+                  msg.isSystem ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
+                }`}
+              >
+                {msg.isSystem ? (
+                  <div className={styles.systemMessage}>
+                    <span>{msg.message}</span>
+                  </div>
+                ) : (
+                  <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
+                    {!isMe && (
+                      <span className={styles.senderName}>{msg.userName}</span>
+                    )}
+
+                    {/* Conteúdo da mensagem */}
+                    {msg.type === 'giphy' && msg.url ? (
+                      <div className={styles.gifContainer}>
+                        <img src={msg.url} alt="GIF" className={styles.messageGif} />
+                      </div>
+                    ) : msg.type === 'image' && msg.url ? (
+                      <div className={styles.imageContainer}>
+                        <a href={msg.url} target="_blank" rel="noopener noreferrer">
+                          <img src={msg.url} alt={msg.filename || 'Imagem'} className={styles.messageImage} />
+                        </a>
+                      </div>
+                    ) : msg.type === 'file' && msg.url ? (
+                      <div className={styles.fileContainer}>
+                        <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
+                          <span className={styles.fileIcon}>📎</span>
+                          <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <p
+                        className={styles.messageText}
+                        dangerouslySetInnerHTML={{
+                          __html: parseLinks(escapeHtml(msg.message)),
+                        }}
+                      />
+                    )}
+
+                    <span className={styles.timestamp}>{msg.timestamp}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
-        {displayedMessages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} isMe={msg.userName === myName} />
-        ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* ── ÁREA DE DIGITAÇÃO ── */}
-      <div className={styles.inputAreaWrapper}>
-        {stagedFile && (
-          <div className={styles.stagedFilePreview}>
-            {stagedFile.file.type.startsWith('image/') ? (
-              <img src={stagedFile.previewUrl} alt="Staged" className={styles.stagedImage} />
-            ) : (
-              <div className={styles.stagedDocument}>
-                <span className={styles.stagedDocIcon}>📄</span>
-                <span className={styles.stagedDocName}>{stagedFile.file.name}</span>
-              </div>
-            )}
+      {/* Staged file preview */}
+      {stagedFile && (
+        <div className={styles.previewContainer}>
+          {stagedFile.file.type.startsWith('image/') ? (
+            <img src={stagedFile.previewUrl} alt="Preview" className={styles.filePreviewThumb} />
+          ) : (
+            <div className={styles.genericFilePreview}>
+              <span>📄</span>
+            </div>
+          )}
+          <div className={styles.previewDetails}>
+            <span className={styles.previewName}>{stagedFile.file.name}</span>
+            <span className={styles.previewSize}>
+              {(stagedFile.file.size / 1024).toFixed(1)} KB
+            </span>
+          </div>
+          <button
+            className={styles.removeFileBtn}
+            onClick={() => {
+              URL.revokeObjectURL(stagedFile.previewUrl);
+              setStagedFile(null);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Giphy picker modal/popover */}
+      {showGiphy && (
+        <div className={styles.giphyPopover}>
+          <div className={styles.giphyHeader}>
+            <input
+              type="text"
+              placeholder="Buscar GIFs no Giphy..."
+              className={styles.giphySearchInput}
+              value={giphySearch}
+              onChange={(e) => setGiphySearch(e.target.value)}
+              autoFocus
+            />
             <button
-              className={styles.removeStagedBtn}
-              onClick={() => {
-                URL.revokeObjectURL(stagedFile.previewUrl);
-                setStagedFile(null);
-              }}
-              title="Remover anexo"
+              className={styles.closeGiphyBtn}
+              onClick={() => setShowGiphy(false)}
             >
               ✕
             </button>
           </div>
-        )}
-        {showGiphy && (
-          <div className={styles.giphyPopover}>
-            <div className={styles.giphyHeader}>
-              <input
-                type="text"
-                placeholder="Pesquisar Giphy..."
-                value={giphySearch}
-                onChange={(e) => setGiphySearch(e.target.value)}
-                className={styles.giphySearch}
-                autoFocus
-              />
-              <button onClick={() => setShowGiphy(false)} className={styles.closeGiphy}>✕</button>
-            </div>
-            <div className={styles.giphyGridWrapper}>
-              {!GIPHY_API_KEY ? (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#F43F5E', fontSize: '13px' }}>
-                  <p>🔑 <b>Chave do Giphy ausente!</b></p>
-                  <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Crie um arquivo <b>.env</b> na pasta <i>client</i> com:<br /><br /><code>VITE_GIPHY_API_KEY=sua_chave_aqui</code><br /><br />Obtenha sua chave gratuita em <a href="https://developers.giphy.com/" target="_blank" style={{ color: '#22D3EE' }}>developers.giphy.com</a></p>
-                </div>
-              ) : (
-                <Grid
-                  width={360}
-                  columns={2}
-                  fetchGifs={fetchGifs}
-                  key={giphySearch}
-                  onGifClick={handleGifClick}
-                  noLink
-                  hideAttribution
-                />
-              )}
-            </div>
+          <div className={styles.giphyGridContainer}>
+            <Grid
+              key={giphySearch}
+              width={300}
+              columns={2}
+              fetchGifs={fetchGifs}
+              onGifClick={handleSelectGif}
+              noLink
+              hideAttribution
+            />
           </div>
-        )}
-
-        <div className={styles.inputArea}>
-          <input
-            type="file"
-            accept="image/*,application/pdf,application/x-pkcs12,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/x-rar-compressed,.pdf,.pfx,.doc,.docx,.xls,.xlsx,.zip,.rar"
-            style={{ display: 'none' }}
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-          />
-          <button
-            className={styles.iconBtn}
-            onClick={() => fileInputRef.current?.click()}
-            title="Enviar Arquivo"
-            disabled={isUploading}
-          >
-            {isUploading ? '⌛' : '📎'}
-          </button>
-
-          <button
-            className={`${styles.iconBtn} ${showGiphy ? styles.activeIconBtn : ''}`}
-            onClick={() => setShowGiphy(!showGiphy)}
-            title="Enviar GIF"
-          >
-            🎁
-          </button>
-
-          <input
-            id="chat-input"
-            className={styles.input}
-            type="text"
-            placeholder={isServer ? `Conversar em #${activeChannel.name}...` : "Envie uma mensagem..."}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            maxLength={2000}
-          />
-          <button
-            id="btnSendChat"
-            className={styles.sendBtn}
-            onClick={handleSend}
-            disabled={(!input.trim() && !stagedFile) || isUploading}
-            title="Enviar mensagem"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const MessageBubble: React.FC<{ msg: ChatMessage; isMe: boolean }> = ({ msg, isMe }) => {
-  const hue = [...msg.userName].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
-
-  if (msg.isSystem) {
-    return (
-      <div className={styles.systemMsg}>
-        <em dangerouslySetInnerHTML={{ __html: escapeHtml(msg.message) }} />
-      </div>
-    );
-  }
-
-  return (
-    <div className={`${styles.message} ${isMe ? styles.messageMe : ''}`}>
-      {!isMe && (
-        <div
-          className={styles.msgAvatar}
-          style={{ background: `hsl(${hue}, 60%, 40%)` }}
-        >
-          {msg.userName.slice(0, 2).toUpperCase()}
         </div>
       )}
-      <div className={styles.msgContent}>
-        {!isMe && (
-          <div className={styles.msgMeta}>
-            <span className={styles.msgAuthor} style={{ color: `hsl(${hue}, 70%, 65%)` }}>
-              {escapeHtml(msg.userName)}
-            </span>
-            <span className={styles.msgTime}>{msg.timestamp}</span>
-          </div>
-        )}
 
-        {/* Render based on type */}
-        {msg.type === 'image' && msg.url ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <img src={msg.url} alt="User Upload" className={styles.msgImage} />
-            {msg.message !== '📷 Imagem' && (
-              <div
-                className={styles.msgBubble}
-                dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
-              />
-            )}
-          </div>
-        ) : msg.type === 'file' && msg.url ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.msgFile}>
-              <span className={styles.msgFileIcon}>📄</span>
-              <span className={styles.msgFileName}>{msg.filename || 'Documento'}</span>
-              <span className={styles.msgFileDownload}>⬇️</span>
-            </a>
-            {msg.message && !msg.message.startsWith('📄') && (
-              <div
-                className={styles.msgBubble}
-                dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
-              />
-            )}
-          </div>
-        ) : msg.type === 'giphy' && msg.url ? (
-          <img src={msg.url} alt="Giphy" className={styles.msgGif} />
-        ) : (
-          <div
-            className={styles.msgBubble}
-            dangerouslySetInnerHTML={{ __html: parseLinks(escapeHtml(msg.message)) }}
-          />
-        )}
+      {/* Chat input */}
+      <div className={styles.inputContainer}>
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          style={{ display: 'none' }}
+        />
 
-        {isMe && <span className={styles.msgTimeMe}>{msg.timestamp}</span>}
+        <button
+          type="button"
+          className={styles.actionIconBtn}
+          onClick={() => fileInputRef.current?.click()}
+          title="Enviar Arquivo ou Imagem"
+        >
+          📎
+        </button>
+
+        <button
+          type="button"
+          className={styles.actionIconBtn}
+          onClick={() => setShowGiphy(!showGiphy)}
+          title="Buscar GIF"
+        >
+          🎁
+        </button>
+
+        <input
+          type="text"
+          className={styles.chatInput}
+          placeholder={
+            isServer
+              ? `Conversar em #${activeChannel.name}...`
+              : 'Envie uma mensagem...'
+          }
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          maxLength={2000}
+        />
+
+        <button
+          type="button"
+          className={styles.sendButton}
+          onClick={handleSend}
+          disabled={(!input.trim() && !stagedFile) || isUploading}
+          title="Enviar (Enter)"
+        >
+          {isUploading ? (
+            <span className={styles.spinner} />
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 2L11 13" />
+              <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+            </svg>
+          )}
+        </button>
       </div>
     </div>
   );

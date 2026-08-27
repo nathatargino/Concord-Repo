@@ -13,6 +13,8 @@ interface AppState {
   setIsServer: (v: boolean) => void;
   serverName: string;
   setServerName: (name: string) => void;
+  serverIconUrl: string | null;
+  setServerIconUrl: (url: string | null) => void;
 
   // Channels (for Servers)
   channels: ServerChannel[];
@@ -59,6 +61,9 @@ interface AppState {
   setScreenShare: (userId: string | null, userName?: string | null) => void;
   amSharing: boolean;
   setAmSharing: (v: boolean) => void;
+
+  // Full Room Cleanup
+  resetRoomState: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -73,16 +78,19 @@ export const useAppStore = create<AppState>((set) => ({
       room,
       isServer: Boolean(room?.isServer),
       serverName: room?.name || '',
-      channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'geral' }],
+      serverIconUrl: room?.iconUrl || null,
+      channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'Geral' }],
       activeChannelId: room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral',
     }),
   isServer: false,
   setIsServer: (isServer) => set({ isServer }),
   serverName: '',
   setServerName: (serverName) => set({ serverName }),
+  serverIconUrl: null,
+  setServerIconUrl: (serverIconUrl) => set({ serverIconUrl }),
 
   // Channels
-  channels: [{ id: 'ch-geral', name: 'geral' }],
+  channels: [{ id: 'ch-geral', name: 'Geral' }],
   setChannels: (channels) => set({ channels }),
   addChannel: (channel) =>
     set((s) => {
@@ -115,21 +123,42 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Voice
   inVoice: false,
-  setInVoice: (v) => set({ inVoice: v }),
+  setInVoice: (inVoice) => set({ inVoice }),
 
   // Music
   musicQueue: [],
   setMusicQueue: (musicQueue) => set({ musicQueue }),
   currentVideoId: null,
-  setCurrentVideoId: (id) => set({ currentVideoId: id }),
+  setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
   isPlaying: false,
-  setIsPlaying: (v) => set({ isPlaying: v }),
+  setIsPlaying: (isPlaying) => set({ isPlaying }),
 
   // Screen share
   screenShareUserId: null,
   screenShareUserName: null,
-  setScreenShare: (userId, userName = null) =>
-    set({ screenShareUserId: userId, screenShareUserName: userName }),
+  setScreenShare: (screenShareUserId, screenShareUserName = null) =>
+    set({ screenShareUserId, screenShareUserName }),
   amSharing: false,
-  setAmSharing: (v) => set({ amSharing: v }),
+  setAmSharing: (amSharing) => set({ amSharing }),
+
+  // Full Room Cleanup
+  resetRoomState: () =>
+    set({
+      room: null,
+      isServer: false,
+      serverName: '',
+      serverIconUrl: null,
+      channels: [{ id: 'ch-geral', name: 'Geral' }],
+      activeChannelId: 'ch-geral',
+      serverMembers: [],
+      users: [],
+      messages: [],
+      inVoice: false,
+      musicQueue: [],
+      currentVideoId: null,
+      isPlaying: false,
+      screenShareUserId: null,
+      screenShareUserName: null,
+      amSharing: false,
+    }),
 }));

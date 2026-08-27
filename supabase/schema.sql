@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.rooms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    icon_url TEXT,
     is_server BOOLEAN DEFAULT false,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     is_private BOOLEAN DEFAULT false,
@@ -78,8 +79,9 @@ CREATE TABLE IF NOT EXISTS public.rooms (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Ensure is_server column exists if table was created previously
+-- Ensure columns exist if table was created previously
 ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS is_server BOOLEAN DEFAULT false;
+ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS icon_url TEXT;
 
 -- Enforce unique server names (case-insensitive) for servers (is_server = true)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_server_name_unique ON public.rooms (LOWER(name)) WHERE (is_server = true);

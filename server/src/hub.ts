@@ -22,6 +22,7 @@ export interface RoomState {
   id: string;
   code: string;
   name?: string;
+  iconUrl?: string;
   isServer?: boolean;
   channels: ServerChannel[];
   createdAt: number;
@@ -69,7 +70,7 @@ export function createRoom(
     }
   }
   const now = Date.now();
-  const defaultChannel: ServerChannel = { id: 'ch-geral', name: 'geral', serverId: id };
+  const defaultChannel: ServerChannel = { id: 'ch-geral', name: 'Geral', serverId: id };
   const room: RoomState = {
     id,
     code,
@@ -143,6 +144,7 @@ export function toRoomInfo(room: RoomState): RoomInfo {
     id: room.id,
     code: room.code,
     name: room.name,
+    iconUrl: room.iconUrl,
     isServer: room.isServer,
     channels: room.channels,
     createdAt: room.createdAt,
@@ -348,6 +350,32 @@ export function registerHub(io: IoServer) {
 
       io.to(room.id).emit('channel_created', newChannel);
       io.to(room.id).emit('toast_notification', `Canal #${clean} criado!`, 'info');
+    });
+
+    // ─── UPDATE SERVER (Nome e Logo) ───────────────────────────────
+    socket.on('update_server', (serverId: string, newName?: string, newIconUrl?: string) => {
+      const room = rooms.get(serverId) || getCurrentRoom();
+      if (!room || !room.isServer) return;
+
+      if (!room.adminIds.includes(socket.id)) {
+        socket.emit('toast_notification', 'Apenas administradores podem alterar as configurações do servidor.', 'error');
+        return;
+      }
+
+      if (newName) {
+        room.name = newName.trim().slice(0, 40);
+      }
+      if (newIconUrl !== undefined) {
+        room.iconUrl = newIconUrl;
+      }
+
+      io.to(room.id).emit('server_updated', {
+        serverId: room.id,
+        name: room.name,
+        iconUrl: room.iconUrl,
+      });
+
+      console.log(`[Server] Server ${room.id} updated -> name: ${room.name}, icon: ${room.iconUrl}`);
     });
 
     // ─── CHAT MESSAGE ──────────────────────────────────────────────

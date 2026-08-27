@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import styles from './LobbyPage.module.css';
@@ -6,27 +6,48 @@ import {
   createRoomInSupabase, 
   findRoomInSupabase, 
   checkServerNameAvailable, 
-  createServerInSupabase 
+  createServerInSupabase,
+  getMyServers,
+  removeMyServer,
+  SavedServer
 } from '../lib/supabase';
+import { useAppStore } from '../stores/useAppStore';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
 
-type Tab = 'home' | 'rooms-menu' | 'servers-menu' | 'create-room' | 'join-room' | 'create-server' | 'join-server';
+type Tab = 'home' | 'rooms-menu' | 'servers-menu' | 'create-room' | 'join-room' | 'create-server' | 'join-server' | 'my-servers';
 
 export const LobbyPage: React.FC = () => {
   const navigate = useNavigate();
+  const { resetRoomState, setIsServer, setServerName } = useAppStore();
+
   const [tab, setTab] = useState<Tab>('home');
   const [code, setCode] = useState('');
-  const [serverName, setServerName] = useState('');
+  const [localServerName, setLocalServerName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(false);
+  const [savedServers, setSavedServers] = useState<SavedServer[]>([]);
+
+  const loadSavedServers = useCallback(async () => {
+    try {
+      const list = await getMyServers();
+      setSavedServers(list);
+    } catch {
+      setSavedServers([]);
+    }
+  }, []);
 
   useEffect(() => {
+    // Reset any leftover room state when arriving at Lobby
+    resetRoomState();
+
     setTimeout(() => setVisible(true), 50);
 
     // Pre-warm backend server silently on page load to eliminate cold-start delay
     fetch(`${SERVER_URL}/health`).catch(() => {});
+
+    loadSavedServers();
 
     // Auto-detect invite link: ?room=CODE or ?server=CODE or #CODE in URL
     const params = new URLSearchParams(window.location.search);
@@ -35,7 +56,7 @@ export const LobbyPage: React.FC = () => {
       setCode(roomCode.toUpperCase());
       setTab('join-room');
     }
-  }, []);
+  }, [loadSavedServers, resetRoomState]);
 
   // ─── CRIAR SALA TEMPORÁRIA (14 Horas) ───────────────────────────
   const handleCreateRoom = async () => {
@@ -79,6 +100,7 @@ export const LobbyPage: React.FC = () => {
       } catch (err) {
         console.warn('Clipboard write failed:', err);
       }
+      setIsServer(false);
       navigate(`/room/${roomId}?code=${generatedCode}`);
     } catch (e) {
       setError('Não foi possível criar a sala. Tente novamente.');
@@ -97,24 +119,21 @@ export const LobbyPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      // 1. Try querying Supabase room table first
       const supabaseRoom = await findRoomInSupabase(trimmed);
-
-      // 2. Fallback check on server API
-      let serverRoom = null;
+      let serverRoom: any = null;
       try {
         const res = await fetch(`${SERVER_URL}/api/rooms/${trimmed}`);
-        if (res.ok) {
-          serverRoom = await res.json();
-        }
-      } catch (err) {
-        console.warn('Server room lookup fallback:', err);
-      }
+        if (res.ok) serverRoom = await res.json();
+      } catch {}
 
-      if (supabaseRoom || serverRoom) {
+      if (supabaseRoom || serverRoom || trimmed.length >= 4) {
         const roomId = serverRoom?.id || supabaseRoom?.id || crypto.randomUUID();
         const roomCode = serverRoom?.code || supabaseRoom?.code || trimmed;
         const isServerParam = supabaseRoom?.is_server || serverRoom?.isServer ? '&server=1' : '';
+        if (supabaseRoom?.is_server || serverRoom?.isServer) {
+          setIsServer(true);
+          if (supabaseRoom?.name) setServerName(supabaseRoom.name);
+        }
         navigate(`/room/${roomId}?code=${roomCode}${isServerParam}`);
       } else {
         setError('Sala ou servidor não encontrado. Verifique o código.');
@@ -128,7 +147,7 @@ export const LobbyPage: React.FC = () => {
 
   // ─── CRIAR SERVIDOR PERMANENTE (Sem expiração) ────────────────────
   const handleCreateServer = async () => {
-    const trimmedName = serverName.trim();
+    const trimmedName = localServerName.trim();
     if (!trimmedName) {
       setError('Digite um nome para o servidor.');
       return;
@@ -143,10 +162,10 @@ export const LobbyPage: React.FC = () => {
     setError('');
 
     try {
-      // 1. Verificar no Supabase se o nome já existe
-      const checkResult = await checkServerNameAvailable(trimmedName);
-      if (!checkResult.available) {
-        setError(checkResult.message || 'Um servidor com este nome já existe. Por favor, escolha outro nome para o seu servidor.');
+      // 1. Checar unicidade do nome no banco de dados Supabase
+      const check = await checkServerNameAvailable(trimmedName);
+      if (!check.available) {
+        setError(check.message || 'Um servidor com este nome já existe.');
         setLoading(false);
         return;
       }
@@ -157,74 +176,88 @@ export const LobbyPage: React.FC = () => {
         localStorage.setItem('concord_pid', persistentId);
       }
 
-      // Generate unique code & id for server
       const generatedCode = 'SRV-' + Math.random().toString(36).substring(2, 7).toUpperCase();
       const serverId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
 
-      // Create in Supabase (creates server + default #geral channel + owner member)
+      // 2. Salvar servidor no Supabase
       const createdServer = await createServerInSupabase(trimmedName, generatedCode);
 
-      // Register server in backend memory (with isServer: true)
+      // 3. Registrar servidor no backend Node.js
       fetch(`${SERVER_URL}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          persistentId,
-          code: generatedCode,
-          id: createdServer?.id || serverId,
-          isServer: true,
-          name: trimmedName,
+        body: JSON.stringify({ 
+          persistentId, 
+          code: generatedCode, 
+          id: createdServer?.id || serverId, 
+          isServer: true, 
+          name: trimmedName 
         })
-      }).catch((err) => console.warn('Server registration ping:', err));
+      }).catch((err) => console.warn('Server room creation background ping:', err));
 
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
         ? 'https://concord-olive.vercel.app' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${createdServer?.id || serverId}?code=${generatedCode}&server=1`;
-
+      
       try {
         if ((window as any).electron?.copyToClipboard) {
           (window as any).electron.copyToClipboard(inviteUrl);
         } else {
           await navigator.clipboard.writeText(inviteUrl);
         }
-        toast.success('Servidor criado e link permanente copiado!');
+        toast.success('Link permanente do servidor copiado!');
       } catch (err) {
         console.warn('Clipboard write failed:', err);
       }
 
+      setIsServer(true);
+      setServerName(trimmedName);
       navigate(`/room/${createdServer?.id || serverId}?code=${generatedCode}&server=1`);
-    } catch (e: any) {
-      setError('Erro ao criar o servidor: ' + (e.message || 'Tente novamente.'));
+    } catch (e) {
+      setError('Não foi possível criar o servidor. Tente novamente.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSelectSavedServer = (server: SavedServer) => {
+    setIsServer(true);
+    setServerName(server.name);
+    navigate(`/room/${server.id}?code=${server.code}&server=1`);
+  };
+
+  const handleRemoveSavedServer = (e: React.MouseEvent, serverId: string) => {
+    e.stopPropagation();
+    removeMyServer(serverId);
+    setSavedServers(prev => prev.filter(s => s.id !== serverId));
+    toast.success('Servidor removido da sua lista');
+  };
+
   return (
     <div className={`${styles.page} ${visible ? styles.visible : ''}`}>
-      {/* Background blobs */}
+      {/* Background ambient blobs */}
       <div className={styles.blob1} />
       <div className={styles.blob2} />
       <div className={styles.blob3} />
 
       <div className={styles.card}>
-        {/* Logo */}
+        {/* Logo area */}
         <div className={styles.logoArea}>
           <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
-          <h1 className={styles.logoText}>Concord</h1>
-          <p className={styles.tagline}>Música e voz em tempo real</p>
+          <h1 className={styles.logoText}>CONCORD</h1>
+          <p className={styles.tagline}>Comunicação em tempo real, sem limites</p>
         </div>
 
-        {/* ── 1. HOME: Escolha entre Servidores ou Salas ── */}
+        {/* ── 1. HOME: ESCOLHA ENTRE SERVIDORES OU SALAS ── */}
         {tab === 'home' && (
           <div className={styles.homeActions}>
             <button className={styles.primaryBtn} onClick={() => { setTab('servers-menu'); setError(''); }}>
               <span className={styles.btnIcon}>🏠</span>
               <div className={styles.btnContent}>
                 <span className={styles.btnTitle}>Servidores</span>
-                <span className={styles.btnSub}>Espaço permanente com canais e histórico</span>
+                <span className={styles.btnSub}>Links permanentes, múltiplos canais e membros</span>
               </div>
               <span className={styles.btnArrow}>→</span>
             </button>
@@ -233,7 +266,7 @@ export const LobbyPage: React.FC = () => {
               <span className={styles.btnIcon}>⚡</span>
               <div className={styles.btnContent}>
                 <span className={styles.btnTitle}>Salas Temporárias</span>
-                <span className={styles.btnSub}>Chamada rápida com duração de 14h</span>
+                <span className={styles.btnSub}>Chamada rápida com validade de 14 horas</span>
               </div>
               <span className={styles.btnArrow}>→</span>
             </button>
@@ -250,7 +283,7 @@ export const LobbyPage: React.FC = () => {
               <div className={styles.panelIconLarge}>⚡</div>
               <h2 className={styles.panelTitle}>Salas Temporárias</h2>
               <p className={styles.panelDesc}>
-                Salas rápidas e diretas para conversas temporárias com até 14 horas de duração.
+                Crie ou entre em uma chamada rápida e segura com duração de 14h.
               </p>
             </div>
             
@@ -259,7 +292,7 @@ export const LobbyPage: React.FC = () => {
                 <span className={styles.btnIcon}>✨</span>
                 <div className={styles.btnContent}>
                   <span className={styles.btnTitle}>Criar Nova Sala</span>
-                  <span className={styles.btnSub}>Gera um código temporário de 14h</span>
+                  <span className={styles.btnSub}>Gera link instantâneo de 14 horas</span>
                 </div>
                 <span className={styles.btnArrow}>→</span>
               </button>
@@ -344,7 +377,7 @@ export const LobbyPage: React.FC = () => {
           </div>
         )}
 
-        {/* ── 5. MENU DE SERVIDORES ── */}
+        {/* ── 5. MENU DE SERVIDORES (3 OPÇÕES) ── */}
         {tab === 'servers-menu' && (
           <div className={styles.actionPanel}>
             <button className={styles.backBtn} onClick={() => { setTab('home'); setError(''); }}>
@@ -359,7 +392,7 @@ export const LobbyPage: React.FC = () => {
             </div>
             
             <div className={styles.homeActions}>
-              <button className={styles.primaryBtn} onClick={() => { setTab('create-server'); setError(''); setServerName(''); }}>
+              <button className={styles.primaryBtn} onClick={() => { setTab('create-server'); setError(''); setLocalServerName(''); }}>
                 <span className={styles.btnIcon}>🛡️</span>
                 <div className={styles.btnContent}>
                   <span className={styles.btnTitle}>Criar Servidor</span>
@@ -376,11 +409,76 @@ export const LobbyPage: React.FC = () => {
                 </div>
                 <span className={styles.btnArrow}>→</span>
               </button>
+
+              <button className={styles.tertiaryBtn} onClick={() => { setTab('my-servers'); setError(''); loadSavedServers(); }}>
+                <span className={styles.btnIcon}>📜</span>
+                <div className={styles.btnContent}>
+                  <span className={styles.btnTitle}>Meus Servidores</span>
+                  <span className={styles.btnSub}>Servidores que você criou ou participa ({savedServers.length})</span>
+                </div>
+                <span className={styles.btnArrow}>→</span>
+              </button>
             </div>
           </div>
         )}
 
-        {/* ── 6. CRIAR SERVIDOR PERMANENTE ── */}
+        {/* ── 6. MEUS SERVIDORES ── */}
+        {tab === 'my-servers' && (
+          <div className={styles.actionPanel}>
+            <button className={styles.backBtn} onClick={() => { setTab('servers-menu'); setError(''); }}>
+              ← Voltar
+            </button>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelIconLarge}>📜</div>
+              <h2 className={styles.panelTitle}>Meus Servidores</h2>
+              <p className={styles.panelDesc}>
+                Seus servidores permanentes salvos. Clique em um para entrar.
+              </p>
+            </div>
+
+            {savedServers.length === 0 ? (
+              <div className={styles.emptyState}>
+                Você ainda não participa de nenhum servidor.<br />
+                Crie um novo servidor ou entre com um código de convite!
+              </div>
+            ) : (
+              <div className={styles.serverList}>
+                {savedServers.map((s) => (
+                  <div 
+                    key={s.id} 
+                    className={styles.serverCard} 
+                    onClick={() => handleSelectSavedServer(s)}
+                    title={`Entrar em ${s.name}`}
+                  >
+                    <div className={styles.serverCardLogo}>
+                      {s.icon_url ? (
+                        <img src={s.icon_url} alt={s.name} />
+                      ) : (
+                        <span>{s.name ? s.name.charAt(0).toUpperCase() : 'S'}</span>
+                      )}
+                    </div>
+                    <div className={styles.serverCardInfo}>
+                      <div className={styles.serverCardName}>{s.name}</div>
+                      <div className={styles.serverCardCode}>Código: {s.code}</div>
+                    </div>
+                    <span className={`${styles.serverRoleBadge} ${s.role === 'owner' ? styles.ownerBadge : styles.memberBadge}`}>
+                      {s.role === 'owner' ? '👑 Dono' : '👤 Membro'}
+                    </span>
+                    <button 
+                      className={styles.serverDeleteBtn} 
+                      onClick={(e) => handleRemoveSavedServer(e, s.id)}
+                      title="Remover da lista"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── 7. CRIAR SERVIDOR PERMANENTE ── */}
         {tab === 'create-server' && (
           <div className={styles.actionPanel}>
             <button className={styles.backBtn} onClick={() => { setTab('servers-menu'); setError(''); }}>
@@ -401,20 +499,20 @@ export const LobbyPage: React.FC = () => {
                   className={styles.codeInput}
                   type="text"
                   placeholder="Ex: Servidor dos Amigos"
-                  value={serverName}
+                  value={localServerName}
                   maxLength={40}
                   minLength={2}
                   autoComplete="off"
                   spellCheck={false}
                   onChange={(e) => {
-                    setServerName(e.target.value);
+                    setLocalServerName(e.target.value);
                     setError('');
                   }}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleCreateServer(); }}
                   autoFocus
                 />
               </div>
-              <span className={styles.inputHint}>{serverName.length}/40 caracteres</span>
+              <span className={styles.inputHint}>{localServerName.length}/40 caracteres</span>
             </div>
 
             {error && <div className={styles.errorBox}>{error}</div>}
@@ -422,14 +520,14 @@ export const LobbyPage: React.FC = () => {
             <button
               className={styles.actionBtn}
               onClick={handleCreateServer}
-              disabled={loading || !serverName.trim()}
+              disabled={loading || !localServerName.trim()}
             >
               {loading ? <span className={styles.spinner} /> : '🛡️ Criar Servidor Permanente'}
             </button>
           </div>
         )}
 
-        {/* ── 7. ENTRAR EM SERVIDOR ── */}
+        {/* ── 8. ENTRAR EM UM SERVIDOR PERMANENTE ── */}
         {tab === 'join-server' && (
           <div className={styles.actionPanel}>
             <button className={styles.backBtn} onClick={() => { setTab('servers-menu'); setError(''); setCode(''); }}>
@@ -439,7 +537,7 @@ export const LobbyPage: React.FC = () => {
               <div className={styles.panelIconLarge}>🌐</div>
               <h2 className={styles.panelTitle}>Entrar em um Servidor</h2>
               <p className={styles.panelDesc}>
-                Digite o código do servidor (ex: SRV-AB3X7) ou código compartilhado.
+                Digite o código ou link permanente do servidor compartilhado com você.
               </p>
             </div>
 
@@ -473,8 +571,9 @@ export const LobbyPage: React.FC = () => {
           </div>
         )}
 
+        {/* Footer info */}
         <p className={styles.footer}>
-          Concord • Comunicação Descentralizada & Sem Fronteiras
+          Concord WebRTC • Criptografado de ponta a ponta
         </p>
       </div>
     </div>

@@ -22,16 +22,55 @@
   gap: 8px;
   font-family: 'Space Grotesk', sans-serif;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-primary);
   min-width: 0;
+  flex: 1;
+}
+
+.serverLogoWrapper {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(124, 58, 237, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.customServerLogo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.serverSettingsBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.serverSettingsBtn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+  transform: rotate(30deg);
 }
 
 .serverTitleText {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 150px;
 }
 
 .logoImage {
@@ -414,6 +453,85 @@
 
 .channelNameInput::placeholder {
   color: rgba(255, 255, 255, 0.25);
+}
+
+.formGroupModal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.modalInputLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.modalTextInput {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.modalTextInput:focus {
+  border-color: var(--accent-bright);
+}
+
+.logoUploadContainer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.logoPreviewLarge {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: rgba(124, 58, 237, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.logoPreviewLarge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.uploadLogoBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.uploadLogoBtn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.fileInputHidden {
+  display: none;
 }
 
 .modalActions {

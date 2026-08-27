@@ -25,6 +25,7 @@ export interface RoomInfo {
   id: string;
   code: string;
   name?: string;
+  iconUrl?: string;
   isServer?: boolean;
   createdAt: number;
   expiresAt: number;
@@ -52,6 +53,7 @@ export interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
   join_voice: () => void;
@@ -85,6 +87,7 @@ export interface ServerToClientEvents {
     channelId?: string
   ) => void;
   channel_created: (channel: ServerChannel) => void;
+  server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;

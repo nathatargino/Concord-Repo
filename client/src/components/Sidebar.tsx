@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { VoicePanel } from './VoicePanel';
@@ -7,7 +7,9 @@ import {
   fetchServerChannels, 
   fetchServerMembers, 
   createChannelInSupabase, 
-  registerServerMember 
+  registerServerMember,
+  updateServerNameInSupabase,
+  updateServerLogoInSupabase
 } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -19,6 +21,7 @@ interface Props {
   onStopScreenShare: () => void;
   onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room' | 'give_admin' | 'local_mute', targetId: string) => void;
   onCreateChannel?: (channelName: string) => void;
+  onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -29,6 +32,7 @@ export const Sidebar: React.FC<Props> = ({
   onStopScreenShare,
   onAdminAction,
   onCreateChannel,
+  onUpdateServer,
 }) => {
   const { 
     users, 
@@ -37,6 +41,10 @@ export const Sidebar: React.FC<Props> = ({
     connected, 
     room, 
     isServer, 
+    serverName,
+    setServerName,
+    serverIconUrl,
+    setServerIconUrl,
     channels, 
     setChannels, 
     addChannel, 
@@ -57,6 +65,13 @@ export const Sidebar: React.FC<Props> = ({
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+
+  // Modal para configurações do servidor (Nome e Logo)
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editLogoUrl, setEditLogoUrl] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Carregar canais e membros do servidor se for servidor permanente
   useEffect(() => {
@@ -122,15 +137,16 @@ export const Sidebar: React.FC<Props> = ({
 
   const isAdmin = room?.adminIds?.includes(myId) ?? false;
 
+  // ─── CRIAÇÃO DE NOVO CANAL ─────────────────────────────────────────
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanName = newChannelName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').slice(0, 25);
+    const cleanName = newChannelName.trim().slice(0, 25);
     if (!cleanName) {
       toast.error('Digite um nome válido para o canal');
       return;
     }
 
-    if (channels.some(c => c.name === cleanName)) {
+    if (channels.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) {
       toast.error('Já existe um canal com esse nome');
       return;
     }
@@ -157,16 +173,100 @@ export const Sidebar: React.FC<Props> = ({
     }
   };
 
+  // ─── EDIÇÃO DE SERVIDOR (LOGO E NOME) ──────────────────────────────
+  const handleOpenSettings = () => {
+    setEditName(room?.name || serverName || '');
+    setEditLogoUrl(serverIconUrl || room?.iconUrl || '');
+    setShowSettingsModal(true);
+  };
+
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      setEditLogoUrl(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!room?.id) return;
+
+    const trimmedName = editName.trim();
+    if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 40) {
+      toast.error('O nome do servidor deve ter entre 2 e 40 caracteres');
+      return;
+    }
+
+    setIsSavingSettings(true);
+    try {
+      // 1. Atualizar nome (se mudou)
+      if (trimmedName !== (room.name || serverName)) {
+        const nameRes = await updateServerNameInSupabase(room.id, trimmedName);
+        if (!nameRes.success) {
+          toast.error(nameRes.message || 'Erro ao alterar o nome do servidor');
+          setIsSavingSettings(false);
+          return;
+        }
+        setServerName(trimmedName);
+      }
+
+      // 2. Atualizar logo (se mudou)
+      if (editLogoUrl !== (serverIconUrl || room.iconUrl)) {
+        await updateServerLogoInSupabase(room.id, editLogoUrl);
+        setServerIconUrl(editLogoUrl || null);
+      }
+
+      // 3. Emitir evento socket para atualizar todos os membros
+      if (onUpdateServer) {
+        onUpdateServer(room.id, trimmedName, editLogoUrl);
+      }
+
+      toast.success('Servidor atualizado com sucesso!');
+      setShowSettingsModal(false);
+    } catch (err) {
+      toast.error('Erro ao salvar alterações');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   return (
     <aside className={styles.sidebar}>
       {/* Cabeçalho */}
       <div className={styles.header}>
-        <div className={styles.serverName} title={room?.name || 'Concord'}>
-          <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
+        <div className={styles.serverName} title={room?.name || serverName || 'Concord'}>
+          <div className={styles.serverLogoWrapper}>
+            {serverIconUrl || room?.iconUrl ? (
+              <img src={serverIconUrl || room?.iconUrl || ''} alt="Logo" className={styles.customServerLogo} />
+            ) : (
+              <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
+            )}
+          </div>
           <span className={styles.serverTitleText}>
-            {room?.name || 'Concord'}
+            {room?.name || serverName || 'Concord'}
           </span>
         </div>
+
+        {isServer && isAdmin && (
+          <button 
+            className={styles.serverSettingsBtn} 
+            onClick={handleOpenSettings}
+            title="Configurações do Servidor (Nome e Logo)"
+          >
+            ⚙️
+          </button>
+        )}
+
         <div className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />
       </div>
 
@@ -192,7 +292,7 @@ export const Sidebar: React.FC<Props> = ({
 
             <div className={styles.channelList}>
               {channels.map((channel) => {
-                const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && channel.name === 'geral');
+                const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && (channel.name === 'geral' || channel.name === 'Geral'));
                 return (
                   <button
                     key={channel.id}
@@ -228,7 +328,7 @@ export const Sidebar: React.FC<Props> = ({
           <div className={`${styles.collapsibleWrapper} ${showVoice ? styles.expanded : ''}`}>
             <div className={styles.userList}>
               {voiceUsers.length === 0 ? (
-                <div className={styles.emptyListHint}>Nenhum usuário na call</div>
+                <div className={styles.emptyCategory}>Nenhum usuário na call</div>
               ) : (
                 voiceUsers.map((user) => (
                   <UserCard
@@ -307,19 +407,18 @@ export const Sidebar: React.FC<Props> = ({
             <div className={`${styles.collapsibleWrapper} ${showOffline ? styles.expanded : ''}`}>
               <div className={styles.userList}>
                 {offlineMembers.length === 0 ? (
-                  <div className={styles.emptyListHint}>Nenhum membro offline</div>
+                  <div className={styles.emptyCategory}>Nenhum membro offline</div>
                 ) : (
                   offlineMembers.map((member) => (
-                    <div key={member.id} className={`${styles.userCard} ${styles.userCardOffline}`}>
-                      <div className={`${styles.avatar} ${styles.avatarOffline}`}>
-                        {member.username.slice(0, 2).toUpperCase()}
+                    <div key={member.id} className={styles.offlineUserItem}>
+                      <div className={styles.avatarWrapper}>
+                        <div className={styles.avatarFallback}>
+                          {member.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div className={styles.offlineDot} />
                       </div>
-                      <div className={styles.userInfo}>
-                        <span className={`${styles.userName} ${styles.userNameOffline}`}>
-                          {member.username}
-                          {member.role === 'owner' && <span className={styles.adminTag} title="Dono do Servidor">👑</span>}
-                        </span>
-                      </div>
+                      <span className={styles.offlineUserName}>{member.username}</span>
+                      {member.role === 'owner' && <span className={styles.ownerCrown} title="Dono do Servidor">👑</span>}
                     </div>
                   ))
                 )}
@@ -329,34 +428,35 @@ export const Sidebar: React.FC<Props> = ({
         )}
       </div>
 
+      {/* Voice Controls */}
       <VoicePanel
-        onJoin={onJoinVoice}
-        onLeave={onLeaveVoice}
+        onJoinVoice={onJoinVoice}
+        onLeaveVoice={onLeaveVoice}
         onStartScreenShare={onStartScreenShare}
         onStopScreenShare={onStopScreenShare}
       />
 
-      {/* Modal de Criação de Canal */}
+      {/* ── MODAL: CRIAR NOVO CANAL DE TEXTO ── */}
       {showCreateChannelModal && (
         <div className={styles.modalOverlay} onClick={() => setShowCreateChannelModal(false)}>
-          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 className={styles.modalTitle}>Criar Canal de Texto</h3>
-            <p className={styles.modalDesc}>Canais de texto servem para organizar conversas por assunto.</p>
-            
+            <p className={styles.modalDesc}>
+              Canais de texto servem para organizar conversas por tópicos específicos.
+            </p>
             <form onSubmit={handleCreateChannelSubmit}>
               <div className={styles.channelInputWrapper}>
                 <span className={styles.inputHash}>#</span>
                 <input
                   type="text"
-                  placeholder="ex: avisos, jogos, musica"
-                  value={newChannelName}
-                  maxLength={25}
-                  onChange={(e) => setNewChannelName(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
                   className={styles.channelNameInput}
+                  placeholder="Ex: avisos, geral, musica"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  maxLength={25}
                   autoFocus
                 />
               </div>
-
               <div className={styles.modalActions}>
                 <button
                   type="button"
@@ -378,85 +478,156 @@ export const Sidebar: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Menu de Contexto de Usuário */}
+      {/* ── MODAL: CONFIGURAÇÕES DO SERVIDOR (LOGO E NOME) ── */}
+      {showSettingsModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowSettingsModal(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.modalTitle}>Configurações do Servidor</h3>
+            <p className={styles.modalDesc}>
+              Personalize o nome e a foto do seu servidor. Apenas o Dono pode efetuar alterações.
+            </p>
+            <form onSubmit={handleSaveSettings}>
+              {/* Alterar Logo */}
+              <div className={styles.formGroupModal}>
+                <label className={styles.modalInputLabel}>Logo do Servidor</label>
+                <div className={styles.logoUploadContainer}>
+                  <div className={styles.logoPreviewLarge}>
+                    {editLogoUrl ? (
+                      <img src={editLogoUrl} alt="Prévia" />
+                    ) : (
+                      <span>🛡️</span>
+                    )}
+                  </div>
+                  <div>
+                    <input 
+                      type="file" 
+                      ref={logoInputRef} 
+                      className={styles.fileInputHidden} 
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={handleLogoFileUpload}
+                    />
+                    <button 
+                      type="button" 
+                      className={styles.uploadLogoBtn}
+                      onClick={() => logoInputRef.current?.click()}
+                    >
+                      📁 Escolher Imagem
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Alterar Nome */}
+              <div className={styles.formGroupModal}>
+                <label className={styles.modalInputLabel}>Nome do Servidor (máx. 40 caracteres)</label>
+                <input
+                  type="text"
+                  className={styles.modalTextInput}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  maxLength={40}
+                  minLength={2}
+                  required
+                />
+              </div>
+
+              <div className={styles.modalActions}>
+                <button
+                  type="button"
+                  className={styles.cancelBtn}
+                  onClick={() => setShowSettingsModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={styles.confirmBtn}
+                  disabled={isSavingSettings || !editName.trim()}
+                >
+                  {isSavingSettings ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── CONTEXT MENU DO USUÁRIO ── */}
       {contextMenu && (
         <div 
           className={styles.contextMenu}
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          {room?.adminIds?.includes(myId) && !room?.adminIds?.includes(contextMenu.targetId) && (
-            <button 
-              onClick={() => { onAdminAction('give_admin', contextMenu.targetId); setContextMenu(null); }}
-              className={styles.contextMenuItem}
-            >
-              👑 Dar Administrador
-            </button>
-          )}
+          <div className={styles.contextMenuSlider}>
+            <label>Volume do Usuário</label>
+            <input 
+              type="range" 
+              min="0" 
+              max="200" 
+              value={userVolumes[contextMenu.targetId] ?? 100}
+              onChange={(e) => setUserVolume(contextMenu.targetId, Number(e.target.value))}
+            />
+          </div>
 
-          {localMutedUsers.includes(contextMenu.targetId) ? (
-            <button 
-              onClick={() => { onAdminAction('local_mute', contextMenu.targetId); setContextMenu(null); }}
-              className={styles.contextMenuItem}
-            >
-              🔊 Desmutar para mim
-            </button>
-          ) : (
-            <button 
-              onClick={() => { onAdminAction('local_mute', contextMenu.targetId); setContextMenu(null); }}
-              className={styles.contextMenuItem}
-            >
-              🔇 Mutar para mim
-            </button>
-          )}
+          <button 
+            className={styles.contextMenuItem}
+            onClick={() => {
+              onAdminAction('local_mute', contextMenu.targetId);
+              setContextMenu(null);
+            }}
+          >
+            {localMutedUsers.includes(contextMenu.targetId) ? '🔊 Desmutar para mim' : '🔇 Silenciar para mim'}
+          </button>
 
-          {users.find(u => u.id === contextMenu.targetId)?.inVoice && (
-            <div className={styles.contextMenuSlider}>
-              <label>Volume: {userVolumes[contextMenu.targetId] ?? 100}%</label>
-              <input 
-                type="range" 
-                min="0" 
-                max="200" 
-                value={userVolumes[contextMenu.targetId] ?? 100}
-                onChange={(e) => {
-                  setUserVolume(contextMenu.targetId, parseInt(e.target.value));
-                }}
-              />
-            </div>
-          )}
-
-          {room?.adminIds?.includes(myId) && users.find(u => u.id === contextMenu.targetId)?.inVoice && (
+          {isAdmin && (
             <>
-              {users.find(u => u.id === contextMenu.targetId)?.micMuted ? (
-                <button 
-                  onClick={() => { onAdminAction('unmute', contextMenu.targetId); setContextMenu(null); }}
-                  className={styles.contextMenuItem}
-                >
-                  🔊 Desmutar para todos
-                </button>
-              ) : (
-                <button 
-                  onClick={() => { onAdminAction('mute', contextMenu.targetId); setContextMenu(null); }}
-                  className={styles.contextMenuItem}
-                >
-                  🔇 Mutar para todos
-                </button>
-              )}
               <button 
-                onClick={() => { onAdminAction('kick_voice', contextMenu.targetId); setContextMenu(null); }}
                 className={styles.contextMenuItem}
+                onClick={() => {
+                  onAdminAction('mute', contextMenu.targetId);
+                  setContextMenu(null);
+                }}
               >
-                📞 Desconectar da Voz
+                🔇 Silenciar no Servidor
+              </button>
+              <button 
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  onAdminAction('unmute', contextMenu.targetId);
+                  setContextMenu(null);
+                }}
+              >
+                🔊 Desmutar no Servidor
+              </button>
+              <button 
+                className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
+                onClick={() => {
+                  onAdminAction('kick_voice', contextMenu.targetId);
+                  setContextMenu(null);
+                }}
+              >
+                🚪 Desconectar da Call
+              </button>
+              <button 
+                className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
+                onClick={() => {
+                  onAdminAction('kick_room', contextMenu.targetId);
+                  setContextMenu(null);
+                }}
+              >
+                🚫 Expulsar da Sala
+              </button>
+              <button 
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  onAdminAction('give_admin', contextMenu.targetId);
+                  setContextMenu(null);
+                }}
+              >
+                👑 Passar Dono/Admin
               </button>
             </>
-          )}
-          {room?.adminIds?.includes(myId) && (
-            <button 
-              onClick={() => { onAdminAction('kick_room', contextMenu.targetId); setContextMenu(null); }}
-              className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
-            >
-              🚪 Expulsar da Sala
-            </button>
           )}
         </div>
       )}
@@ -464,6 +635,7 @@ export const Sidebar: React.FC<Props> = ({
   );
 };
 
+// Sub-component: UserCard
 interface UserCardProps {
   id: string;
   name: string;
@@ -489,54 +661,37 @@ const UserCard: React.FC<UserCardProps> = ({
   onScreenShareClick,
   onContextMenu,
 }) => {
-  const initials = name.slice(0, 2).toUpperCase();
-  const hue = [...name].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
+  const initials = name ? name.slice(0, 2).toUpperCase() : '??';
 
   return (
-    <div
-      id={`user-${id}`}
+    <div 
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
       onContextMenu={(e) => onContextMenu(e, id)}
     >
-      <div
-        id={`avatar-${id}`}
-        className={styles.avatar}
-        style={{ background: `hsl(${hue}, 60%, 40%)` }}
-      >
-        {initials}
+      <div className={styles.avatarWrapper}>
+        <div className={styles.avatarFallback}>{initials}</div>
+        <div className={`${styles.statusBadge} ${inVoice ? styles.badgeVoice : styles.badgeOnline}`} />
       </div>
 
       <div className={styles.userInfo}>
-        <span className={styles.userName}>
-          {name}
+        <div className={styles.userNameRow}>
+          <span className={styles.userName}>{name}</span>
           {isMe && <span className={styles.meTag}>você</span>}
-          {isAdmin && <span className={styles.adminTag} title="Dono / Admin">👑</span>}
-        </span>
-        <div className={styles.badges}>
-          {callMuted && (
-            <span className={`${styles.badge} ${styles.mutedBadge}`} title="Áudio e Mic Mutados">
-              🎧
-            </span>
-          )}
-          {!callMuted && micMuted && (
-            <span className={`${styles.badge} ${styles.mutedBadge}`} title="Microfone Mutado">
-              🔇
-            </span>
-          )}
-          {inVoice && (
-            <span className={styles.badge} title="Na call de voz">
-              🎙️
-            </span>
-          )}
+          {isAdmin && <span className={styles.adminCrown} title="Administrador">👑</span>}
+        </div>
+
+        <div className={styles.userStatusIcons}>
           {screenSharing && (
             <button
-              className={styles.screenShareBadge}
+              className={styles.screenShareBtn}
               onClick={() => onScreenShareClick(id)}
-              title={`Ver tela de ${name}`}
+              title="Ver compartilhamento"
             >
-              🖥️ Ver tela
+              📺
             </button>
           )}
+          {micMuted && <span className={styles.statusIcon} title="Microfone mutado">🎤❌</span>}
+          {callMuted && <span className={styles.statusIcon} title="Áudio mutado">🔇</span>}
         </div>
       </div>
     </div>
