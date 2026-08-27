@@ -49,7 +49,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
   }
 );
 
-registerHub(io);
+registerHub(io, supabase);
 
 // ─── TURN/STUN CREDENTIALS ────────────────────────────────────────
 app.get('/api/turn/credentials', async (_req, res) => {

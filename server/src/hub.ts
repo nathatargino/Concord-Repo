@@ -224,7 +224,7 @@ function playNextInQueue(io: IoServer, room: RoomState) {
 
 // ─── REGISTER HUB ──────────────────────────────────────────────────────────────
 
-export function registerHub(io: IoServer) {
+export function registerHub(io: IoServer, supabaseClient?: any) {
   io.on('connection', (socket: IoSocket) => {
     console.log(`[+] Connected: ${socket.id}`);
 
@@ -266,6 +266,35 @@ export function registerHub(io: IoServer) {
         );
         const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
         room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
+      }
+
+      // Consultar dados oficiais no DB do Supabase se o servidor for permanente
+      if (supabaseClient && room.isServer) {
+        supabaseClient
+          .from('rooms')
+          .select('name, icon_url, created_by')
+          .or(`code.eq.${room.code},id.eq.${room.id}`)
+          .maybeSingle()
+          .then(({ data: dbRoom }: any) => {
+            if (dbRoom) {
+              let updated = false;
+              if (dbRoom.name && dbRoom.name !== room.name) {
+                room.name = dbRoom.name;
+                updated = true;
+              }
+              if (dbRoom.icon_url !== undefined && dbRoom.icon_url !== room.iconUrl) {
+                room.iconUrl = dbRoom.icon_url;
+                updated = true;
+              }
+              if (dbRoom.created_by) {
+                room.ownerId = dbRoom.created_by;
+              }
+              if (updated) {
+                io.to(room.id).emit('room_info', toRoomInfo(room));
+              }
+            }
+          })
+          .catch((err: any) => console.warn('[Hub Supabase Sync Error]:', err));
       }
 
       // Leave previous room if any

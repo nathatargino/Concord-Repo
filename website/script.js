@@ -225,11 +225,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Ignore silent fetch error
             }
 
-            // Update Hero button
-            if (heroCtaBtn && heroCtaText) {
-                heroCtaBtn.href = 'https://concord-olive.vercel.app/';
-                heroCtaBtn.target = '_blank';
-                heroCtaText.textContent = 'Entrar no Concord';
+            // Update Hero button and WebApp links with active Supabase session
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                let appUrl = 'https://concord-olive.vercel.app/';
+                if (session && session.access_token && session.refresh_token) {
+                    appUrl = `https://concord-olive.vercel.app/#access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}&type=recovery`;
+                }
+
+                document.querySelectorAll('a[href*="concord-olive.vercel.app"]').forEach((link) => {
+                    link.href = appUrl;
+                });
+
+                if (heroCtaBtn && heroCtaText) {
+                    heroCtaBtn.href = appUrl;
+                    heroCtaBtn.target = '_blank';
+                    heroCtaText.textContent = 'Entrar no Concord';
+                }
+            } catch (err) {
+                if (heroCtaBtn && heroCtaText) {
+                    heroCtaBtn.href = 'https://concord-olive.vercel.app/';
+                    heroCtaBtn.target = '_blank';
+                    heroCtaText.textContent = 'Entrar no Concord';
+                }
             }
         } else {
             navAuth.style.display = 'flex';

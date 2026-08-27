@@ -380,13 +380,17 @@ export function saveMyServer(server: Partial<SavedServer> & { id: string }): voi
 
     const existingIndex = list.findIndex(s => s.id === server.id || (server.code && s.code === server.code));
     if (existingIndex >= 0) {
+      const existing = list[existingIndex];
+      const nameToSave = (server.name && server.name !== 'Servidor Concord') ? server.name : (existing.name || server.name || 'Servidor Concord');
+      const iconToSave = server.icon_url !== undefined ? server.icon_url : existing.icon_url;
+
       list[existingIndex] = {
-        ...list[existingIndex],
+        ...existing,
         ...server,
-        name: server.name || list[existingIndex].name || 'Servidor Concord',
-        code: server.code || list[existingIndex].code || '',
-        icon_url: server.icon_url !== undefined ? server.icon_url : list[existingIndex].icon_url,
-        role: server.role || list[existingIndex].role || 'member',
+        name: nameToSave,
+        code: server.code || existing.code || '',
+        icon_url: iconToSave,
+        role: server.role || existing.role || 'member',
         joined_at: new Date().toISOString(),
       };
     } else {
@@ -408,60 +412,69 @@ export function saveMyServer(server: Partial<SavedServer> & { id: string }): voi
 
 export async function getMyServers(): Promise<SavedServer[]> {
   try {
-    const raw = localStorage.getItem(MY_SERVERS_KEY);
-    let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
-
-    // Se estiver conectado ao Supabase, busca dados completos dos servidores
     if (supabaseUrl && supabaseAnonKey) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          // 1. Buscar servidores onde o usuário é membro
           const { data: remoteMembers } = await supabase
             .from('server_members')
             .select('server_id, role')
             .eq('user_id', user.id);
 
-          const serverIds = (remoteMembers || []).map((r: any) => r.server_id).filter(Boolean);
-          if (serverIds.length > 0) {
-            const { data: serverRooms } = await supabase
-              .from('rooms')
-              .select('id, code, name, icon_url')
-              .in('id', serverIds);
+          // 2. Buscar servidores onde o usuário é o criador
+          const { data: createdRooms } = await supabase
+            .from('rooms')
+            .select('id, code, name, icon_url, created_by')
+            .eq('is_server', true)
+            .eq('created_by', user.id);
 
-            if (serverRooms && serverRooms.length > 0) {
-              serverRooms.forEach((s: any) => {
-                const memberRole = remoteMembers?.find((r: any) => r.server_id === s.id)?.role || 'member';
-                const idx = localList.findIndex(l => l.id === s.id || l.code === s.code);
-                if (idx >= 0) {
-                  localList[idx] = { 
-                    ...localList[idx], 
-                    id: s.id, 
-                    name: s.name, 
-                    code: s.code, 
-                    icon_url: s.icon_url, 
-                    role: memberRole 
-                  };
-                } else {
-                  localList.unshift({ 
-                    id: s.id, 
-                    code: s.code, 
-                    name: s.name, 
-                    icon_url: s.icon_url, 
-                    role: memberRole 
-                  });
-                }
-              });
-            }
+          const memberServerIds = (remoteMembers || []).map((r: any) => r.server_id).filter(Boolean);
+          const createdServerIds = (createdRooms || []).map((r: any) => r.id).filter(Boolean);
+
+          const allUserServerIds = Array.from(new Set([...memberServerIds, ...createdServerIds]));
+
+          if (allUserServerIds.length === 0) {
+            // Usuário autenticado não possui nenhum servidor -> limpa lista local
+            localStorage.setItem(MY_SERVERS_KEY, JSON.stringify([]));
+            return [];
           }
+
+          const { data: serverRooms } = await supabase
+            .from('rooms')
+            .select('id, code, name, icon_url, created_by')
+            .in('id', allUserServerIds);
+
+          const syncedList: SavedServer[] = (serverRooms || []).map((s: any) => {
+            let role = 'member';
+            if (s.created_by === user.id) {
+              role = 'owner';
+            } else {
+              const mem = remoteMembers?.find((r: any) => r.server_id === s.id);
+              if (mem?.role) role = mem.role;
+            }
+            return {
+              id: s.id,
+              code: s.code,
+              name: s.name,
+              icon_url: s.icon_url || null,
+              role,
+              joined_at: new Date().toISOString(),
+            };
+          });
+
+          localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(syncedList));
+          return syncedList;
         }
       } catch (syncErr) {
         console.warn('Sync MyServers Supabase warning:', syncErr);
       }
     }
 
-    // Filtra itens vazios e persiste lista atualizada
+    // Se deslogado no Supabase, retorna apenas do localStorage
+    const raw = localStorage.getItem(MY_SERVERS_KEY);
+    let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
     localList = localList.filter(s => s.code && s.code.trim().length > 0);
-    localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(localList));
     return localList;
   } catch {
     return [];
