@@ -66,27 +66,49 @@ document.addEventListener('DOMContentLoaded', () => {
         lastScroll = currentScroll;
     });
 
-    // ---- Intersection Observer for Animations ----
+    // ---- Intersection Observer for Animations (Scroll Reveal) ----
     const observerOptions = {
         threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
+        rootMargin: '0px 0px -40px 0px'
     };
 
-    const observer = new IntersectionObserver((entries) => {
+    const revealObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                const delay = entry.target.getAttribute('data-aos-delay') || 0;
-                setTimeout(() => {
-                    entry.target.classList.add('aos-animate');
-                }, delay);
-                observer.unobserve(entry.target);
+                entry.target.classList.add('is-visible');
+                entry.target.classList.add('aos-animate');
+                revealObserver.unobserve(entry.target);
             }
         });
     }, observerOptions);
 
-    document.querySelectorAll('[data-aos]').forEach(el => {
-        observer.observe(el);
+    document.querySelectorAll('.reveal-on-scroll, [data-aos]').forEach(el => {
+        revealObserver.observe(el);
     });
+
+    // ---- 3D Tilt Effect on Hero UI Mockup ----
+    const mockupWrapper = document.querySelector('.hero-mockup-wrapper');
+    const heroMockup = document.querySelector('.hero-mockup');
+
+    if (mockupWrapper && heroMockup) {
+        mockupWrapper.addEventListener('mousemove', (e) => {
+            const rect = mockupWrapper.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            // Limit tilt angles for smooth premium feel
+            const rotateX = ((y - centerY) / centerY) * -4;
+            const rotateY = ((x - centerX) / centerX) * 4;
+
+            heroMockup.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.01, 1.01, 1.01)`;
+        });
+
+        mockupWrapper.addEventListener('mouseleave', () => {
+            heroMockup.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+        });
+    }
 
     // ---- Stat Counter Animation ----
     const statObserver = new IntersectionObserver((entries) => {
