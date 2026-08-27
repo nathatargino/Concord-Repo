@@ -29,6 +29,8 @@ export interface RoomState {
   expiresAt: number;
   adminIds: string[];
   adminPersistentIds: string[];
+  ownerId?: string;
+  subOwnerIds?: string[];
   users: Map<string, UserInfo>;
   voiceUsers: Set<string>;
   screenSharingUsers: Set<string>;
@@ -40,6 +42,7 @@ export interface RoomState {
 
 const rooms = new Map<string, RoomState>();
 const codeToRoomId = new Map<string, string>(); // reverse lookup
+const screenViewersMap = new Map<string, Map<string, string>>(); // broadcasterId -> (viewerSocketId -> viewerName)
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -81,6 +84,7 @@ export function createRoom(
     expiresAt: isServer ? Infinity : now + ROOM_DURATION_MS,
     adminIds: [],
     adminPersistentIds: persistentId ? [persistentId] : [],
+    subOwnerIds: [],
     users: new Map(),
     voiceUsers: new Set(),
     screenSharingUsers: new Set(),
@@ -151,6 +155,8 @@ export function toRoomInfo(room: RoomState): RoomInfo {
     expiresAt: room.expiresAt,
     userCount: room.users.size,
     adminIds: room.adminIds,
+    ownerId: room.ownerId,
+    subOwnerIds: room.subOwnerIds,
   };
 }
 
@@ -378,6 +384,87 @@ export function registerHub(io: IoServer) {
       console.log(`[Server] Server ${room.id} updated -> name: ${room.name}, icon: ${room.iconUrl}`);
     });
 
+    // ─── DELETE CHANNEL (Apenas Dono) ──────────────────────────────
+    socket.on('delete_channel', (channelId: string) => {
+      const room = getCurrentRoom();
+      if (!room || !room.isServer) return;
+
+      if (!room.adminIds.includes(socket.id)) {
+        socket.emit('toast_notification', 'Apenas o dono pode excluir canais.', 'error');
+        return;
+      }
+
+      if (channelId === 'ch-geral') {
+        socket.emit('toast_notification', 'O canal #Geral não pode ser excluído.', 'error');
+        return;
+      }
+
+      if (room.channels) {
+        room.channels = room.channels.filter(c => c.id !== channelId && c.name !== 'Geral');
+      }
+
+      io.to(room.id).emit('channel_deleted', channelId);
+      io.to(room.id).emit('toast_notification', 'Canal excluído com sucesso.', 'info');
+      io.to(room.id).emit('room_info', toRoomInfo(room));
+    });
+
+    // ─── SET USER ROLE (Promover / Rebaixar) ────────────────────────
+    socket.on('set_user_role', (targetId: string, role: 'owner' | 'sub_owner' | 'member') => {
+      const room = getCurrentRoom();
+      if (!room || !room.isServer) return;
+
+      if (!room.adminIds.includes(socket.id)) {
+        socket.emit('toast_notification', 'Apenas o dono pode gerenciar cargos.', 'error');
+        return;
+      }
+
+      const targetUser = room.users.get(targetId);
+      if (targetUser) {
+        targetUser.role = role;
+        if (role === 'sub_owner') {
+          if (!room.subOwnerIds) room.subOwnerIds = [];
+          if (!room.subOwnerIds.includes(targetId)) room.subOwnerIds.push(targetId);
+          if (!room.adminIds.includes(targetId)) room.adminIds.push(targetId);
+        } else if (role === 'owner') {
+          if (!room.adminIds.includes(targetId)) room.adminIds.push(targetId);
+        } else {
+          room.subOwnerIds = (room.subOwnerIds || []).filter(id => id !== targetId);
+          room.adminIds = room.adminIds.filter(id => id !== targetId);
+        }
+
+        io.to(room.id).emit('user_role_updated', { userId: targetId, role });
+        io.to(targetId).emit('toast_notification', `Seu cargo foi alterado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`, 'info');
+        broadcastUserList(io, room);
+        io.to(room.id).emit('room_info', toRoomInfo(room));
+      }
+    });
+
+    // ─── ESPECTADORES DA TRANSMISSÃO ────────────────────────────────
+    socket.on('start_watching_screen', (broadcasterId: string) => {
+      let viewers = screenViewersMap.get(broadcasterId);
+      if (!viewers) {
+        viewers = new Map<string, string>();
+        screenViewersMap.set(broadcasterId, viewers);
+      }
+      viewers.set(socket.id, user.name || 'Espectador');
+
+      // Notifica quem está transmitindo com o novo espectador (para tocar o chime)
+      io.to(broadcasterId).emit('screen_viewer_joined', { id: socket.id, name: user.name || 'Espectador' });
+
+      // Atualiza a contagem e lista de espectadores
+      const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
+      io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+    });
+
+    socket.on('stop_watching_screen', (broadcasterId: string) => {
+      const viewers = screenViewersMap.get(broadcasterId);
+      if (viewers) {
+        viewers.delete(socket.id);
+        const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
+        io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+      }
+    });
+
     // ─── CHAT MESSAGE ──────────────────────────────────────────────
     socket.on('send_message', (message: string, type?, url?, filename?, channelId?) => {
       if (!user.name) return;
@@ -589,6 +676,15 @@ export function registerHub(io: IoServer) {
 
       handleLeaveVoice(socket, io, user, room);
       room.users.delete(socket.id);
+
+      // Limpar visualizações de tela deste socket
+      screenViewersMap.delete(socket.id);
+      for (const [broadcasterId, viewers] of screenViewersMap) {
+        if (viewers.delete(socket.id)) {
+          const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
+          io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+        }
+      }
 
       if (room.users.size === 0 && !room.isServer) {
         destroyRoom(room.id);

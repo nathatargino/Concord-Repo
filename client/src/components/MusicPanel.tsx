@@ -13,7 +13,26 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [url, setUrl] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [trackTitle, setTrackTitle] = useState<string | null>(null);
   const { musicQueue, currentVideoId, isPlaying } = useAppStore();
+
+  React.useEffect(() => {
+    if (!currentVideoId) {
+      setTrackTitle(null);
+      return;
+    }
+    const queued = musicQueue.find(m => m.videoId === currentVideoId);
+    if (queued?.title) {
+      setTrackTitle(queued.title);
+      return;
+    }
+    fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${currentVideoId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.title) setTrackTitle(data.title);
+      })
+      .catch(() => {});
+  }, [currentVideoId, musicQueue]);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     setDraggedIndex(index);
@@ -54,13 +73,20 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       <div className={styles.header}>
         <span className={styles.headerIcon}>🎵</span>
         <h2 className={styles.headerTitle}>Música</h2>
-        {isPlaying && (
-          <div className={styles.nowPlayingBadge}>
-            <span className={styles.eqBar} />
-            <span className={styles.eqBar} />
-            <span className={styles.eqBar} />
-            <span>Tocando</span>
-          </div>
+        {currentVideoId && (
+          isPlaying ? (
+            <div className={styles.nowPlayingBadge}>
+              <span className={styles.eqBar} />
+              <span className={styles.eqBar} />
+              <span className={styles.eqBar} />
+              <span>Tocando</span>
+            </div>
+          ) : (
+            <div className={`${styles.nowPlayingBadge} ${styles.pausedBadge}`}>
+              <span className={styles.pauseIcon}>⏸</span>
+              <span>Pausada</span>
+            </div>
+          )
         )}
       </div>
 
@@ -74,7 +100,10 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
               className={styles.thumbnail}
             />
             <div className={styles.trackInfo}>
-              <span className={styles.trackLabel}>Tocando agora</span>
+              <span className={styles.trackLabel}>{isPlaying ? 'Tocando agora' : 'Música Pausada'}</span>
+              <span className={styles.trackName} title={trackTitle || currentVideoId}>
+                {trackTitle || 'Carregando título...'}
+              </span>
               <a
                 href={`https://youtube.com/watch?v=${currentVideoId}`}
                 target="_blank"

@@ -5,6 +5,7 @@ export interface UserInfo {
   screenSharing: boolean;
   micMuted: boolean;
   callMuted: boolean;
+  role?: 'owner' | 'sub_owner' | 'member';
 }
 
 export interface ServerChannel {
@@ -18,7 +19,7 @@ export interface ServerMember {
   username: string;
   isOnline: boolean;
   inVoice: boolean;
-  role?: string;
+  role?: 'owner' | 'sub_owner' | 'member' | string;
 }
 
 export interface MusicItem {
@@ -51,4 +52,6 @@ export interface RoomInfo {
   expiresAt: number;
   userCount: number;
   adminIds: string[];
+  ownerId?: string;
+  subOwnerIds?: string[];
 }

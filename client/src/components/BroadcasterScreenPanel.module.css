@@ -64,6 +64,67 @@
   50% { opacity: 0.5; }
 }
 
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.viewerBadge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: 6px;
+  padding: 2px 6px;
+  color: #22D3EE;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: default;
+}
+
+.viewerBadge:hover .viewerTooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.viewerTooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: #181824;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: all 0.2s ease;
+  pointer-events: none;
+}
+
+.tooltipTitle {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.viewerNameItem {
+  font-size: 12px;
+  color: white;
+  padding: 2px 0;
+}
+
 .closeBtn {
   background: rgba(255, 255, 255, 0.05);
   border: none;

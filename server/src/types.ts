@@ -6,6 +6,7 @@ export interface UserInfo {
   screenSharing: boolean;
   micMuted: boolean;
   callMuted: boolean;
+  role?: 'owner' | 'sub_owner' | 'member';
 }
 
 export interface MusicItem {
@@ -31,6 +32,8 @@ export interface RoomInfo {
   expiresAt: number;
   userCount: number;
   adminIds: string[];
+  ownerId?: string;
+  subOwnerIds?: string[];
   channels?: ServerChannel[];
 }
 
@@ -53,7 +56,11 @@ export interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
+  set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
+  start_watching_screen: (broadcasterId: string) => void;
+  stop_watching_screen: (broadcasterId: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
   join_voice: () => void;
@@ -87,7 +94,11 @@ export interface ServerToClientEvents {
     channelId?: string
   ) => void;
   channel_created: (channel: ServerChannel) => void;
+  channel_deleted: (channelId: string) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
+  user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;
+  screen_viewer_joined: (viewer: { id: string; name: string }) => void;
+  screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;

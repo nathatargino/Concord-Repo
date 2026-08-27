@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
-import { useAudio, monitorSpeaking, stopSpeaking } from './hooks/useAudio';
+import { useAudio, monitorSpeaking, stopSpeaking, playChimeSound } from './hooks/useAudio';
 import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
@@ -111,6 +111,10 @@ export default function App() {
           role: roomInfo.adminIds?.includes(socket.socket?.id || '') ? 'owner' : 'member'
         });
       }
+    },
+    onScreenViewerJoined: (viewer) => {
+      playChimeSound();
+      toast(`👁️ ${viewer.name} começou a assistir sua transmissão!`, { icon: '📺' });
     },
     onRoomError: (msg) => {
       // Room not found or expired → back to lobby
@@ -278,7 +282,9 @@ export default function App() {
         onStartScreenShare={screenShare.startScreenShare}
         onStopScreenShare={screenShare.stopScreenShare}
         onCreateChannel={(name) => socket.emit('create_channel', name)}
+        onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
         onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
+        onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
         onAdminAction={(action, targetId) => {
           if (action === 'mute') socket.emit('admin_mute_user', targetId);
           else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
@@ -319,6 +325,8 @@ export default function App() {
       <ScreenSharePanel 
         onClose={() => store.setScreenShare(null)} 
         screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
+        onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
+        onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
       />
       
       <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>

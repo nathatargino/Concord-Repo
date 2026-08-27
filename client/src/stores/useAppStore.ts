@@ -20,12 +20,15 @@ interface AppState {
   channels: ServerChannel[];
   setChannels: (channels: ServerChannel[]) => void;
   addChannel: (channel: ServerChannel) => void;
+  removeChannel: (channelId: string) => void;
   activeChannelId: string;
   setActiveChannelId: (id: string) => void;
 
   // Server Members (for Servers: Offline, Online, In Call)
   serverMembers: ServerMember[];
   setServerMembers: (members: ServerMember[]) => void;
+  myRole: 'owner' | 'sub_owner' | 'member';
+  setMyRole: (role: 'owner' | 'sub_owner' | 'member') => void;
 
   // User
   myId: string;
@@ -52,6 +55,8 @@ interface AppState {
   setMusicQueue: (q: MusicItem[]) => void;
   currentVideoId: string | null;
   setCurrentVideoId: (id: string | null) => void;
+  currentTrackTitle: string | null;
+  setCurrentTrackTitle: (title: string | null) => void;
   isPlaying: boolean;
   setIsPlaying: (v: boolean) => void;
 
@@ -61,6 +66,8 @@ interface AppState {
   setScreenShare: (userId: string | null, userName?: string | null) => void;
   amSharing: boolean;
   setAmSharing: (v: boolean) => void;
+  screenViewers: Array<{ id: string; name: string }>;
+  setScreenViewers: (viewers: Array<{ id: string; name: string }>) => void;
 
   // Full Room Cleanup
   resetRoomState: () => void;
@@ -97,12 +104,20 @@ export const useAppStore = create<AppState>((set) => ({
       if (s.channels.some((c) => c.id === channel.id || c.name === channel.name)) return s;
       return { channels: [...s.channels, channel] };
     }),
+  removeChannel: (channelId) =>
+    set((s) => {
+      const nextChannels = s.channels.filter((c) => c.id !== channelId);
+      const nextActiveId = s.activeChannelId === channelId ? (nextChannels[0]?.id || 'ch-geral') : s.activeChannelId;
+      return { channels: nextChannels, activeChannelId: nextActiveId };
+    }),
   activeChannelId: 'ch-geral',
   setActiveChannelId: (activeChannelId) => set({ activeChannelId }),
 
   // Server Members
   serverMembers: [],
   setServerMembers: (serverMembers) => set({ serverMembers }),
+  myRole: 'member',
+  setMyRole: (myRole) => set({ myRole }),
 
   // User
   myId: '',
@@ -130,6 +145,8 @@ export const useAppStore = create<AppState>((set) => ({
   setMusicQueue: (musicQueue) => set({ musicQueue }),
   currentVideoId: null,
   setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
+  currentTrackTitle: null,
+  setCurrentTrackTitle: (currentTrackTitle) => set({ currentTrackTitle }),
   isPlaying: false,
   setIsPlaying: (isPlaying) => set({ isPlaying }),
 
@@ -140,6 +157,8 @@ export const useAppStore = create<AppState>((set) => ({
     set({ screenShareUserId, screenShareUserName }),
   amSharing: false,
   setAmSharing: (amSharing) => set({ amSharing }),
+  screenViewers: [],
+  setScreenViewers: (screenViewers) => set({ screenViewers }),
 
   // Full Room Cleanup
   resetRoomState: () =>
@@ -151,14 +170,17 @@ export const useAppStore = create<AppState>((set) => ({
       channels: [{ id: 'ch-geral', name: 'Geral' }],
       activeChannelId: 'ch-geral',
       serverMembers: [],
+      myRole: 'member',
       users: [],
       messages: [],
       inVoice: false,
       musicQueue: [],
       currentVideoId: null,
+      currentTrackTitle: null,
       isPlaying: false,
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,
+      screenViewers: [],
     }),
 }));

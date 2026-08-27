@@ -522,16 +522,47 @@ export async function createChannelInSupabase(serverId: string, channelName: str
       return null;
     }
 
-    return data as DbChannel;
+export async function deleteChannelInSupabase(serverId: string, channelId: string): Promise<boolean> {
+  if (!supabaseUrl || !supabaseAnonKey) return true;
+
+  try {
+    const { error } = await supabase
+      .from('server_channels')
+      .delete()
+      .eq('server_id', serverId)
+      .eq('id', channelId);
+
+    if (error) {
+      console.warn('[Supabase] Erro ao deletar canal:', error.message);
+      return false;
+    }
+    return true;
   } catch (err) {
-    console.error('[Supabase] Exceção ao criar canal:', err);
-    return null;
+    console.warn('[Supabase] Exceção ao deletar canal:', err);
+    return false;
   }
 }
 
 // ==========================================
 // MEMBROS DO SERVIDOR (Offline, Online, Na Call)
 // ==========================================
+
+export async function updateMemberRoleInSupabase(serverId: string, username: string, role: string): Promise<boolean> {
+  if (!supabaseUrl || !supabaseAnonKey) return true;
+
+  try {
+    const { error } = await supabase
+      .from('server_members')
+      .update({ role })
+      .eq('server_id', serverId)
+      .ilike('username', username);
+
+    return !error;
+  } catch (err) {
+    console.warn('[Supabase] Erro ao atualizar cargo:', err);
+    return false;
+  }
+}
 
 export async function registerServerMember(
   serverId: string, 

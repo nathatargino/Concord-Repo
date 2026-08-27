@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
-  const { amSharing } = useAppStore();
+  const { amSharing, screenViewers } = useAppStore();
 
   if (!amSharing) return null;
 
@@ -20,13 +20,33 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChang
           <h3 className={styles.headerTitle}>Sua Transmissão</h3>
           <span className={styles.liveBadge}>AO VIVO</span>
         </div>
-        <button
-          className={styles.closeBtn}
-          onClick={onStopSharing}
-          title="Parar Transmissão"
-        >
-          ✕
-        </button>
+
+        <div className={styles.headerRight}>
+          <div 
+            className={styles.viewerBadge} 
+            title={screenViewers.length > 0 ? `Espectadores: ${screenViewers.map(v => v.name).join(', ')}` : 'Ninguém assistindo no momento'}
+          >
+            <span className={styles.eyeIcon}>👁️</span>
+            <span className={styles.viewerCount}>{screenViewers.length}</span>
+            {screenViewers.length > 0 && (
+              <div className={styles.viewerTooltip}>
+                <span className={styles.tooltipTitle}>Assistindo ({screenViewers.length}):</span>
+                {screenViewers.map((v) => (
+                  <div key={v.id} className={styles.viewerNameItem}>
+                    {v.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <button
+            className={styles.closeBtn}
+            onClick={onStopSharing}
+            title="Parar Transmissão"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <div className={styles.videoWrapper}>

@@ -102,6 +102,7 @@ export interface SocketCallbacks {
   onRoomError?: (msg: string) => void;
   onKickedFromVoice?: () => void;
   onKickedFromRoom?: () => void;
+  onScreenViewerJoined?: (viewer: { id: string; name: string }) => void;
 }
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
@@ -207,6 +208,24 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('channel_created', (channel) => {
       store.addChannel(channel);
+    });
+
+    socket.on('channel_deleted', (channelId) => {
+      store.removeChannel(channelId);
+    });
+
+    socket.on('user_role_updated', (data) => {
+      if (data.userId === socket.id) {
+        store.setMyRole(data.role);
+      }
+    });
+
+    socket.on('screen_viewer_joined', (viewer) => {
+      callbacksRef.current.onScreenViewerJoined?.(viewer);
+    });
+
+    socket.on('screen_viewers_updated', (data) => {
+      store.setScreenViewers(data.viewers);
     });
 
     socket.on('music_queue_update', (queue) => {

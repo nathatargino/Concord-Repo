@@ -7,14 +7,31 @@ import styles from './ScreenSharePanel.module.css';
 interface Props {
   onClose: () => void;
   screenStream?: MediaStream | null;
+  onStartWatching?: (broadcasterId: string) => void;
+  onStopWatching?: (broadcasterId: string) => void;
 }
 
-export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => {
+export const ScreenSharePanel: React.FC<Props> = ({ 
+  onClose, 
+  screenStream,
+  onStartWatching,
+  onStopWatching
+}) => {
   const { screenShareUserId, screenShareUserName, amSharing } = useAppStore();
   const { screenShareVol, setScreenShareVol } = useAudioStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Notificar entrada/saída como espectador
+  useEffect(() => {
+    if (screenShareUserId && !amSharing) {
+      onStartWatching?.(screenShareUserId);
+      return () => {
+        onStopWatching?.(screenShareUserId);
+      };
+    }
+  }, [screenShareUserId, amSharing, onStartWatching, onStopWatching]);
 
   // Bind screenStream to the video element whenever stream changes
   useEffect(() => {
@@ -84,8 +101,18 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => 
               </span>
               <span className={styles.liveBadge}>AO VIVO</span>
             </div>
-            <div className={styles.actions}>
-              <div className={styles.volControl} title="Volume da Transmissão">
+            <div 
+              className={styles.actions}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <div 
+                className={styles.volControl} 
+                title="Volume da Transmissão"
+                onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
                 <span className={styles.volIcon}>🔊</span>
                 <input
                   type="range"
@@ -93,6 +120,8 @@ export const ScreenSharePanel: React.FC<Props> = ({ onClose, screenStream }) => 
                   max="200"
                   value={screenShareVol}
                   onChange={(e) => setScreenShareVol(Number(e.target.value))}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                   className={styles.volSlider}
                 />
                 <span className={styles.volText}>{screenShareVol}%</span>

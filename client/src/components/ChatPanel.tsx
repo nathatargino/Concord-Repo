@@ -111,11 +111,25 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     );
   }, [channelMessages, searchQuery]);
 
+  const messageListRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (messageListRef.current) {
+      messageListRef.current.scrollTo({
+        top: messageListRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+    bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+
   useEffect(() => {
     if (!searchQuery) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      scrollToBottom(true);
+      const timer = setTimeout(() => scrollToBottom(true), 60);
+      return () => clearTimeout(timer);
     }
-  }, [channelMessages, searchQuery]);
+  }, [displayedMessages.length, activeChannelId, searchQuery, scrollToBottom]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -314,7 +328,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
       )}
 
       {/* Message list */}
-      <div className={styles.messageList}>
+      <div ref={messageListRef} className={styles.messageList}>
         {displayedMessages.length === 0 ? (
           <div className={styles.emptyMessages}>
             {searchQuery ? (

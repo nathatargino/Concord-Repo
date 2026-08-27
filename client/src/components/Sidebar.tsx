@@ -7,9 +7,11 @@ import {
   fetchServerChannels, 
   fetchServerMembers, 
   createChannelInSupabase, 
+  deleteChannelInSupabase,
   registerServerMember,
   updateServerNameInSupabase,
-  updateServerLogoInSupabase
+  updateServerLogoInSupabase,
+  updateMemberRoleInSupabase
 } from '../lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -21,7 +23,9 @@ interface Props {
   onStopScreenShare: () => void;
   onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room' | 'give_admin' | 'local_mute', targetId: string) => void;
   onCreateChannel?: (channelName: string) => void;
+  onDeleteChannel?: (channelId: string) => void;
   onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
+  onSetUserRole?: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -32,7 +36,9 @@ export const Sidebar: React.FC<Props> = ({
   onStopScreenShare,
   onAdminAction,
   onCreateChannel,
+  onDeleteChannel,
   onUpdateServer,
+  onSetUserRole,
 }) => {
   const { 
     users, 
@@ -48,10 +54,11 @@ export const Sidebar: React.FC<Props> = ({
     channels, 
     setChannels, 
     addChannel, 
+    removeChannel,
     activeChannelId, 
     setActiveChannelId,
     serverMembers,
-    setServerMembers
+    setServerMembers,
   } = useAppStore();
 
   const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
@@ -73,6 +80,12 @@ export const Sidebar: React.FC<Props> = ({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
+  // Cálculo preciso de papéis (Owner, Sub-Owner, Member)
+  const myMember = serverMembers.find(m => m.username.toLowerCase() === (myName || '').toLowerCase());
+  const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId);
+  const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
+  const canManageServer = isOwner || isSubOwner;
+
   // Carregar canais e membros do servidor se for servidor permanente
   useEffect(() => {
     if (!room?.id || !isServer) return;
@@ -83,7 +96,7 @@ export const Sidebar: React.FC<Props> = ({
         room.id, 
         myName, 
         null, 
-        isAdmin ? 'owner' : 'member',
+        isOwner ? 'owner' : isSubOwner ? 'sub_owner' : 'member',
         { 
           name: room.name || serverName, 
           code: room.code, 
@@ -107,11 +120,11 @@ export const Sidebar: React.FC<Props> = ({
           username: m.username,
           isOnline: false,
           inVoice: false,
-          role: m.role,
+          role: m.role as any,
         })));
       }
     });
-  }, [room?.id, isServer, myName, setChannels, setServerMembers]);
+  }, [room?.id, isServer, myName, isOwner, isSubOwner, setChannels, setServerMembers]);
 
   // Fechar menu de contexto no clique fora
   useEffect(() => {
@@ -145,11 +158,14 @@ export const Sidebar: React.FC<Props> = ({
     (m) => !effectiveUsers.some((u) => u.name && u.name.toLowerCase() === m.username.toLowerCase())
   );
 
-  const isAdmin = room?.adminIds?.includes(myId) ?? false;
-
   // ─── CRIAÇÃO DE NOVO CANAL ─────────────────────────────────────────
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageServer) {
+      toast.error('Você não tem permissão para criar canais');
+      return;
+    }
+
     const cleanName = newChannelName.trim().slice(0, 25);
     if (!cleanName) {
       toast.error('Digite um nome válido para o canal');
@@ -183,6 +199,28 @@ export const Sidebar: React.FC<Props> = ({
     }
   };
 
+  // ─── EXCLUSÃO DE CANAL (Apenas Dono) ────────────────────────────────
+  const handleDeleteChannel = async (channelId: string) => {
+    if (!isOwner) {
+      toast.error('Apenas o Dono pode excluir canais');
+      return;
+    }
+
+    try {
+      if (room?.id) {
+        await deleteChannelInSupabase(room.id, channelId);
+      }
+      if (onDeleteChannel) {
+        onDeleteChannel(channelId);
+      } else {
+        removeChannel(channelId);
+      }
+      toast.success('Canal excluído com sucesso!');
+    } catch (err) {
+      toast.error('Erro ao excluir canal');
+    }
+  };
+
   // ─── EDIÇÃO DE SERVIDOR (LOGO E NOME) ──────────────────────────────
   const handleOpenSettings = () => {
     setEditName(room?.name || serverName || '');
@@ -212,15 +250,15 @@ export const Sidebar: React.FC<Props> = ({
     if (!room?.id) return;
 
     const trimmedName = editName.trim();
-    if (!trimmedName || trimmedName.length < 2 || trimmedName.length > 40) {
+    if (isOwner && (!trimmedName || trimmedName.length < 2 || trimmedName.length > 40)) {
       toast.error('O nome do servidor deve ter entre 2 e 40 caracteres');
       return;
     }
 
     setIsSavingSettings(true);
     try {
-      // 1. Atualizar nome (se mudou)
-      if (trimmedName !== (room.name || serverName)) {
+      // 1. Atualizar nome (apenas Dono)
+      if (isOwner && trimmedName && trimmedName !== (room.name || serverName)) {
         const nameRes = await updateServerNameInSupabase(room.id, trimmedName);
         if (!nameRes.success) {
           toast.error(nameRes.message || 'Erro ao alterar o nome do servidor');
@@ -230,7 +268,7 @@ export const Sidebar: React.FC<Props> = ({
         setServerName(trimmedName);
       }
 
-      // 2. Atualizar logo (se mudou)
+      // 2. Atualizar logo (Dono e Sub Dono)
       if (editLogoUrl !== (serverIconUrl || room.iconUrl)) {
         await updateServerLogoInSupabase(room.id, editLogoUrl);
         setServerIconUrl(editLogoUrl || null);
@@ -238,7 +276,7 @@ export const Sidebar: React.FC<Props> = ({
 
       // 3. Emitir evento socket para atualizar todos os membros
       if (onUpdateServer) {
-        onUpdateServer(room.id, trimmedName, editLogoUrl);
+        onUpdateServer(room.id, isOwner ? trimmedName : undefined, editLogoUrl);
       }
 
       toast.success('Servidor atualizado com sucesso!');
@@ -249,6 +287,26 @@ export const Sidebar: React.FC<Props> = ({
       setIsSavingSettings(false);
     }
   };
+
+  // ─── GERENCIAMENTO DE CARGOS ─────────────────────────────────────────
+  const handleSetRole = async (targetId: string, role: 'owner' | 'sub_owner' | 'member') => {
+    const targetUser = users.find(u => u.id === targetId);
+    if (!targetUser) return;
+
+    if (onSetUserRole) {
+      onSetUserRole(targetId, role);
+    }
+
+    if (room?.id && targetUser.name) {
+      await updateMemberRoleInSupabase(room.id, targetUser.name, role);
+    }
+
+    toast.success(`Cargo de ${targetUser.name} atualizado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`);
+  };
+
+  const targetUserInContextMenu = users.find(u => u.id === contextMenu?.targetId);
+  const targetMemberEntry = targetUserInContextMenu ? serverMembers.find(m => m.username.toLowerCase() === targetUserInContextMenu.name.toLowerCase()) : null;
+  const isTargetSubOwner = targetMemberEntry?.role === 'sub_owner' || room?.subOwnerIds?.includes(contextMenu?.targetId || '');
 
   return (
     <aside className={styles.sidebar}>
@@ -267,11 +325,11 @@ export const Sidebar: React.FC<Props> = ({
           </span>
         </div>
 
-        {isServer && isAdmin && (
+        {isServer && canManageServer && (
           <button 
             className={styles.serverSettingsBtn} 
             onClick={handleOpenSettings}
-            title="Configurações do Servidor (Nome e Logo)"
+            title={isOwner ? "Configurações do Servidor (Nome e Logo)" : "Alterar Logo do Servidor"}
           >
             ⚙️
           </button>
@@ -289,7 +347,7 @@ export const Sidebar: React.FC<Props> = ({
                 <span className={styles.sectionIcon}>💬</span>
                 Canais de Texto
               </div>
-              {isAdmin && (
+              {canManageServer && (
                 <button 
                   className={styles.addChannelBtn} 
                   onClick={() => setShowCreateChannelModal(true)}
@@ -303,15 +361,31 @@ export const Sidebar: React.FC<Props> = ({
             <div className={styles.channelList}>
               {channels.map((channel) => {
                 const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && (channel.name === 'geral' || channel.name === 'Geral'));
+                const isGeral = channel.name.toLowerCase() === 'geral' || channel.id === 'ch-geral';
                 return (
-                  <button
-                    key={channel.id}
-                    className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
-                    onClick={() => setActiveChannelId(channel.id)}
-                  >
-                    <span className={styles.channelHash}>#</span>
-                    <span className={styles.channelName}>{channel.name}</span>
-                  </button>
+                  <div key={channel.id} className={styles.channelRow}>
+                    <button
+                      className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
+                      onClick={() => setActiveChannelId(channel.id)}
+                    >
+                      <span className={styles.channelHash}>#</span>
+                      <span className={styles.channelName}>{channel.name}</span>
+                    </button>
+                    {isOwner && !isGeral && (
+                      <button
+                        className={styles.deleteChannelBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
+                            handleDeleteChannel(channel.id);
+                          }
+                        }}
+                        title={`Excluir canal #${channel.name}`}
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -340,21 +414,28 @@ export const Sidebar: React.FC<Props> = ({
               {voiceUsers.length === 0 ? (
                 <div className={styles.emptyCategory}>Nenhum usuário na call</div>
               ) : (
-                voiceUsers.map((user) => (
-                  <UserCard
-                    key={user.id}
-                    id={user.id}
-                    name={user.name || 'Anônimo'}
-                    isMe={user.id === myId}
-                    inVoice={user.inVoice}
-                    screenSharing={user.screenSharing}
-                    micMuted={user.micMuted}
-                    callMuted={user.callMuted}
-                    isAdmin={room?.adminIds?.includes(user.id) ?? false}
-                    onScreenShareClick={onScreenShareClick}
-                    onContextMenu={handleContextMenu}
-                  />
-                ))
+                voiceUsers.map((user) => {
+                  const mem = serverMembers.find(m => m.username.toLowerCase() === user.name.toLowerCase());
+                  const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
+                  const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+
+                  return (
+                    <UserCard
+                      key={user.id}
+                      id={user.id}
+                      name={user.name || 'Anônimo'}
+                      isMe={user.id === myId}
+                      inVoice={user.inVoice}
+                      screenSharing={user.screenSharing}
+                      micMuted={user.micMuted}
+                      callMuted={user.callMuted}
+                      isOwner={isUserOwner}
+                      isSubOwner={isUserSubOwner}
+                      onScreenShareClick={onScreenShareClick}
+                      onContextMenu={handleContextMenu}
+                    />
+                  );
+                })
               )}
             </div>
           </div>
@@ -378,21 +459,28 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {(isServer ? onlineUsers : effectiveUsers).map((user) => (
-                <UserCard
-                  key={user.id}
-                  id={user.id}
-                  name={user.name || 'Anônimo'}
-                  isMe={user.id === myId}
-                  inVoice={user.inVoice}
-                  screenSharing={user.screenSharing}
-                  micMuted={user.micMuted}
-                  callMuted={user.callMuted}
-                  isAdmin={room?.adminIds?.includes(user.id) ?? false}
-                  onScreenShareClick={onScreenShareClick}
-                  onContextMenu={handleContextMenu}
-                />
-              ))}
+              {(isServer ? onlineUsers : effectiveUsers).map((user) => {
+                const mem = serverMembers.find(m => m.username.toLowerCase() === user.name.toLowerCase());
+                const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
+                const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+
+                return (
+                  <UserCard
+                    key={user.id}
+                    id={user.id}
+                    name={user.name || 'Anônimo'}
+                    isMe={user.id === myId}
+                    inVoice={user.inVoice}
+                    screenSharing={user.screenSharing}
+                    micMuted={user.micMuted}
+                    callMuted={user.callMuted}
+                    isOwner={isUserOwner}
+                    isSubOwner={isUserSubOwner}
+                    onScreenShareClick={onScreenShareClick}
+                    onContextMenu={handleContextMenu}
+                  />
+                );
+              })}
             </div>
           </div>
         </section>
@@ -428,7 +516,11 @@ export const Sidebar: React.FC<Props> = ({
                         <div className={styles.offlineDot} />
                       </div>
                       <span className={styles.offlineUserName}>{member.username}</span>
-                      {member.role === 'owner' && <span className={styles.ownerCrown} title="Dono do Servidor">👑</span>}
+                      {member.role === 'owner' ? (
+                        <span className={styles.ownerCrown} title="Dono do Servidor">👑</span>
+                      ) : member.role === 'sub_owner' ? (
+                        <span className={styles.subOwnerShield} title="Sub Dono">🛡️</span>
+                      ) : null}
                     </div>
                   ))
                 )}
@@ -494,10 +586,10 @@ export const Sidebar: React.FC<Props> = ({
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 className={styles.modalTitle}>Configurações do Servidor</h3>
             <p className={styles.modalDesc}>
-              Personalize o nome e a foto do seu servidor. Apenas o Dono pode efetuar alterações.
+              Personalize o nome e a foto do seu servidor.
             </p>
             <form onSubmit={handleSaveSettings}>
-              {/* Alterar Logo */}
+              {/* Alterar Logo (Dono e Sub Dono) */}
               <div className={styles.formGroupModal}>
                 <label className={styles.modalInputLabel}>Logo do Servidor</label>
                 <div className={styles.logoUploadContainer}>
@@ -527,9 +619,11 @@ export const Sidebar: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Alterar Nome */}
+              {/* Alterar Nome (Apenas Dono) */}
               <div className={styles.formGroupModal}>
-                <label className={styles.modalInputLabel}>Nome do Servidor (máx. 40 caracteres)</label>
+                <label className={styles.modalInputLabel}>
+                  Nome do Servidor {isOwner ? '(máx. 40 caracteres)' : '(bloqueado)'}
+                </label>
                 <input
                   type="text"
                   className={styles.modalTextInput}
@@ -537,8 +631,14 @@ export const Sidebar: React.FC<Props> = ({
                   onChange={(e) => setEditName(e.target.value)}
                   maxLength={40}
                   minLength={2}
-                  required
+                  disabled={!isOwner}
+                  required={isOwner}
                 />
+                {!isOwner && (
+                  <span className={styles.disabledNotice}>
+                    🔒 Apenas o Dono do servidor pode alterar o nome.
+                  </span>
+                )}
               </div>
 
               <div className={styles.modalActions}>
@@ -552,7 +652,7 @@ export const Sidebar: React.FC<Props> = ({
                 <button
                   type="submit"
                   className={styles.confirmBtn}
-                  disabled={isSavingSettings || !editName.trim()}
+                  disabled={isSavingSettings || (isOwner && !editName.trim())}
                 >
                   {isSavingSettings ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
@@ -590,7 +690,33 @@ export const Sidebar: React.FC<Props> = ({
             {localMutedUsers.includes(contextMenu.targetId) ? '🔊 Desmutar para mim' : '🔇 Silenciar para mim'}
           </button>
 
-          {isAdmin && (
+          {isOwner && (
+            <>
+              {!isTargetSubOwner ? (
+                <button 
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    handleSetRole(contextMenu.targetId, 'sub_owner');
+                    setContextMenu(null);
+                  }}
+                >
+                  🛡️ Promover a Sub Dono
+                </button>
+              ) : (
+                <button 
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    handleSetRole(contextMenu.targetId, 'member');
+                    setContextMenu(null);
+                  }}
+                >
+                  👤 Rebaixar para Membro
+                </button>
+              )}
+            </>
+          )}
+
+          {canManageServer && (
             <>
               <button 
                 className={styles.contextMenuItem}
@@ -628,15 +754,6 @@ export const Sidebar: React.FC<Props> = ({
               >
                 🚫 Expulsar da Sala
               </button>
-              <button 
-                className={styles.contextMenuItem}
-                onClick={() => {
-                  onAdminAction('give_admin', contextMenu.targetId);
-                  setContextMenu(null);
-                }}
-              >
-                👑 Passar Dono/Admin
-              </button>
             </>
           )}
         </div>
@@ -654,7 +771,8 @@ interface UserCardProps {
   screenSharing: boolean;
   micMuted: boolean;
   callMuted: boolean;
-  isAdmin: boolean;
+  isOwner: boolean;
+  isSubOwner: boolean;
   onScreenShareClick: (userId: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string) => void;
 }
@@ -667,7 +785,8 @@ const UserCard: React.FC<UserCardProps> = ({
   screenSharing,
   micMuted,
   callMuted,
-  isAdmin,
+  isOwner,
+  isSubOwner,
   onScreenShareClick,
   onContextMenu,
 }) => {
@@ -687,7 +806,11 @@ const UserCard: React.FC<UserCardProps> = ({
         <div className={styles.userNameRow}>
           <span className={styles.userName}>{name}</span>
           {isMe && <span className={styles.meTag}>você</span>}
-          {isAdmin && <span className={styles.adminCrown} title="Administrador">👑</span>}
+          {isOwner ? (
+            <span className={styles.adminCrown} title="Dono do Servidor">👑</span>
+          ) : isSubOwner ? (
+            <span className={styles.subOwnerShield} title="Sub Dono">🛡️</span>
+          ) : null}
         </div>
 
         <div className={styles.userStatusIcons}>
