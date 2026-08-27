@@ -9,6 +9,7 @@ interface AudioState {
   remoteVol: number;
   screenShareVol: number;
   micMuted: boolean;
+  serverMuted: boolean;
   callMuted: boolean;
   noiseSuppression: boolean;
   noiseGateThreshold: number; // dBFS, range -100 to 0
@@ -20,6 +21,7 @@ interface AudioState {
   setRemoteVol: (v: number) => void;
   setScreenShareVol: (v: number) => void;
   setMicMuted: (v: boolean) => void;
+  setServerMuted: (v: boolean) => void;
   toggleMicMute: () => void;
   toggleCallMute: () => void;
   toggleLocalMuteUser: (userId: string) => void;
@@ -33,6 +35,7 @@ const defaults = {
   remoteVol: 100,
   screenShareVol: 100,
   micMuted: false,
+  serverMuted: false,
   callMuted: false,
   noiseSuppression: true,
   noiseGateThreshold: -30, // Approx 70% sensitivity
@@ -49,6 +52,7 @@ export const useAudioStore = create<AudioState>()(
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),
       setScreenShareVol: (screenShareVol) => set({ screenShareVol: Math.min(200, Math.max(0, screenShareVol)) }),
       setMicMuted: (micMuted) => set({ micMuted }),
+      setServerMuted: (serverMuted) => set({ serverMuted, micMuted: serverMuted ? true : false }),
       toggleMicMute: () => set((s) => ({ micMuted: !s.micMuted })),
       toggleCallMute: () => set((s) => ({ callMuted: !s.callMuted })),
       toggleLocalMuteUser: (userId: string) => set((s) => {
@@ -70,4 +74,3 @@ export const useAudioStore = create<AudioState>()(
     }
   )
 );
-

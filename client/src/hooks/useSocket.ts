@@ -228,7 +228,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       callbacksRef.current.onReceiveIce(senderId, candidate);
     });
 
-    socket.on('user_started_screen_share', (userId, userName) => {
+    socket.on('user_started_screen_share', (_userId, userName) => {
       playScreenShareStartSound();
       toast.success(`${userName} começou a compartilhar tela`);
     });
