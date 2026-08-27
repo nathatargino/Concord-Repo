@@ -194,7 +194,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // Conta criada com sucesso!
+                // Se o Supabase já retornar a sessão (confirmação de e-mail desativada no painel)
+                if (data?.session) {
+                    localStorage.setItem('concord_username', name);
+                    showAuthMessage(registerForm, 'Conta criada com sucesso! Entrando no Concord...', false);
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1200);
+                    return;
+                }
+
+                // Se exigir confirmação de e-mail:
                 // Esconder formulário, cabeçalho e rodapé
                 registerForm.style.display = 'none';
                 
@@ -204,7 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const footer = document.getElementById('registerFooter');
                 if (footer) footer.style.display = 'none';
 
-                // Mostrar tela de sucesso
+                // Mostrar tela de sucesso com aviso de spam
                 const successState = document.getElementById('registerSuccessState');
                 if (successState) successState.style.display = 'block';
 
