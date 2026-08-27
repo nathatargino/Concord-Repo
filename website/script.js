@@ -66,27 +66,49 @@ document.addEventListener('DOMContentLoaded', () => {
         lastScroll = currentScroll;
     });
 
-    // ---- Intersection Observer for Animations ----
+    // ---- Intersection Observer for Animations (Scroll Reveal) ----
     const observerOptions = {
         threshold: 0.1,
-        rootMargin: '0px 0px -50px 0px'
+        rootMargin: '0px 0px -40px 0px'
     };
 
-    const observer = new IntersectionObserver((entries) => {
+    const revealObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
             if (entry.isIntersecting) {
-                const delay = entry.target.getAttribute('data-aos-delay') || 0;
-                setTimeout(() => {
-                    entry.target.classList.add('aos-animate');
-                }, delay);
-                observer.unobserve(entry.target);
+                entry.target.classList.add('is-visible');
+                entry.target.classList.add('aos-animate');
+                revealObserver.unobserve(entry.target);
             }
         });
     }, observerOptions);
 
-    document.querySelectorAll('[data-aos]').forEach(el => {
-        observer.observe(el);
+    document.querySelectorAll('.reveal-on-scroll, [data-aos]').forEach(el => {
+        revealObserver.observe(el);
     });
+
+    // ---- 3D Tilt Effect on Hero UI Mockup ----
+    const mockupWrapper = document.querySelector('.hero-mockup-wrapper');
+    const heroMockup = document.querySelector('.hero-mockup');
+
+    if (mockupWrapper && heroMockup) {
+        mockupWrapper.addEventListener('mousemove', (e) => {
+            const rect = mockupWrapper.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+            
+            // Limit tilt angles for smooth premium feel
+            const rotateX = ((y - centerY) / centerY) * -4;
+            const rotateY = ((x - centerX) / centerX) * 4;
+
+            heroMockup.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(1.01, 1.01, 1.01)`;
+        });
+
+        mockupWrapper.addEventListener('mouseleave', () => {
+            heroMockup.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
+        });
+    }
 
     // ---- Stat Counter Animation ----
     const statObserver = new IntersectionObserver((entries) => {
@@ -180,15 +202,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const heroCtaBtn = document.getElementById('heroCtaBtn');
     const heroCtaText = document.getElementById('heroCtaText');
 
-    async function updateNavForUser(user) {
+    function updateNavForUser(user) {
         if (!navAuth || !navUser) return;
 
         if (user) {
             const meta = user.user_metadata || {};
-            let displayName = localStorage.getItem('concord_username') || meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
-            let avatarUrl = meta.avatar_url;
+            const displayName = meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
+            const initials = getInitials(displayName);
+            const avatarUrl = meta.avatar_url;
 
-            // Update nav with initial known values
+            // Update nav
             navAuth.style.display = 'none';
             navUser.style.display = 'flex';
             navUserName.textContent = displayName;
@@ -197,57 +220,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 navUserAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
                 if (dropdownAvatar) dropdownAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
             } else {
-                navUserAvatar.textContent = getInitials(displayName);
-                if (dropdownAvatar) dropdownAvatar.textContent = getInitials(displayName);
+                navUserAvatar.textContent = initials;
+                if (dropdownAvatar) dropdownAvatar.textContent = initials;
             }
 
             if (dropdownName) dropdownName.textContent = displayName;
             if (dropdownEmail) dropdownEmail.textContent = user.email;
 
-            // Fetch latest profile from Supabase profiles table
-            try {
-                const { data: profile } = await supabaseClient
-                    .from('profiles')
-                    .select('username, avatar_url')
-                    .eq('id', user.id)
-                    .maybeSingle();
-
-                if (profile?.username && profile.username !== displayName) {
-                    displayName = profile.username;
-                    navUserName.textContent = displayName;
-                    if (dropdownName) dropdownName.textContent = displayName;
-                    if (!profile.avatar_url) {
-                        navUserAvatar.textContent = getInitials(displayName);
-                        if (dropdownAvatar) dropdownAvatar.textContent = getInitials(displayName);
-                    }
-                }
-            } catch (err) {
-                // Ignore silent fetch error
-            }
-
-            // Update Hero button and WebApp links with active Supabase session
-            try {
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                let appUrl = 'https://concord-olive.vercel.app/';
-                if (session && session.access_token && session.refresh_token) {
-                    appUrl = `https://concord-olive.vercel.app/#access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}&type=recovery`;
-                }
-
-                document.querySelectorAll('a[href*="concord-olive.vercel.app"]').forEach((link) => {
-                    link.href = appUrl;
-                });
-
-                if (heroCtaBtn && heroCtaText) {
-                    heroCtaBtn.href = appUrl;
-                    heroCtaBtn.target = '_blank';
-                    heroCtaText.textContent = 'Entrar no Concord';
-                }
-            } catch (err) {
-                if (heroCtaBtn && heroCtaText) {
-                    heroCtaBtn.href = 'https://concord-olive.vercel.app/';
-                    heroCtaBtn.target = '_blank';
-                    heroCtaText.textContent = 'Entrar no Concord';
-                }
+            // Update Hero button
+            if (heroCtaBtn && heroCtaText) {
+                heroCtaBtn.href = 'https://concord-olive.vercel.app/';
+                heroCtaBtn.target = '_blank';
+                heroCtaText.textContent = 'Entrar no Concord';
             }
         } else {
             navAuth.style.display = 'flex';
@@ -272,6 +256,79 @@ document.addEventListener('DOMContentLoaded', () => {
         document.addEventListener('click', (e) => {
             if (userDropdown && !userDropdown.contains(e.target) && !userMenuBtn.contains(e.target)) {
                 userDropdown.classList.remove('active');
+            }
+        });
+    }
+
+    // Alterar Nome de Usuário
+    const changeUsernameBtn = document.getElementById('changeUsernameBtn');
+    if (changeUsernameBtn) {
+        changeUsernameBtn.addEventListener('click', async () => {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (!session?.user) return;
+
+            const newUsername = prompt('Digite o seu novo Nome de Usuário:');
+            if (!newUsername || !newUsername.trim()) return;
+
+            const trimmedName = newUsername.trim();
+            if (trimmedName.length < 2 || trimmedName.length > 32) {
+                alert('O nome de usuário deve ter entre 2 e 32 caracteres.');
+                return;
+            }
+
+            // Verificar se o nome de usuário já está em uso
+            const { data: existingUser } = await supabaseClient
+                .from('profiles')
+                .select('id')
+                .ilike('username', trimmedName)
+                .neq('id', session.user.id)
+                .maybeSingle();
+
+            if (existingUser) {
+                alert('Este nome de usuário já está em uso por outra conta. Escolha outro.');
+                return;
+            }
+
+            // Atualizar na tabela profiles
+            const { error: profileErr } = await supabaseClient
+                .from('profiles')
+                .update({ username: trimmedName, updated_at: new Date().toISOString() })
+                .eq('id', session.user.id);
+
+            if (profileErr) {
+                alert('Erro ao atualizar nome no perfil: ' + profileErr.message);
+                return;
+            }
+
+            // Atualizar no auth metadata
+            await supabaseClient.auth.updateUser({
+                data: { username: trimmedName, display_name: trimmedName }
+            });
+
+            localStorage.setItem('concord_username', trimmedName);
+            alert('Nome de usuário alterado com sucesso para "' + trimmedName + '"!');
+            window.location.reload();
+        });
+    }
+
+    // Alterar Senha com confirmação por e-mail
+    const changePasswordBtn = document.getElementById('changePasswordBtn');
+    if (changePasswordBtn) {
+        changePasswordBtn.addEventListener('click', async () => {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (!session?.user?.email) return;
+
+            const confirmAction = confirm('Enviaremos um e-mail de redefinição de senha com um link de segurança para: ' + session.user.email + '.\n\nDeseja continuar?');
+            if (!confirmAction) return;
+
+            const { error } = await supabaseClient.auth.resetPasswordForEmail(session.user.email, {
+                redirectTo: window.location.origin + '/login.html'
+            });
+
+            if (error) {
+                alert('Erro ao enviar e-mail de redefinição: ' + error.message);
+            } else {
+                alert('E-mail enviado com sucesso! Verifique a sua caixa de entrada para redefinir a senha.');
             }
         });
     }

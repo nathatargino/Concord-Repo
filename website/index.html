@@ -13,12 +13,6 @@
     <link rel="icon" type="image/png" href="assets/logo-light.png?v=4">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="auth.css">
-    <script>
-        // Redireciona imediatamente para tela de redefinição se vier de link do e-mail do Supabase
-        if (window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery')) {
-            window.location.replace('reset-password.html' + window.location.search + window.location.hash);
-        }
-    </script>
 </head>
 <body>
     <!-- =================== NAVBAR =================== -->
@@ -78,16 +72,16 @@
                             Entrar no Concord
                         </a>
                         <div class="dropdown-divider"></div>
-                        <a href="profile.html" class="dropdown-item" id="editProfileBtn">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            Editar Perfil
-                        </a>
-                        <a href="profile.html#password" class="dropdown-item" id="changePasswordBtn">
+                        <button class="dropdown-item" id="changeUsernameBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                            Alterar Nome de Usuário
+                        </button>
+                        <button class="dropdown-item" id="changePasswordBtn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             Alterar Senha
-                        </a>
+                        </button>
                         <div class="dropdown-divider"></div>
-                        <button class="dropdown-item dropdown-item-danger" id="logoutBtn">
+                        <button class="dropdown-item" id="logoutBtn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                             Sair da conta
                         </button>
@@ -114,26 +108,185 @@
                 Comunicação Descentralizada & Sem Fronteiras
             </div>
             <h1 class="hero-title">
-                Conecte-se com<br>
-                seus amigos no<br>
-                <span class="gradient-text">Concord</span>
+                Eleve sua Comunicação<br>
+                com o <span class="gradient-text">Concord</span>
             </h1>
             <p class="hero-subtitle">
-                Chamadas de voz, vídeo e chat em tempo real. Crie servidores, 
-                entre em canais e converse com quem importa — tudo de graça, 
-                sem limites e sem fronteiras.
+                Chamadas de voz com áudio HD cristalino, chat instantâneo em tempo real e 
+                ferramentas poderosas para grupos e comunidades — sem limites e sem fronteiras.
             </p>
             <div class="hero-buttons">
-                <a href="login.html" class="btn btn-primary btn-lg" id="heroCtaBtn">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-lg btn-pulse-hero" id="heroCtaBtn">
+                    <span class="pulse-dot"></span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                     <span id="heroCtaText">Começar Agora</span>
                 </a>
                 <a href="#tutorial" class="btn btn-glass btn-lg">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Ver Tutorial
+                    Saiba Mais
                 </a>
             </div>
-            <div class="hero-stats">
+
+            <!-- =================== HERO UI MOCKUP =================== -->
+            <div class="hero-mockup-wrapper reveal-on-scroll delay-1">
+                <div class="hero-mockup-glow"></div>
+                <div class="hero-mockup">
+                    <div class="mockup-header">
+                        <div class="mockup-window-dots">
+                            <span class="dot dot-close"></span>
+                            <span class="dot dot-minimize"></span>
+                            <span class="dot dot-maximize"></span>
+                        </div>
+                        <div class="mockup-title">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 0-7.07 17.07A10 10 0 0 0 19.07 4.93 9.93 9.93 0 0 0 12 2z"/></svg>
+                            <span>Concord App — Servidor Principal</span>
+                        </div>
+                        <div class="mockup-header-status">
+                            <span class="pulse-dot"></span>
+                            <span>Voz Conectada (12ms)</span>
+                        </div>
+                    </div>
+                    <div class="mockup-body">
+                        <!-- Server List Sidebar -->
+                        <div class="mockup-sidebar-servers">
+                            <div class="mockup-server-icon active" title="Concord HQ">
+                                <img src="assets/logo-icon-clean.png" alt="Concord">
+                                <div class="server-active-pill"></div>
+                            </div>
+                            <div class="mockup-server-icon" title="Comunidade Dev">
+                                <span>DEV</span>
+                            </div>
+                            <div class="mockup-server-icon" title="Gamers Brasil">
+                                <span>GB</span>
+                            </div>
+                            <div class="mockup-server-add" title="Criar Servidor">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            </div>
+                        </div>
+
+                        <!-- Channel List Sidebar -->
+                        <div class="mockup-sidebar-channels">
+                            <div class="mockup-server-name">
+                                <h4>Concord Official</h4>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                            </div>
+                            <div class="mockup-channel-group">
+                                <div class="channel-group-title">CANAIS DE TEXTO</div>
+                                <div class="mockup-channel active">
+                                    <span class="hashtag">#</span> geral
+                                </div>
+                                <div class="mockup-channel">
+                                    <span class="hashtag">#</span> anuncios
+                                </div>
+                                <div class="mockup-channel">
+                                    <span class="hashtag">#</span> suporte
+                                </div>
+                            </div>
+                            <div class="mockup-channel-group">
+                                <div class="channel-group-title">CANAIS DE VOZ</div>
+                                <div class="mockup-channel voice-channel active">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                                    <span>Salas de Voz 01</span>
+                                    <span class="voice-count-badge">3</span>
+                                </div>
+                                <div class="mockup-voice-users">
+                                    <div class="mockup-user-connected speaking">
+                                        <img src="assets/natha.jpg" alt="Nathã">
+                                        <span class="user-name">Nathã Targino</span>
+                                        <div class="voice-wave">
+                                            <span></span><span></span><span></span>
+                                        </div>
+                                    </div>
+                                    <div class="mockup-user-connected">
+                                        <img src="assets/pedro.jpg" alt="Pedro">
+                                        <span class="user-name">Pedro Brandão</span>
+                                        <div class="mic-status-icon muted">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/></svg>
+                                        </div>
+                                    </div>
+                                    <div class="mockup-user-connected">
+                                        <div class="user-avatar-placeholder">VC</div>
+                                        <span class="user-name">Você</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mockup-user-bar">
+                                <div class="user-bar-info">
+                                    <div class="user-bar-avatar">
+                                        <span class="pulse-dot-sm"></span>
+                                    </div>
+                                    <div class="user-bar-names">
+                                        <span class="name">Você</span>
+                                        <span class="status">#0001</span>
+                                    </div>
+                                </div>
+                                <div class="user-bar-controls">
+                                    <button title="Microfone" class="control-btn active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></button>
+                                    <button title="Fone de Ouvido" class="control-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg></button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chat & Voice Area -->
+                        <div class="mockup-chat-area">
+                            <div class="mockup-voice-banner">
+                                <div class="voice-banner-info">
+                                    <div class="voice-icon-pulse">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                                    </div>
+                                    <div>
+                                        <strong>Canal de Voz Ativo — Salas de Voz 01</strong>
+                                        <p>3 pessoas conectadas • Qualidade 96kbps HD</p>
+                                    </div>
+                                </div>
+                                <div class="voice-banner-actions">
+                                    <button class="btn-voice-disconnect">Desconectar</button>
+                                </div>
+                            </div>
+
+                            <div class="mockup-messages">
+                                <div class="message-item">
+                                    <img src="assets/natha.jpg" alt="Nathã" class="msg-avatar">
+                                    <div class="msg-content">
+                                        <div class="msg-meta">
+                                            <span class="msg-author">Nathã Targino</span>
+                                            <span class="msg-badge">DEV</span>
+                                            <span class="msg-time">10:42</span>
+                                        </div>
+                                        <div class="msg-text">Fala pessoal! A nova versão do Concord está com latência reduzida e áudio HD cristalino! 🚀</div>
+                                    </div>
+                                </div>
+                                <div class="message-item">
+                                    <img src="assets/pedro.jpg" alt="Pedro" class="msg-avatar">
+                                    <div class="msg-content">
+                                        <div class="msg-meta">
+                                            <span class="msg-author">Pedro Brandão</span>
+                                            <span class="msg-badge">DEV</span>
+                                            <span class="msg-time">10:44</span>
+                                        </div>
+                                        <div class="msg-text">Testei a chamada de voz agora e ficou incrível! O design visual e as microinterações deram outra vida ao app. 🙌🔥</div>
+                                    </div>
+                                </div>
+                                <div class="message-item typing-item">
+                                    <div class="typing-indicator">
+                                        <span></span><span></span><span></span>
+                                    </div>
+                                    <span class="typing-text">Nathã Targino está digitando...</span>
+                                </div>
+                            </div>
+
+                            <div class="mockup-input-box">
+                                <input type="text" placeholder="Enviar mensagem em #geral..." disabled>
+                                <div class="input-actions">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-stats reveal-on-scroll delay-2">
                 <div class="stat">
                     <span class="stat-number" data-count="100">0</span><span class="stat-suffix">%</span>
                     <span class="stat-label">Gratuito</span>
@@ -149,6 +302,38 @@
                     <span class="stat-label">Sem Restrições</span>
                 </div>
             </div>
+
+            <!-- =================== HERO MASCOT & VIDEO SHOWCASE =================== -->
+            <div class="hero-showcase-flex reveal-on-scroll delay-2" style="display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 32px; max-width: 1100px; margin: 30px auto 20px auto; width: 100%;">
+                <!-- Left Column: Full Mascot Character -->
+                <div class="hero-mascot-col" style="flex: 0 1 340px; display: flex; justify-content: center; align-items: center;">
+                    <img src="assets/mascot.png" alt="Cama-Voz Mascote Concord" class="hero-mascot-img" style="width: 100%; max-width: 340px; height: auto; max-height: 380px; object-fit: contain;">
+                </div>
+
+                <!-- Right Column: Video Player (Matches the red box!) -->
+                <div class="hero-video-col" style="flex: 0 1 480px; max-width: 480px; width: 100%; display: flex; justify-content: center; align-items: center;">
+                    <div class="hero-video-wrapper" style="width: 100%; max-width: 480px; height: 270px; max-height: 270px; border-radius: 14px; overflow: hidden; border: 1.5px solid rgba(0, 212, 255, 0.4); box-shadow: 0 0 30px rgba(0, 212, 255, 0.25);">
+                        <video autoplay loop muted playsinline class="hero-video" style="width: 100%; height: 100%; max-width: 480px; max-height: 270px; object-fit: cover; display: block; border-radius: 14px; pointer-events: none;">
+                            <source src="assets/mascote-concord.mp4" type="video/mp4">
+                        </video>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Content & Feature Tags -->
+            <div class="mascot-showcase-info reveal-on-scroll delay-3">
+                <div class="mascot-tag">
+                    <span class="pulse-dot"></span>
+                    MASCOTE OFICIAL
+                </div>
+                <h3>Conheça o <span class="gradient-text">Cama-Voz</span>! 🦎🎧</h3>
+                <p>Assim como os camaleões se adaptam a qualquer ambiente, o Concord se adapta a você — seja para chamadas de voz com amigos, jogos online, programação em grupo ou comunidades de texto!</p>
+                <div class="mascot-features">
+                    <span class="mascot-pill">⚡ Baixa Latência</span>
+                    <span class="mascot-pill">🎙️ Áudio HD Cristalino</span>
+                    <span class="mascot-pill">🌐 100% Descentralizado</span>
+                </div>
+            </div>
         </div>
         <div class="hero-scroll-indicator">
             <span>Scroll</span>
@@ -159,74 +344,74 @@
     <!-- =================== FEATURES =================== -->
     <section class="section" id="features">
         <div class="container">
-            <div class="section-header">
+            <div class="section-header reveal-on-scroll">
                 <span class="section-tag">Recursos</span>
-                <h2 class="section-title">Tudo que você precisa para se <span class="gradient-text">conectar</span></h2>
-                <p class="section-desc">O Concord oferece as melhores ferramentas para comunicação em grupo — rápido, seguro e sem complicação.</p>
+                <h2 class="section-title">Experimente o <span class="gradient-text">Futuro</span></h2>
+                <p class="section-desc">Conectividade de ponta com ferramentas desenvolvidas para proporcionar a melhor experiência de áudio e texto.</p>
             </div>
             <div class="features-grid">
-                <div class="feature-card" data-aos="fade-up">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="feature-card neon-card-cyan reveal-on-scroll">
+                    <div class="feature-icon icon-cyan">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
                             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                             <line x1="12" y1="19" x2="12" y2="23"/>
                             <line x1="8" y1="23" x2="16" y2="23"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Canais de Voz</h3>
-                    <p class="feature-desc">Entre em canais de voz com seus amigos e converse em tempo real com áudio cristalino e baixa latência.</p>
+                    <h3 class="feature-title">HD Audio Engine</h3>
+                    <p class="feature-desc">Canais de voz com áudio cristalino, cancelamento de ruído e baixíssima latência para conversas impecáveis.</p>
                 </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="100">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">Chat em Tempo Real</h3>
-                    <p class="feature-desc">Envie mensagens instantâneas, compartilhe arquivos e reaja com emojis — tudo sincronizado em tempo real.</p>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="200">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="feature-card neon-card-purple reveal-on-scroll delay-1">
+                    <div class="feature-icon icon-purple">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                             <circle cx="9" cy="7" r="4"/>
                             <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
                             <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Servidores e Grupos</h3>
-                    <p class="feature-desc">Crie servidores personalizados com canais de texto e voz para organizar sua comunidade.</p>
+                    <h3 class="feature-title">Servidores de Grupo</h3>
+                    <p class="feature-desc">Crie e gerencie comunidades completas organizando canais de texto e salas de voz personalizadas.</p>
                 </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="300">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                <div class="feature-card neon-card-pink reveal-on-scroll delay-2">
+                    <div class="feature-icon icon-pink">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Segurança Total</h3>
-                    <p class="feature-desc">Comunicação descentralizada com criptografia ponta-a-ponta para manter suas conversas privadas.</p>
+                    <h3 class="feature-title">Segurança Inteligente</h3>
+                    <p class="feature-desc">Criptografia de ponta-a-ponta e controle avançado de privacidade para proteger suas conversas.</p>
                 </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="400">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                        </svg>
-                    </div>
-                    <h3 class="feature-title">Ultra Rápido</h3>
-                    <p class="feature-desc">Infraestrutura otimizada para garantir conexões estáveis e ultra rápidas em qualquer dispositivo.</p>
-                </div>
-                <div class="feature-card" data-aos="fade-up" data-aos-delay="500">
-                    <div class="feature-icon">
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <div class="feature-card neon-card-mint reveal-on-scroll delay-3">
+                    <div class="feature-icon icon-mint">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
                             <line x1="8" y1="21" x2="16" y2="21"/>
                             <line x1="12" y1="17" x2="12" y2="21"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Multiplataforma</h3>
-                    <p class="feature-desc">Disponível para desktop e web. Use no navegador ou baixe o aplicativo para a melhor experiência.</p>
+                    <h3 class="feature-title">Multiplataforma Sync</h3>
+                    <p class="feature-desc">Sincronização instantânea em tempo real entre web e desktop, garantindo que você nunca perca uma mensagem.</p>
+                </div>
+                <div class="feature-card neon-card-blue reveal-on-scroll delay-4">
+                    <div class="feature-icon icon-blue">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Canais Personalizados</h3>
+                    <p class="feature-desc">Ajuste permissões, taxas de bits, regras de acesso e funções exclusivas para cada canal da sua comunidade.</p>
+                </div>
+                <div class="feature-card neon-card-magenta reveal-on-scroll delay-5">
+                    <div class="feature-icon icon-magenta">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="feature-title">Mensagens Diretas</h3>
+                    <p class="feature-desc">Converse ponta a ponta com seus amigos, compartilhe arquivos em alta definição e reagir com emojis.</p>
                 </div>
             </div>
         </div>
@@ -235,13 +420,13 @@
     <!-- =================== TUTORIAL =================== -->
     <section class="section section-alt" id="tutorial">
         <div class="container">
-            <div class="section-header">
+            <div class="section-header reveal-on-scroll">
                 <span class="section-tag">Tutorial</span>
                 <h2 class="section-title">Como usar o <span class="gradient-text">Concord</span></h2>
                 <p class="section-desc">Comece a usar o Concord em poucos minutos. Veja como é simples se conectar com seus amigos.</p>
             </div>
             <div class="tutorial-timeline">
-                <div class="tutorial-step" data-aos="fade-right">
+                <div class="tutorial-step reveal-on-scroll delay-1">
                     <div class="step-number">01</div>
                     <div class="step-content">
                         <div class="step-icon">
@@ -256,7 +441,7 @@
                         <p>Registre-se gratuitamente usando seu e-mail ou entre com sua conta Google. É rápido e fácil!</p>
                     </div>
                 </div>
-                <div class="tutorial-step" data-aos="fade-left">
+                <div class="tutorial-step reveal-on-scroll delay-2">
                     <div class="step-number">02</div>
                     <div class="step-content">
                         <div class="step-icon">
@@ -270,7 +455,7 @@
                         <p>Crie seu próprio servidor ou entre em um existente usando um convite. Organize canais de texto e voz como quiser.</p>
                     </div>
                 </div>
-                <div class="tutorial-step" data-aos="fade-right">
+                <div class="tutorial-step reveal-on-scroll delay-3">
                     <div class="step-number">03</div>
                     <div class="step-content">
                         <div class="step-icon">
@@ -285,7 +470,7 @@
                         <p>Compartilhe o link do seu servidor e convide seus amigos para se juntarem à conversa.</p>
                     </div>
                 </div>
-                <div class="tutorial-step" data-aos="fade-left">
+                <div class="tutorial-step reveal-on-scroll delay-4">
                     <div class="step-number">04</div>
                     <div class="step-content">
                         <div class="step-icon">
@@ -306,15 +491,15 @@
 
 
     <!-- =================== DOWNLOAD =================== -->
-    <section class="section section-alt" id="download">
+    <section class="section" id="download">
         <div class="container">
-            <div class="section-header">
+            <div class="section-header reveal-on-scroll">
                 <span class="section-tag">Download</span>
                 <h2 class="section-title">Baixe o <span class="gradient-text">Concord</span></h2>
                 <p class="section-desc">Prefira a experiência nativa? Baixe o aplicativo para desktop e aproveite todas as funcionalidades.</p>
             </div>
             <div class="download-container">
-                <div class="download-card">
+                <div class="download-card reveal-on-scroll delay-1">
                     <div class="download-icon">
                         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
@@ -336,7 +521,7 @@
                         Download Indisponível
                     </button>
                 </div>
-                <div class="download-card download-card-web">
+                <div class="download-card download-card-web reveal-on-scroll delay-2">
                     <div class="download-icon active">
                         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                             <circle cx="12" cy="12" r="10"/>
@@ -353,7 +538,8 @@
                         </div>
                         <p class="available-text">Acesse o Concord diretamente pelo seu navegador sem precisar instalar nada.</p>
                     </div>
-                    <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-full">
+                    <a href="https://concord-olive.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-full btn-pulse">
+                        <span class="pulse-dot"></span>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
                         Abrir no Navegador
                     </a>
@@ -363,15 +549,19 @@
     </section>
 
     <!-- =================== SUPPORT =================== -->
-    <section class="section" id="support">
+    <section class="section section-alt" id="support">
         <div class="container">
-            <div class="section-header">
+            <div class="section-header reveal-on-scroll">
                 <span class="section-tag">Suporte</span>
                 <h2 class="section-title">Precisa de <span class="gradient-text">ajuda</span>?</h2>
                 <p class="section-desc">Nossa equipe está pronta para te ajudar. Entre em contato por e-mail ou WhatsApp.</p>
+                <div class="support-status-online">
+                    <span class="pulse-dot"></span>
+                    <span>Suporte Online • Atendimento Rápido</span>
+                </div>
             </div>
             <div class="support-grid">
-                <div class="support-card" data-aos="fade-up">
+                <div class="support-card reveal-on-scroll delay-1">
                     <div class="support-icon email-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
@@ -391,7 +581,7 @@
                         </a>
                     </div>
                 </div>
-                <div class="support-card" data-aos="fade-up" data-aos-delay="100">
+                <div class="support-card reveal-on-scroll delay-2">
                     <div class="support-icon whatsapp-icon">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
@@ -413,15 +603,15 @@
     </section>
 
     <!-- =================== DEVELOPERS =================== -->
-    <section class="section section-alt" id="developers">
+    <section class="section" id="developers">
         <div class="container">
-            <div class="section-header">
+            <div class="section-header reveal-on-scroll">
                 <span class="section-tag">Equipe</span>
                 <h2 class="section-title">Nossos <span class="gradient-text">Desenvolvedores</span></h2>
                 <p class="section-desc">Conheça as pessoas por trás do Concord.</p>
             </div>
             <div class="developers-grid">
-                <div class="developer-card" data-aos="fade-up">
+                <div class="developer-card reveal-on-scroll delay-1">
                     <div class="dev-avatar">
                         <img src="assets/natha.jpg" alt="Nathã Targino" class="dev-avatar-inner" style="object-fit: cover;">
                         <div class="dev-avatar-ring"></div>
@@ -435,7 +625,7 @@
                         </a>
                     </div>
                 </div>
-                <div class="developer-card" data-aos="fade-up" data-aos-delay="150">
+                <div class="developer-card reveal-on-scroll delay-2">
                     <div class="dev-avatar">
                         <img src="assets/pedro.jpg" alt="Pedro Brandão" class="dev-avatar-inner" style="object-fit: cover;">
                         <div class="dev-avatar-ring"></div>
