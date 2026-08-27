@@ -310,7 +310,7 @@ export async function updateServerNameInSupabase(serverId: string, newName: stri
   }
 
   const trimmed = newName.trim();
-  saveMyServer({ id: serverId, name: trimmed, code: '' });
+  saveMyServer({ id: serverId, name: trimmed });
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return { success: true };
@@ -335,7 +335,7 @@ export async function updateServerNameInSupabase(serverId: string, newName: stri
  * Atualiza a logo/ícone do servidor
  */
 export async function updateServerLogoInSupabase(serverId: string, iconUrl: string): Promise<boolean> {
-  saveMyServer({ id: serverId, icon_url: iconUrl, name: '', code: '' });
+  saveMyServer({ id: serverId, icon_url: iconUrl });
 
   if (!supabaseUrl || !supabaseAnonKey) {
     return true;
@@ -365,11 +365,15 @@ export function saveMyServer(server: Partial<SavedServer> & { id: string }): voi
     const raw = localStorage.getItem(MY_SERVERS_KEY);
     let list: SavedServer[] = raw ? JSON.parse(raw) : [];
 
-    const existingIndex = list.findIndex(s => s.id === server.id);
+    const existingIndex = list.findIndex(s => s.id === server.id || (server.code && s.code === server.code));
     if (existingIndex >= 0) {
       list[existingIndex] = {
         ...list[existingIndex],
         ...server,
+        name: server.name || list[existingIndex].name || 'Servidor Concord',
+        code: server.code || list[existingIndex].code || '',
+        icon_url: server.icon_url !== undefined ? server.icon_url : list[existingIndex].icon_url,
+        role: server.role || list[existingIndex].role || 'member',
         joined_at: new Date().toISOString(),
       };
     } else {
@@ -394,28 +398,47 @@ export async function getMyServers(): Promise<SavedServer[]> {
     const raw = localStorage.getItem(MY_SERVERS_KEY);
     let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
 
-    // Se estiver conectado ao Supabase, tenta sincronizar dados mais recentes
+    // Se estiver conectado ao Supabase, busca dados completos dos servidores
     if (supabaseUrl && supabaseAnonKey) {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: remoteMembers } = await supabase
             .from('server_members')
-            .select('server_id, role, rooms (id, code, name, icon_url)')
+            .select('server_id, role')
             .eq('user_id', user.id);
 
-          if (remoteMembers && remoteMembers.length > 0) {
-            remoteMembers.forEach((rm: any) => {
-              if (rm.rooms) {
-                const s = rm.rooms;
-                const idx = localList.findIndex(l => l.id === s.id);
+          const serverIds = (remoteMembers || []).map((r: any) => r.server_id).filter(Boolean);
+          if (serverIds.length > 0) {
+            const { data: serverRooms } = await supabase
+              .from('rooms')
+              .select('id, code, name, icon_url')
+              .in('id', serverIds);
+
+            if (serverRooms && serverRooms.length > 0) {
+              serverRooms.forEach((s: any) => {
+                const memberRole = remoteMembers?.find((r: any) => r.server_id === s.id)?.role || 'member';
+                const idx = localList.findIndex(l => l.id === s.id || l.code === s.code);
                 if (idx >= 0) {
-                  localList[idx] = { ...localList[idx], name: s.name, code: s.code, icon_url: s.icon_url, role: rm.role };
+                  localList[idx] = { 
+                    ...localList[idx], 
+                    id: s.id, 
+                    name: s.name, 
+                    code: s.code, 
+                    icon_url: s.icon_url, 
+                    role: memberRole 
+                  };
                 } else {
-                  localList.unshift({ id: s.id, code: s.code, name: s.name, icon_url: s.icon_url, role: rm.role });
+                  localList.unshift({ 
+                    id: s.id, 
+                    code: s.code, 
+                    name: s.name, 
+                    icon_url: s.icon_url, 
+                    role: memberRole 
+                  });
                 }
-              }
-            });
+              });
+            }
           }
         }
       } catch (syncErr) {
@@ -423,6 +446,9 @@ export async function getMyServers(): Promise<SavedServer[]> {
       }
     }
 
+    // Filtra itens vazios e persiste lista atualizada
+    localList = localList.filter(s => s.code && s.code.trim().length > 0);
+    localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(localList));
     return localList;
   } catch {
     return [];
@@ -507,9 +533,21 @@ export async function createChannelInSupabase(serverId: string, channelName: str
 // MEMBROS DO SERVIDOR (Offline, Online, Na Call)
 // ==========================================
 
-export async function registerServerMember(serverId: string, username: string, userId?: string | null, role: string = 'member'): Promise<void> {
-  // Salva no histórico de "Meus Servidores"
-  saveMyServer({ id: serverId, role });
+export async function registerServerMember(
+  serverId: string, 
+  username: string, 
+  userId?: string | null, 
+  role: string = 'member',
+  serverInfo?: { name?: string; code?: string; icon_url?: string | null }
+): Promise<void> {
+  // Salva no histórico de "Meus Servidores" com nome e código completos
+  saveMyServer({ 
+    id: serverId, 
+    role,
+    name: serverInfo?.name,
+    code: serverInfo?.code,
+    icon_url: serverInfo?.icon_url
+  });
 
   if (!supabaseUrl || !supabaseAnonKey) return;
 
@@ -555,17 +593,28 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
 }
 
 // ==========================================
-// HISTÓRICO DE MENSAGENS E BUSCA
+// HISTÓRICO DE MENSAGENS E BUSCA COM CACHE PERSISTENTE
 // ==========================================
 
-export async function fetchChannelMessages(serverId: string, channelId?: string | null): Promise<DbMessage[]> {
-  if (!supabaseUrl || !supabaseAnonKey) return [];
+function getLocalMessageCacheKey(roomId: string, channelId?: string | null): string {
+  return `concord_msgs_${roomId}_${channelId || 'all'}`;
+}
+
+export async function fetchChannelMessages(roomId: string, channelId?: string | null): Promise<DbMessage[]> {
+  const cacheKey = getLocalMessageCacheKey(roomId, channelId);
+  let cached: DbMessage[] = [];
+  try {
+    const raw = localStorage.getItem(cacheKey);
+    if (raw) cached = JSON.parse(raw);
+  } catch {}
+
+  if (!supabaseUrl || !supabaseAnonKey) return cached;
 
   try {
     let query = supabase
       .from('messages')
       .select('*')
-      .eq('room_id', serverId);
+      .eq('room_id', roomId);
 
     if (channelId && channelId !== 'ch-geral') {
       query = query.eq('channel_id', channelId);
@@ -573,16 +622,21 @@ export async function fetchChannelMessages(serverId: string, channelId?: string 
 
     const { data, error } = await query.order('created_at', { ascending: true }).limit(300);
 
-    if (error || !data) return [];
+    if (error || !data || data.length === 0) {
+      return cached;
+    }
+
+    // Salva no cache local
+    localStorage.setItem(cacheKey, JSON.stringify(data));
     return data as DbMessage[];
   } catch (err) {
     console.warn('[Supabase] Erro ao buscar histórico de mensagens:', err);
-    return [];
+    return cached;
   }
 }
 
 export async function saveMessageToSupabase(
-  serverId: string,
+  roomId: string,
   senderName: string,
   content: string,
   channelId?: string | null,
@@ -590,7 +644,29 @@ export async function saveMessageToSupabase(
   fileUrl?: string,
   fileName?: string
 ): Promise<DbMessage | null> {
-  if (!supabaseUrl || !supabaseAnonKey) return null;
+  const newMsg: DbMessage = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    room_id: roomId,
+    channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
+    user_id: null,
+    sender_name: senderName,
+    content,
+    msg_type: msgType,
+    file_url: fileUrl || null,
+    file_name: fileName || null,
+    created_at: new Date().toISOString(),
+  };
+
+  // Salva no cache local imediatamente
+  try {
+    const cacheKey = getLocalMessageCacheKey(roomId, channelId);
+    const raw = localStorage.getItem(cacheKey);
+    const list: DbMessage[] = raw ? JSON.parse(raw) : [];
+    list.push(newMsg);
+    localStorage.setItem(cacheKey, JSON.stringify(list.slice(-300)));
+  } catch {}
+
+  if (!supabaseUrl || !supabaseAnonKey) return newMsg;
 
   try {
     const { data: { user } } = await supabase.auth.getUser();
@@ -598,7 +674,7 @@ export async function saveMessageToSupabase(
     const { data, error } = await supabase
       .from('messages')
       .insert({
-        room_id: serverId,
+        room_id: roomId,
         channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
         user_id: user?.id || null,
         sender_name: senderName,
@@ -608,16 +684,16 @@ export async function saveMessageToSupabase(
         file_name: fileName || null,
       })
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
-      console.warn('[Supabase] Erro ao salvar mensagem:', error.message);
-      return null;
+      console.warn('[Supabase] Erro ao salvar mensagem no DB:', error.message);
+      return newMsg;
     }
 
-    return data as DbMessage;
+    return (data as DbMessage) || newMsg;
   } catch (err) {
     console.warn('[Supabase] Exceção ao salvar mensagem:', err);
-    return null;
+    return newMsg;
   }
 }

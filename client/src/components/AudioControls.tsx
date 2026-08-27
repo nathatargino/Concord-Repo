@@ -116,24 +116,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
               />
             </div>
           )}
-
-          {isScreenShareActive && (
-            <div className={styles.sliderGroup}>
-              <div className={styles.sliderHeader}>
-                <span className={styles.sliderLabel}>Áudio da Transmissão</span>
-                <span className={styles.sliderValue}>{screenShareVol}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={screenShareVol}
-                onChange={(e) => setScreenShareVol(Number(e.target.value))}
-                className={styles.range}
-                disabled={callMuted}
-              />
-            </div>
-          )}
         </div>
       </div>
     </div>

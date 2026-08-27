@@ -671,3 +671,124 @@
 .contextMenuSlider input[type="range"]::-moz-range-thumb:hover {
   transform: scale(1.2);
 }
+
+.emptyCategory {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+  padding: 4px 10px;
+}
+
+.offlineUserItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.offlineUserItem:hover {
+  opacity: 0.85;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.offlineUserName {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.offlineDot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6B7280;
+  border: 1.5px solid var(--bg-elevated);
+}
+
+.avatarWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.avatarFallback {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7C3AED, #2563EB);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+}
+
+.statusBadge {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-elevated);
+}
+
+.badgeVoice {
+  background: #EF4444;
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+.badgeOnline {
+  background: #22C55E;
+}
+
+.userNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adminCrown, .ownerCrown {
+  font-size: 11px;
+}
+
+.userStatusIcons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.screenShareBtn {
+  background: rgba(34, 211, 238, 0.15);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: #22D3EE;
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.screenShareBtn:hover {
+  background: rgba(34, 211, 238, 0.25);
+  transform: scale(1.05);
+}
+
+.statusIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

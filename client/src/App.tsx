@@ -8,7 +8,7 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
-import { supabase } from './lib/supabase';
+import { supabase, saveMyServer } from './lib/supabase';
 
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
@@ -96,6 +96,21 @@ export default function App() {
     },
     onResumeYouTube: () => {
       if (useAppStore.getState().inVoice) yt.resumeYouTube();
+    },
+    onRoomJoined: (roomInfo) => {
+      store.setRoom(roomInfo);
+      if (roomInfo.isServer) {
+        store.setIsServer(true);
+        if (roomInfo.name) store.setServerName(roomInfo.name);
+        if (roomInfo.iconUrl) store.setServerIconUrl(roomInfo.iconUrl);
+        saveMyServer({
+          id: roomInfo.id,
+          code: roomInfo.code,
+          name: roomInfo.name,
+          icon_url: roomInfo.iconUrl,
+          role: roomInfo.adminIds?.includes(socket.socket?.id || '') ? 'owner' : 'member'
+        });
+      }
     },
     onRoomError: (msg) => {
       // Room not found or expired → back to lobby
