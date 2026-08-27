@@ -134,8 +134,8 @@ export const LobbyPage: React.FC = () => {
       return;
     }
 
-    if (trimmedName.length < 2 || trimmedName.length > 20) {
-      setError('O nome do servidor deve ter entre 2 e 20 caracteres.');
+    if (trimmedName.length < 2 || trimmedName.length > 40) {
+      setError('O nome do servidor deve ter entre 2 e 40 caracteres.');
       return;
     }
 
@@ -395,14 +395,14 @@ export const LobbyPage: React.FC = () => {
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.inputLabel}>Nome do Servidor (máx. 20 caracteres)</label>
+              <label className={styles.inputLabel}>Nome do Servidor (máx. 40 caracteres)</label>
               <div className={styles.codeInputWrapper}>
                 <input
                   className={styles.codeInput}
                   type="text"
                   placeholder="Ex: Servidor dos Amigos"
                   value={serverName}
-                  maxLength={20}
+                  maxLength={40}
                   minLength={2}
                   autoComplete="off"
                   spellCheck={false}
@@ -414,7 +414,7 @@ export const LobbyPage: React.FC = () => {
                   autoFocus
                 />
               </div>
-              <span className={styles.inputHint}>{serverName.length}/20 caracteres</span>
+              <span className={styles.inputHint}>{serverName.length}/40 caracteres</span>
             </div>
 
             {error && <div className={styles.errorBox}>{error}</div>}

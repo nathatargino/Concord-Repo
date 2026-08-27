@@ -163,8 +163,8 @@ export async function findRoomInSupabase(code: string): Promise<DbRoom | null> {
  */
 export async function checkServerNameAvailable(serverName: string): Promise<{ available: boolean; message?: string }> {
   const trimmed = serverName.trim();
-  if (!trimmed || trimmed.length < 2 || trimmed.length > 20) {
-    return { available: false, message: 'O nome do servidor deve ter entre 2 e 20 caracteres.' };
+  if (!trimmed || trimmed.length < 2 || trimmed.length > 40) {
+    return { available: false, message: 'O nome do servidor deve ter entre 2 e 40 caracteres.' };
   }
 
   if (!supabaseUrl || !supabaseAnonKey) {
