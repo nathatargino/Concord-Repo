@@ -4,32 +4,53 @@ import { supabase } from '../lib/supabase';
 
 interface Props {
   onLogin: (name: string) => void;
+  initialError?: string;
 }
 
-export const LoginModal: React.FC<Props> = ({ onLogin }) => {
+export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
   const [name, setName] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError || '');
   const [visible, setVisible] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (initialError) setError(initialError);
+  }, [initialError]);
 
   useEffect(() => {
     setTimeout(() => setVisible(true), 50);
     setTimeout(() => inputRef.current?.focus(), 200);
 
-    const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
-    if (savedName && savedName.trim()) {
-      setName(savedName.trim());
-    } else {
-      supabase.auth.getUser().then(({ data: { user } }) => {
+    const syncAccountName = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
-          if (defaultName) {
-            setName(defaultName);
-            localStorage.setItem('concord_username', defaultName);
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          const accountName = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
+          if (accountName && accountName.trim()) {
+            const cleanName = accountName.trim();
+            setName(cleanName);
+            localStorage.setItem('concord_username', cleanName);
+            localStorage.setItem('concord_username_v1', cleanName);
+            return;
           }
         }
-      }).catch((err) => console.warn('Supabase auth session check warning:', err));
-    }
+      } catch (err) {
+        console.warn('Supabase auth session check warning:', err);
+      }
+
+      const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      if (savedName && savedName.trim()) {
+        setName(savedName.trim());
+      }
+    };
+
+    syncAccountName();
   }, []);
 
   const handleSubmit = (e: React.FormEvent) => {

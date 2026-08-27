@@ -8,7 +8,8 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
-import { supabase, saveMyServer } from './lib/supabase';
+import { supabase, saveMyServer, findRoomInSupabase } from './lib/supabase';
+import type { UserInfo } from './types';
 
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
@@ -27,6 +28,7 @@ export default function App() {
   const navigate = useNavigate();
   const store = useAppStore();
   const [showLogin, setShowLogin] = useState(true);
+  const [loginError, setLoginError] = useState('');
   const rawMicStreamRef = useRef<MediaStream | null>(null);
 
   // ─── AUDIO SYSTEM ────────────────────────────────────────────────
@@ -103,13 +105,6 @@ export default function App() {
         store.setIsServer(true);
         if (roomInfo.name) store.setServerName(roomInfo.name);
         if (roomInfo.iconUrl) store.setServerIconUrl(roomInfo.iconUrl);
-        saveMyServer({
-          id: roomInfo.id,
-          code: roomInfo.code,
-          name: roomInfo.name,
-          icon_url: roomInfo.iconUrl,
-          role: roomInfo.adminIds?.includes(socket.socket?.id || '') ? 'owner' : 'member'
-        });
       }
     },
     onScreenViewerJoined: (viewer) => {
@@ -117,7 +112,6 @@ export default function App() {
       toast(`👁️ ${viewer.name} começou a assistir sua transmissão!`, { icon: '📺' });
     },
     onRoomError: (msg) => {
-      // Room not found or expired → back to lobby
       console.warn('[Room] Error:', msg);
       store.setRoom(null);
       navigate('/');
@@ -143,9 +137,7 @@ export default function App() {
       return;
     }
 
-    // If socket is connected, join the room immediately
-    // useSocket also auto-rejoins on reconnect
-    const tryJoin = () => {
+    const tryJoin = async () => {
       let persistentId = localStorage.getItem('concord_pid');
       if (!persistentId) {
         persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
@@ -160,71 +152,174 @@ export default function App() {
       const codeParam = searchParams.get('code') || hashParams.get('code') || (roomId.startsWith('SRV-') ? roomId : '');
       const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.startsWith('SRV-') || roomId.startsWith('SRV-');
       
-      if (isServerParam) {
+      // Consultar metadados reais do Supabase para obter ID canônico, nome, logo e autor
+      const dbRoom = await findRoomInSupabase(roomId || codeParam);
+      const targetRoomId = dbRoom?.id || roomId;
+      const targetCode = dbRoom?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
+      const targetName = dbRoom?.name || (isServerParam ? (store.serverName || 'Servidor Concord') : 'Sala Concord');
+      const targetIconUrl = dbRoom?.icon_url || null;
+      const isServer = dbRoom?.is_server ?? isServerParam;
+
+      if (isServer) {
         store.setIsServer(true);
+        if (targetName) store.setServerName(targetName);
+        if (targetIconUrl) store.setServerIconUrl(targetIconUrl);
       }
 
-      // Pre-initialize room object in store immediately so UI, Invite button, and Status Bar work with 0 delay
-      if (!store.room || store.room.id !== roomId) {
+      // Validar autoria real no Supabase
+      let isOwner = false;
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && isServer) {
+          if (dbRoom?.created_by && user.id === dbRoom.created_by) {
+            isOwner = true;
+          } else if (dbRoom?.id) {
+            const { data: mem } = await supabase
+              .from('server_members')
+              .select('role')
+              .eq('server_id', dbRoom.id)
+              .eq('user_id', user.id)
+              .maybeSingle();
+            if (mem?.role === 'owner') isOwner = true;
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao checar permissões de autor no Supabase:', err);
+      }
+
+      // Pre-initialize room object em memória no store com permissões validadas
+      if (!store.room || store.room.id !== targetRoomId) {
         store.setRoom({
-          id: roomId,
-          code: codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD'),
-          name: isServerParam ? (store.serverName || 'Servidor Concord') : 'Sala Concord',
-          isServer: isServerParam,
+          id: targetRoomId,
+          code: targetCode,
+          name: targetName,
+          iconUrl: targetIconUrl || undefined,
+          isServer,
           createdAt: Date.now(),
-          expiresAt: isServerParam ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
+          expiresAt: isServer ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
           userCount: 1,
-          adminIds: [socket.socket?.id || 'admin'],
-          channels: isServerParam ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
+          adminIds: isServer ? (isOwner ? [socket.socket?.id || 'admin'] : []) : [socket.socket?.id || 'admin'],
+          channels: isServer ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
         });
       }
 
-      socket.emit('join_room', roomId, persistentId, codeParam, isServerParam, store.serverName);
+      // Atualizar no histórico "Meus Servidores"
+      if (isServer) {
+        saveMyServer({
+          id: targetRoomId,
+          code: targetCode,
+          name: targetName,
+          icon_url: targetIconUrl || undefined,
+          role: isOwner ? 'owner' : 'member',
+        });
+      }
+
+      socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName);
       const currentName = store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
       if (currentName) {
         socket.emit('set_username', currentName);
       }
     };
 
-    // Give socket a tick to connect
     const timer = setTimeout(tryJoin, 100);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
-  // ─── LOGIN ───────────────────────────────────────────────────────
+  // ─── LOGIN E NOME DE USUÁRIO ───────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        const defaultName = user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
-        if (defaultName) {
-          store.setMyName(defaultName);
-          localStorage.setItem('concord_username', defaultName);
-          localStorage.setItem('concord_username_v1', defaultName);
-          socket.emit('set_username', defaultName);
-          setShowLogin(false);
+    const syncUserProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('username')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          const profileName = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
+          if (profileName && profileName.trim()) {
+            const cleanName = profileName.trim();
+            store.setMyName(cleanName);
+            localStorage.setItem('concord_username', cleanName);
+            localStorage.setItem('concord_username_v1', cleanName);
+            socket.emit('set_username', cleanName);
+            setShowLogin(false);
+            setLoginError('');
+            return;
+          }
         }
+      } catch (err) {
+        console.warn('Supabase getUser error:', err);
       }
-    }).catch((err) => console.warn('Supabase getUser error:', err));
+
+      const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      if (savedName && savedName.trim()) {
+        store.setMyName(savedName.trim());
+        setShowLogin(false);
+      } else {
+        setShowLogin(true);
+      }
+    };
+
+    syncUserProfile();
   }, []);
 
   useEffect(() => {
     if (store.myName) {
       socket.emit('set_username', store.myName);
-      setShowLogin(false);
     }
   }, [store.myName]);
+
+  // ─── VALIDAÇÃO DE NOME DUPLICADO NA SALA/SERVIDOR ─────────────────
+  useEffect(() => {
+    if (!store.myName || !store.users || store.users.length === 0) return;
+
+    const currentSocketId = socket.socket?.id;
+    const lowerMyName = store.myName.trim().toLowerCase();
+
+    const isDuplicate = store.users.some(
+      (u: UserInfo) => u.id !== currentSocketId && u.name && u.name.trim().toLowerCase() === lowerMyName
+    );
+
+    if (isDuplicate) {
+      toast.error(`O nome "${store.myName}" já está em uso nesta chamada/servidor. Escolha outro nome.`, { duration: 5000 });
+      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada/servidor. Escolha outro nome.`);
+      setShowLogin(true);
+    }
+  }, [store.users, store.myName, socket.socket?.id]);
 
   const handleLogin = (name: string) => {
     store.setMyName(name);
     localStorage.setItem('concord_username', name);
     localStorage.setItem('concord_username_v1', name);
     socket.emit('set_username', name);
+    setLoginError('');
     setShowLogin(false);
   };
 
   // ─── ACTIONS ─────────────────────────────────────────────────────
   const handleJoinVoice = async () => {
+    if (!store.myName || !store.myName.trim()) {
+      setLoginError('Por favor, defina seu nome de usuário antes de entrar na chamada.');
+      setShowLogin(true);
+      return;
+    }
+
+    const currentSocketId = socket.socket?.id;
+    const lowerMyName = store.myName.trim().toLowerCase();
+    const isDuplicate = store.users.some(
+      (u: UserInfo) => u.id !== currentSocketId && u.name && u.name.trim().toLowerCase() === lowerMyName
+    );
+
+    if (isDuplicate) {
+      toast.error(`O nome "${store.myName}" já está em uso nesta chamada. Escolha outro nome para continuar.`, { duration: 5000 });
+      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada.`);
+      setShowLogin(true);
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -270,7 +365,7 @@ export default function App() {
     <div className={styles.appContainer}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
 
-      {showLogin && <LoginModal onLogin={handleLogin} />}
+      {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
       <Sidebar 
         onScreenShareClick={(id) => {

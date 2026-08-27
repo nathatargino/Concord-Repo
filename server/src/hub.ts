@@ -296,7 +296,8 @@ export function registerHub(io: IoServer) {
         if (!room.adminIds.includes(socket.id)) {
           room.adminIds.push(socket.id);
         }
-      } else if (room.adminIds.length === 0) {
+      } else if (!room.isServer && room.adminIds.length === 0) {
+        // Apenas salas temporárias atribuem admin ao primeiro participante
         room.adminIds.push(socket.id);
         if (persistentId && !room.adminPersistentIds.includes(persistentId)) {
           room.adminPersistentIds.push(persistentId);

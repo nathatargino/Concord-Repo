@@ -135,31 +135,44 @@ export async function createRoomInSupabase(name: string, code: string): Promise<
 }
 
 export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | null> {
+  if (!codeOrId || !codeOrId.trim()) return null;
+
+  const clean = codeOrId.trim();
+
   if (!supabaseUrl || !supabaseAnonKey) {
     return {
-      id: codeOrId,
-      code: codeOrId.toUpperCase(),
-      name: `Sala ${codeOrId}`,
-      is_server: false,
+      id: clean,
+      code: clean.toUpperCase(),
+      name: clean.toUpperCase().startsWith('SRV-') ? 'Servidor Concord' : `Sala ${clean}`,
+      is_server: clean.toUpperCase().startsWith('SRV-'),
       created_at: new Date().toISOString(),
     };
   }
 
   try {
-    const clean = codeOrId.trim();
-    // Tenta primeiro por código, depois por ID
-    const { data, error } = await supabase
+    // 1. Tentar busca exata por código primeiro
+    const { data: byCode, error: errCode } = await supabase
       .from('rooms')
       .select('*')
-      .or(`code.eq.${clean.toUpperCase()},id.eq.${clean}`)
+      .ilike('code', clean)
       .maybeSingle();
 
-    if (error) {
-      console.warn('[Supabase] Erro ao buscar sala/servidor:', error.message);
-      return null;
+    if (byCode && !errCode) {
+      return byCode as DbRoom;
     }
 
-    return data as DbRoom | null;
+    // 2. Se não encontrou por código e tem formato de UUID ou ID, tenta por ID
+    const { data: byId, error: errId } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', clean)
+      .maybeSingle();
+
+    if (byId && !errId) {
+      return byId as DbRoom;
+    }
+
+    return null;
   } catch (err) {
     console.warn('[Supabase] Exceção ao buscar sala/servidor:', err);
     return null;
@@ -668,13 +681,19 @@ export async function fetchChannelMessages(roomId: string, channelId?: string | 
   if (!supabaseUrl || !supabaseAnonKey) return cached;
 
   try {
+    // Resolver quarto/servidor para obter tanto o ID quanto o Código oficial
+    const dbRoom = await findRoomInSupabase(roomId);
+    const roomIdsToMatch = Array.from(new Set([roomId, dbRoom?.id, dbRoom?.code].filter(Boolean) as string[]));
+
     let query = supabase
       .from('messages')
       .select('*')
-      .eq('room_id', roomId);
+      .in('room_id', roomIdsToMatch);
 
     if (channelId && channelId !== 'ch-geral') {
       query = query.eq('channel_id', channelId);
+    } else {
+      query = query.or('channel_id.is.null,channel_id.eq.ch-geral');
     }
 
     const { data, error } = await query.order('created_at', { ascending: true }).limit(300);
@@ -701,9 +720,16 @@ export async function saveMessageToSupabase(
   fileUrl?: string,
   fileName?: string
 ): Promise<DbMessage | null> {
+  // Tentar encontrar ID canônico se for por código
+  let canonicalRoomId = roomId;
+  try {
+    const dbRoom = await findRoomInSupabase(roomId);
+    if (dbRoom?.id) canonicalRoomId = dbRoom.id;
+  } catch {}
+
   const newMsg: DbMessage = {
     id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    room_id: roomId,
+    room_id: canonicalRoomId,
     channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
     user_id: null,
     sender_name: senderName,
@@ -731,7 +757,7 @@ export async function saveMessageToSupabase(
     const { data, error } = await supabase
       .from('messages')
       .insert({
-        room_id: roomId,
+        room_id: canonicalRoomId,
         channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
         user_id: user?.id || null,
         sender_name: senderName,
