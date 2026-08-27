@@ -8,11 +8,13 @@ import {
   fetchServerMembers, 
   createChannelInSupabase, 
   deleteChannelInSupabase,
+  updateChannelNameInSupabase,
   registerServerMember,
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
   updateMemberRoleInSupabase
 } from '../lib/supabase';
+import type { ServerChannel } from '../types';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -23,6 +25,7 @@ interface Props {
   onStopScreenShare: () => void;
   onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room' | 'give_admin' | 'local_mute', targetId: string) => void;
   onCreateChannel?: (channelName: string) => void;
+  onEditChannel?: (channelId: string, newName: string) => void;
   onDeleteChannel?: (channelId: string) => void;
   onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
   onSetUserRole?: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
@@ -36,6 +39,7 @@ export const Sidebar: React.FC<Props> = ({
   onStopScreenShare,
   onAdminAction,
   onCreateChannel,
+  onEditChannel,
   onDeleteChannel,
   onUpdateServer,
   onSetUserRole,
@@ -54,6 +58,7 @@ export const Sidebar: React.FC<Props> = ({
     channels, 
     setChannels, 
     addChannel, 
+    updateChannel,
     removeChannel,
     activeChannelId, 
     setActiveChannelId,
@@ -72,6 +77,12 @@ export const Sidebar: React.FC<Props> = ({
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [newChannelName, setNewChannelName] = useState('');
   const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+
+  // Modal para edição/renomeação de canais
+  const [showEditChannelModal, setShowEditChannelModal] = useState(false);
+  const [editingChannel, setEditingChannel] = useState<ServerChannel | null>(null);
+  const [editChannelName, setEditChannelName] = useState('');
+  const [isEditingChannel, setIsEditingChannel] = useState(false);
 
   // Modal para configurações do servidor (Nome e Logo)
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -166,7 +177,7 @@ export const Sidebar: React.FC<Props> = ({
       return;
     }
 
-    const cleanName = newChannelName.trim().slice(0, 25);
+    const cleanName = newChannelName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 25);
     if (!cleanName) {
       toast.error('Digite um nome válido para o canal');
       return;
@@ -196,6 +207,47 @@ export const Sidebar: React.FC<Props> = ({
       toast.error('Erro ao criar canal');
     } finally {
       setIsCreatingChannel(false);
+    }
+  };
+
+  // ─── EDIÇÃO DE CANAL (Dono e Sub Dono) ──────────────────────────────
+  const handleEditChannelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingChannel || !canManageServer) {
+      toast.error('Você não tem permissão para renomear canais');
+      return;
+    }
+
+    const cleanName = editChannelName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 25);
+    if (!cleanName) {
+      toast.error('Digite um nome válido para o canal');
+      return;
+    }
+
+    if (channels.some(c => c.id !== editingChannel.id && c.name.toLowerCase() === cleanName.toLowerCase())) {
+      toast.error('Já existe um canal com esse nome');
+      return;
+    }
+
+    setIsEditingChannel(true);
+    try {
+      if (room?.id) {
+        await updateChannelNameInSupabase(room.id, editingChannel.id, cleanName);
+      }
+
+      if (onEditChannel) {
+        onEditChannel(editingChannel.id, cleanName);
+      } else {
+        updateChannel(editingChannel.id, cleanName);
+      }
+
+      toast.success(`Canal renomeado para #${cleanName}!`);
+      setShowEditChannelModal(false);
+      setEditingChannel(null);
+    } catch (err) {
+      toast.error('Erro ao renomear canal');
+    } finally {
+      setIsEditingChannel(false);
     }
   };
 
@@ -371,19 +423,37 @@ export const Sidebar: React.FC<Props> = ({
                       <span className={styles.channelHash}>#</span>
                       <span className={styles.channelName}>{channel.name}</span>
                     </button>
-                    {isOwner && !isGeral && (
-                      <button
-                        className={styles.deleteChannelBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
-                            handleDeleteChannel(channel.id);
-                          }
-                        }}
-                        title={`Excluir canal #${channel.name}`}
-                      >
-                        🗑️
-                      </button>
+                    {!isGeral && (
+                      <div className={styles.channelActions}>
+                        {canManageServer && (
+                          <button
+                            className={styles.channelActionBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingChannel(channel);
+                              setEditChannelName(channel.name);
+                              setShowEditChannelModal(true);
+                            }}
+                            title={`Renomear canal #${channel.name}`}
+                          >
+                            ✏️
+                          </button>
+                        )}
+                        {isOwner && (
+                          <button
+                            className={`${styles.channelActionBtn} ${styles.channelActionBtnDanger}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
+                                handleDeleteChannel(channel.id);
+                              }
+                            }}
+                            title={`Excluir canal #${channel.name}`}
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -573,6 +643,48 @@ export const Sidebar: React.FC<Props> = ({
                   disabled={isCreatingChannel || !newChannelName.trim()}
                 >
                   {isCreatingChannel ? 'Criando...' : 'Criar Canal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: RENOMEAR / EDITAR CANAL DE TEXTO ── */}
+      {showEditChannelModal && editingChannel && (
+        <div className={styles.modalOverlay} onClick={() => setShowEditChannelModal(false)}>
+          <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.modalTitle}>Renomear Canal de Texto</h3>
+            <p className={styles.modalDesc}>
+              Altere o nome do canal #{editingChannel.name}.
+            </p>
+            <form onSubmit={handleEditChannelSubmit}>
+              <div className={styles.channelInputWrapper}>
+                <span className={styles.inputHash}>#</span>
+                <input
+                  type="text"
+                  className={styles.channelNameInput}
+                  placeholder="Novo nome do canal"
+                  value={editChannelName}
+                  onChange={(e) => setEditChannelName(e.target.value)}
+                  maxLength={25}
+                  autoFocus
+                />
+              </div>
+              <div className={styles.modalActions}>
+                <button
+                  type="button"
+                  className={styles.cancelBtn}
+                  onClick={() => setShowEditChannelModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={styles.confirmBtn}
+                  disabled={isEditingChannel || !editChannelName.trim()}
+                >
+                  {isEditingChannel ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
               </div>
             </form>

@@ -282,6 +282,7 @@ export default function App() {
         onStartScreenShare={screenShare.startScreenShare}
         onStopScreenShare={screenShare.stopScreenShare}
         onCreateChannel={(name) => socket.emit('create_channel', name)}
+        onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
         onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
         onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
         onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}

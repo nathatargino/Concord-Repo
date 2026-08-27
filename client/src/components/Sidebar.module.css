@@ -174,30 +174,42 @@
   border-radius: 8px;
 }
 
-.channelRow:hover .deleteChannelBtn {
+.channelActions {
+  position: absolute;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.15s ease;
+}
+
+.channelRow:hover .channelActions {
   opacity: 1;
   visibility: visible;
 }
 
-.deleteChannelBtn {
-  position: absolute;
-  right: 6px;
+.channelActionBtn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.4);
   font-size: 11px;
   cursor: pointer;
-  padding: 4px;
+  padding: 3px 4px;
   border-radius: 4px;
-  opacity: 0;
-  visibility: hidden;
   transition: all 0.15s;
 }
 
-.deleteChannelBtn:hover {
+.channelActionBtn:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
+  transform: scale(1.1);
+}
+
+.channelActionBtnDanger:hover {
   color: #EF4444;
   background: rgba(239, 68, 68, 0.15);
-  transform: scale(1.1);
 }
 
 .channelItem {

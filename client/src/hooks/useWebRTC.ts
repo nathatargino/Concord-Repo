@@ -167,18 +167,13 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             if (attachRemoteScreenAudio) {
               attachRemoteScreenAudio(screenAudioEl, stream, peerId);
             } else {
-              screenAudioEl.srcObject = stream;
-            }
-          }
-
-          const { setScreenShare } = useAppStore.getState();
-          const users = useAppStore.getState().users;
-          const user = users.find((u) => u.id === peerId);
-          setScreenShare(peerId, user?.name ?? 'Usuário');
-
+          // Stream salvo para exibicao sob demanda ao clicar no botao de ver transmissao
           track.onended = () => {
             remoteScreenStreamsRef.current.delete(peerId);
             setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+            if (useAppStore.getState().screenShareUserId === peerId) {
+              useAppStore.getState().setScreenShare(null, null);
+            }
           };
 
           track.onunmute = () => {

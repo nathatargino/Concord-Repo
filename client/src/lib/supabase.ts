@@ -529,6 +529,25 @@ export async function createChannelInSupabase(serverId: string, channelName: str
   }
 }
 
+export async function updateChannelNameInSupabase(serverId: string, channelId: string, newName: string): Promise<boolean> {
+  const cleanName = newName.trim().replace(/\s+/g, '-');
+  if (!cleanName) return false;
+  if (!supabaseUrl || !supabaseAnonKey) return true;
+
+  try {
+    const { error } = await supabase
+      .from('server_channels')
+      .update({ name: cleanName })
+      .eq('server_id', serverId)
+      .eq('id', channelId);
+
+    return !error;
+  } catch (err) {
+    console.warn('[Supabase] Erro ao atualizar nome do canal:', err);
+    return false;
+  }
+}
+
 export async function deleteChannelInSupabase(serverId: string, channelId: string): Promise<boolean> {
   if (!supabaseUrl || !supabaseAnonKey) return true;
 

@@ -56,6 +56,7 @@ export interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  edit_channel: (channelId: string, newName: string) => void;
   delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
@@ -94,6 +95,7 @@ export interface ServerToClientEvents {
     channelId?: string
   ) => void;
   channel_created: (channel: ServerChannel) => void;
+  channel_updated: (channel: ServerChannel) => void;
   channel_deleted: (channelId: string) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;

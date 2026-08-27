@@ -42,6 +42,8 @@ interface ServerToClientEvents {
   server_unmuted: () => void;
   kicked_from_voice: () => void;
   kicked_from_room: () => void;
+  channel_created: (channel: ServerChannel) => void;
+  channel_updated: (channel: ServerChannel) => void;
   channel_deleted: (channelId: string) => void;
   user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;
   screen_viewer_joined: (viewer: { id: string; name: string }) => void;
@@ -66,6 +68,7 @@ interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  edit_channel: (channelId: string, newName: string) => void;
   delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
@@ -218,6 +221,10 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.addChannel(channel);
     });
 
+    socket.on('channel_updated', (channel) => {
+      store.updateChannel(channel.id, channel.name);
+    });
+
     socket.on('channel_deleted', (channelId) => {
       store.removeChannel(channelId);
     });
@@ -241,22 +248,30 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('play_youtube', (videoId, startSeconds, token) => {
+      store.setCurrentVideoId(videoId);
+      store.setIsPlaying(true);
       callbacksRef.current.onPlayYouTube(videoId, startSeconds, token);
     });
 
     socket.on('pause_youtube', (videoId, atSeconds, token) => {
+      store.setCurrentVideoId(videoId);
+      store.setIsPlaying(false);
       callbacksRef.current.onPauseYouTubeFromHub?.(videoId, atSeconds, token);
     });
 
     socket.on('stop_youtube', (token) => {
+      store.setCurrentVideoId(null);
+      store.setIsPlaying(false);
       callbacksRef.current.onStopYouTube(token);
     });
 
     socket.on('music_pause', () => {
+      store.setIsPlaying(false);
       callbacksRef.current.onPauseYouTube();
     });
 
     socket.on('music_resume', () => {
+      store.setIsPlaying(true);
       callbacksRef.current.onResumeYouTube();
     });
 

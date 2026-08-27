@@ -358,6 +358,36 @@ export function registerHub(io: IoServer) {
       io.to(room.id).emit('toast_notification', `Canal #${clean} criado!`, 'info');
     });
 
+    // ─── EDIT CHANNEL (Dono e Sub Dono) ────────────────────────────
+    socket.on('edit_channel', (channelId: string, newName: string) => {
+      const room = getCurrentRoom();
+      if (!room || !room.isServer) return;
+
+      const isOwner = room.adminIds.includes(socket.id);
+      const isSubOwner = room.subOwnerIds?.includes(socket.id);
+
+      if (!isOwner && !isSubOwner) {
+        socket.emit('toast_notification', 'Apenas o dono e sub donos podem editar canais.', 'error');
+        return;
+      }
+
+      if (channelId === 'ch-geral') {
+        socket.emit('toast_notification', 'O canal #Geral não pode ser renomeado.', 'error');
+        return;
+      }
+
+      const clean = newName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').slice(0, 32);
+      if (!clean) return;
+
+      const channel = room.channels.find(c => c.id === channelId);
+      if (channel) {
+        channel.name = clean;
+        io.to(room.id).emit('channel_updated', channel);
+        io.to(room.id).emit('toast_notification', `Canal renomeado para #${clean}!`, 'info');
+        io.to(room.id).emit('room_info', toRoomInfo(room));
+      }
+    });
+
     // ─── UPDATE SERVER (Nome e Logo) ───────────────────────────────
     socket.on('update_server', (serverId: string, newName?: string, newIconUrl?: string) => {
       const room = rooms.get(serverId) || getCurrentRoom();

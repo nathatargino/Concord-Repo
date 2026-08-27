@@ -20,6 +20,7 @@ interface AppState {
   channels: ServerChannel[];
   setChannels: (channels: ServerChannel[]) => void;
   addChannel: (channel: ServerChannel) => void;
+  updateChannel: (channelId: string, newName: string) => void;
   removeChannel: (channelId: string) => void;
   activeChannelId: string;
   setActiveChannelId: (id: string) => void;
@@ -104,6 +105,10 @@ export const useAppStore = create<AppState>((set) => ({
       if (s.channels.some((c) => c.id === channel.id || c.name === channel.name)) return s;
       return { channels: [...s.channels, channel] };
     }),
+  updateChannel: (channelId, newName) =>
+    set((s) => ({
+      channels: s.channels.map((c) => (c.id === channelId ? { ...c, name: newName } : c)),
+    })),
   removeChannel: (channelId) =>
     set((s) => {
       const nextChannels = s.channels.filter((c) => c.id !== channelId);

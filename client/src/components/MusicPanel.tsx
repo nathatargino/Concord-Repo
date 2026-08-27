@@ -68,12 +68,15 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     setUrl('');
   };
 
+  const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
+  const activeTitle = trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
+
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
         <span className={styles.headerIcon}>🎵</span>
         <h2 className={styles.headerTitle}>Música</h2>
-        {currentVideoId && (
+        {activeVideoId && (
           isPlaying ? (
             <div className={styles.nowPlayingBadge}>
               <span className={styles.eqBar} />
@@ -92,20 +95,20 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
 
       <div className={styles.content}>
         {/* Current playing */}
-        {currentVideoId && (
+        {activeVideoId && (
           <div className={styles.currentTrack}>
             <img
-              src={`https://img.youtube.com/vi/${currentVideoId}/mqdefault.jpg`}
+              src={`https://img.youtube.com/vi/${activeVideoId}/mqdefault.jpg`}
               alt="Thumbnail"
               className={styles.thumbnail}
             />
             <div className={styles.trackInfo}>
               <span className={styles.trackLabel}>{isPlaying ? 'Tocando agora' : 'Música Pausada'}</span>
-              <span className={styles.trackName} title={trackTitle || currentVideoId}>
-                {trackTitle || 'Carregando título...'}
+              <span className={styles.trackName} title={activeTitle || activeVideoId}>
+                {activeTitle || 'Música do YouTube'}
               </span>
               <a
-                href={`https://youtube.com/watch?v=${currentVideoId}`}
+                href={`https://youtube.com/watch?v=${activeVideoId}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.trackLink}

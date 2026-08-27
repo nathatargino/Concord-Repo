@@ -131,6 +131,7 @@ export function useYouTube(
       player.setVolume(targetVol);
       if (targetVol > 0) player.unMute();
       
+      useAppStore.getState().setCurrentVideoId(videoId);
       useAppStore.getState().setIsPlaying(true);
     },
     [ensurePlayer]
@@ -139,6 +140,7 @@ export function useYouTube(
   const stopYouTube = useCallback(async () => {
     suppressEndedRef.current = true;
     playerRef.current?.stopVideo();
+    useAppStore.getState().setCurrentVideoId(null);
     useAppStore.getState().setIsPlaying(false);
   }, []);
 

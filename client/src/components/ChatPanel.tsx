@@ -28,6 +28,15 @@ function parseLinks(text: string): string {
   });
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
 interface Props {
   onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
   onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
@@ -57,46 +66,41 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
 
-  // Obter o canal ativo atual
+  // Canal ativo
   const activeChannel = useMemo(() => {
-    return channels.find(c => c.id === activeChannelId) || { id: activeChannelId || 'ch-geral', name: 'Geral' };
+    return channels.find((c) => c.id === activeChannelId) || { id: 'ch-geral', name: 'Geral' };
   }, [channels, activeChannelId]);
 
-  // Carregar histórico do Supabase ao mudar de canal ou sala/servidor
+  // Carregar mensagens persistentes do canal via Supabase/Local cache
   useEffect(() => {
     if (!room?.id) return;
+    const chId = isServer ? (activeChannelId || 'ch-geral') : null;
 
-    fetchChannelMessages(room.id, isServer ? activeChannelId : undefined).then((history) => {
+    fetchChannelMessages(room.id, chId).then((history) => {
       if (history && history.length > 0) {
-        const formatted: ChatMessage[] = history.map((h) => ({
-          id: h.id,
-          userName: h.sender_name,
-          message: h.content,
-          timestamp: new Date(h.created_at).toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'America/Sao_Paulo',
-          }),
-          type: h.msg_type || 'text',
-          url: h.file_url || undefined,
-          filename: h.file_name || undefined,
-          channelId: h.channel_id || 'ch-geral',
+        const loaded: ChatMessage[] = history.map((m) => ({
+          id: m.id,
+          userName: m.sender_name,
+          message: m.content,
+          timestamp: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+          type: m.msg_type,
+          url: m.file_url || undefined,
+          filename: m.file_name || undefined,
+          channelId: m.channel_id || 'ch-geral',
         }));
-
-        setMessages(formatted);
+        setMessages(loaded);
       }
     });
-  }, [room?.id, isServer, activeChannelId, setMessages]);
+  }, [room?.id, activeChannelId, isServer, setMessages]);
 
-  // Filtrar mensagens para o canal ativo
+  // Filtrar mensagens para o canal atual (em servidores)
   const channelMessages = useMemo(() => {
     if (!isServer) return messages;
+    const currentChannel = activeChannelId || 'ch-geral';
     return messages.filter(
-      (m) =>
-        !m.channelId ||
-        m.channelId === activeChannelId ||
-        (activeChannelId === 'ch-geral' && (m.channelId === 'geral' || m.channelId === 'Geral' || m.channelId === 'ch-geral'))
+      (m) => (m.channelId || 'ch-geral') === currentChannel || (currentChannel === 'ch-geral' && !m.channelId)
     );
   }, [messages, isServer, activeChannelId]);
 
@@ -111,8 +115,6 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     );
   }, [channelMessages, searchQuery]);
 
-  const messageListRef = useRef<HTMLDivElement>(null);
-
   const scrollToBottom = useCallback((smooth = true) => {
     if (messageListRef.current) {
       messageListRef.current.scrollTo({
@@ -123,11 +125,37 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
   }, []);
 
+  // ResizeObserver para manter rolagem no fim quando imagens carregam
+  useEffect(() => {
+    const listEl = messageListRef.current;
+    if (!listEl) return;
+
+    const observer = new ResizeObserver(() => {
+      if (!searchQuery) {
+        scrollToBottom(false);
+      }
+    });
+
+    observer.observe(listEl);
+    return () => observer.disconnect();
+  }, [searchQuery, scrollToBottom]);
+
+  // Timers múltiplos de alinhamento suave ao entrar no servidor ou mudar de canal
   useEffect(() => {
     if (!searchQuery) {
-      scrollToBottom(true);
-      const timer = setTimeout(() => scrollToBottom(true), 60);
-      return () => clearTimeout(timer);
+      scrollToBottom(false);
+      const t1 = setTimeout(() => scrollToBottom(false), 50);
+      const t2 = setTimeout(() => scrollToBottom(false), 150);
+      const t3 = setTimeout(() => scrollToBottom(true), 350);
+      const t4 = setTimeout(() => scrollToBottom(true), 700);
+      const t5 = setTimeout(() => scrollToBottom(true), 1200);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+        clearTimeout(t4);
+        clearTimeout(t5);
+      };
     }
   }, [displayedMessages.length, activeChannelId, searchQuery, scrollToBottom]);
 
@@ -153,20 +181,33 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     if (stagedFile) {
       setIsUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('file', stagedFile.file);
-
-        const res = await fetch(`${SERVER_URL}/api/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!res.ok) throw new Error('Erro no upload');
-        const data = await res.json();
-
         const isImage = stagedFile.file.type.startsWith('image/');
-        const fileUrl = `${SERVER_URL}${data.url}`;
+        let fileUrl = '';
         const fileName = stagedFile.file.name;
+
+        if (isImage) {
+          // Imagens convertidas para Base64 Data URL: permanente e instantanea
+          fileUrl = await fileToBase64(stagedFile.file);
+        } else {
+          // Outros arquivos: tenta upload com fallback Base64
+          try {
+            const formData = new FormData();
+            formData.append('file', stagedFile.file);
+            const res = await fetch(`${SERVER_URL}/api/upload`, {
+              method: 'POST',
+              body: formData,
+            });
+            if (res.ok) {
+              const data = await res.json();
+              fileUrl = `${SERVER_URL}${data.url}`;
+            } else {
+              fileUrl = await fileToBase64(stagedFile.file);
+            }
+          } catch {
+            fileUrl = await fileToBase64(stagedFile.file);
+          }
+        }
+
         const msgText = trimmed || (isImage ? '📷 Imagem' : `📄 ${fileName}`);
         const msgType = isImage ? 'image' : 'file';
 
@@ -180,8 +221,8 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
       } catch (err) {
-        console.error(err);
-        alert('Falha ao enviar o arquivo.');
+        console.error('Erro no upload/conversao de arquivo:', err);
+        alert('Falha ao processar o arquivo.');
       } finally {
         setIsUploading(false);
       }
@@ -367,12 +408,22 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
                     {/* Conteúdo da mensagem */}
                     {msg.type === 'giphy' && msg.url ? (
                       <div className={styles.gifContainer}>
-                        <img src={msg.url} alt="GIF" className={styles.messageGif} />
+                        <img 
+                          src={msg.url} 
+                          alt="GIF" 
+                          className={styles.messageGif} 
+                          onLoad={() => scrollToBottom(false)}
+                        />
                       </div>
                     ) : msg.type === 'image' && msg.url ? (
                       <div className={styles.imageContainer}>
                         <a href={msg.url} target="_blank" rel="noopener noreferrer">
-                          <img src={msg.url} alt={msg.filename || 'Imagem'} className={styles.messageImage} />
+                          <img 
+                            src={msg.url} 
+                            alt={msg.filename || 'Imagem'} 
+                            className={styles.messageImage} 
+                            onLoad={() => scrollToBottom(false)}
+                          />
                         </a>
                       </div>
                     ) : msg.type === 'file' && msg.url ? (
