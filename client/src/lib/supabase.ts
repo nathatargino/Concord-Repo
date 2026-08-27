@@ -522,6 +522,13 @@ export async function createChannelInSupabase(serverId: string, channelName: str
       return null;
     }
 
+    return data as DbChannel;
+  } catch (err) {
+    console.error('[Supabase] Exceção ao criar canal:', err);
+    return null;
+  }
+}
+
 export async function deleteChannelInSupabase(serverId: string, channelId: string): Promise<boolean> {
   if (!supabaseUrl || !supabaseAnonKey) return true;
 
