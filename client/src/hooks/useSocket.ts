@@ -4,12 +4,21 @@ import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
-import type { ChatMessage, MusicItem, RoomInfo, UserInfo } from '../types';
+import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
 interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
-  receive_message: (userName: string, message: string, timestamp: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
+  receive_message: (
+    userName: string,
+    message: string,
+    timestamp: string,
+    type?: 'text' | 'image' | 'giphy' | 'file',
+    url?: string,
+    filename?: string,
+    channelId?: string
+  ) => void;
+  channel_created: (channel: ServerChannel) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
@@ -36,9 +45,16 @@ interface ServerToClientEvents {
 
 interface ClientToServerEvents {
   set_username: (name: string) => void;
-  create_room: (persistentId: string) => void;
+  create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (roomIdOrCode: string, persistentId: string) => void;
-  send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
+  send_message: (
+    message: string,
+    type?: 'text' | 'image' | 'giphy' | 'file',
+    url?: string,
+    filename?: string,
+    channelId?: string
+  ) => void;
+  create_channel: (channelName: string) => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   remove_from_queue: (token: number) => void;
@@ -128,7 +144,6 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('room_joined', (room) => {
       store.setRoom(room);
-      store.clearMessages();
       callbacksRef.current.onRoomJoined?.(room);
     });
 
@@ -146,7 +161,11 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setRoom(room);
     });
 
-    socket.on('receive_message', (userName, message, timestamp, type, url, filename) => {
+    socket.on('channel_created', (channel) => {
+      store.addChannel(channel);
+    });
+
+    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId) => {
       const msg: ChatMessage = {
         id: `${Date.now()}-${Math.random()}`,
         userName,
@@ -155,6 +174,7 @@ export function useSocket(callbacks: SocketCallbacks) {
         type,
         url,
         filename,
+        channelId: channelId || 'ch-geral',
       };
       store.addMessage(msg);
     });
@@ -209,71 +229,57 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('user_started_screen_share', (userId, userName) => {
-      if (userId !== socket.id) {
-        if (useAppStore.getState().inVoice) playScreenShareStartSound();
-        store.setScreenShare(userId, userName);
-        toast(`🖥️ ${userName} está compartilhando a tela`, { duration: 3000 });
-      }
+      playScreenShareStartSound();
+      toast.success(`${userName} começou a compartilhar tela`);
     });
 
-    socket.on('user_stopped_screen_share', (userId) => {
-      if (userId !== socket.id) {
-        if (useAppStore.getState().inVoice) playScreenShareStopSound();
+    socket.on('user_stopped_screen_share', () => {
+      playScreenShareStopSound();
+      if (useAppStore.getState().screenShareUserId) {
         store.setScreenShare(null, null);
       }
     });
 
-    socket.on('toast_notification', (message, type) => {
-      if (type === 'success') toast.success(message);
-      else if (type === 'error') toast.error(message);
-      else toast(message);
+    socket.on('toast_notification', (msg, type) => {
+      if (type === 'success') toast.success(msg);
+      else if (type === 'error') toast.error(msg);
+      else toast(msg, { icon: 'ℹ️' });
     });
 
     socket.on('server_muted', () => {
-      useAudioStore.getState().setMicMuted(true);
-      toast.error('Você foi mutado pelo Administrador');
+      useAudioStore.getState().setServerMuted(true);
+      toast.error('Você foi silenciado por um administrador.');
     });
 
     socket.on('server_unmuted', () => {
-      useAudioStore.getState().setMicMuted(false);
-      toast.success('Você foi desmutado pelo Administrador');
+      useAudioStore.getState().setServerMuted(false);
+      toast.success('Você foi desmutado por um administrador.');
     });
 
     socket.on('kicked_from_voice', () => {
-      toast.error('O admin desconectou você da voz');
+      toast.error('Você foi desconectado da chamada por um administrador.');
       callbacksRef.current.onKickedFromVoice?.();
     });
 
     socket.on('kicked_from_room', () => {
-      toast.error('O admin expulsou você da sala');
+      toast.error('Você foi expulso da sala por um administrador.');
       callbacksRef.current.onKickedFromRoom?.();
     });
 
-    // Send initial media state
-    const { micMuted, callMuted } = useAudioStore.getState();
-    socket.emit('update_media_state', micMuted, callMuted);
-
-    const unsubAudio = useAudioStore.subscribe((state, prevState) => {
-      if (state.micMuted !== prevState.micMuted || state.callMuted !== prevState.callMuted) {
-        socket.emit('update_media_state', state.micMuted, state.callMuted);
-      }
-    });
-
     return () => {
-      unsubAudio();
       socket.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const emit = useCallback(<E extends keyof ClientToServerEvents>(
-    event: E,
-    ...args: Parameters<ClientToServerEvents[E]>
-  ) => {
-    socketRef.current?.emit(event, ...args);
-  }, []);
+  const emit = useCallback(
+    (event: keyof ClientToServerEvents, ...args: any[]) => {
+      if (socketRef.current?.connected) {
+        (socketRef.current.emit as any)(event, ...args);
+      }
+    },
+    []
+  );
 
-  const getSocket = useCallback(() => socketRef.current, []);
-
-  return { emit, getSocket };
+  return { emit, socket: socketRef.current };
 }

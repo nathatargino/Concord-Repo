@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
+import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
 
 // Using Giphy API Key from .env or fallback
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
@@ -28,11 +29,20 @@ function parseLinks(text: string): string {
 }
 
 interface Props {
-  onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
+  onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
 }
 
 export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
-  const { messages, myName } = useAppStore();
+  const { 
+    messages, 
+    setMessages,
+    myName, 
+    room, 
+    isServer, 
+    channels, 
+    activeChannelId 
+  } = useAppStore();
+
   const [input, setInput] = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
   const [giphySearch, setGiphySearch] = useState('');
@@ -40,16 +50,80 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
 
+  // Barra de Pesquisa de Mensagens
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Obter o canal ativo atual
+  const activeChannel = useMemo(() => {
+    return channels.find(c => c.id === activeChannelId) || { id: activeChannelId || 'ch-geral', name: 'geral' };
+  }, [channels, activeChannelId]);
+
+  // Carregar histórico do Supabase ao mudar de canal ou servidor
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!room?.id || !isServer) return;
+
+    fetchChannelMessages(room.id, activeChannelId).then((history) => {
+      if (history && history.length > 0) {
+        const formatted: ChatMessage[] = history.map((h) => ({
+          id: h.id,
+          userName: h.sender_name,
+          message: h.content,
+          timestamp: new Date(h.created_at).toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/Sao_Paulo',
+          }),
+          type: h.msg_type || 'text',
+          url: h.file_url || undefined,
+          filename: h.file_name || undefined,
+          channelId: h.channel_id || 'ch-geral',
+        }));
+
+        // Manter mensagens já na memória sem duplicar IDs
+        const existingMap = new Map(messages.map(m => [m.id, m]));
+        formatted.forEach(m => existingMap.set(m.id, m));
+        setMessages(Array.from(existingMap.values()));
+      }
+    });
+  }, [room?.id, isServer, activeChannelId]);
+
+  // Filtrar mensagens para o canal ativo
+  const channelMessages = useMemo(() => {
+    if (!isServer) return messages;
+    return messages.filter(
+      (m) =>
+        !m.channelId ||
+        m.channelId === activeChannelId ||
+        (activeChannelId === 'ch-geral' && (m.channelId === 'geral' || m.channelId === 'ch-geral'))
+    );
+  }, [messages, isServer, activeChannelId]);
+
+  // Filtrar por busca (se houver texto na pesquisa)
+  const displayedMessages = useMemo(() => {
+    const trimmed = searchQuery.trim().toLowerCase();
+    if (!trimmed) return channelMessages;
+    return channelMessages.filter(
+      (m) =>
+        m.message.toLowerCase().includes(trimmed) ||
+        m.userName.toLowerCase().includes(trimmed)
+    );
+  }, [channelMessages, searchQuery]);
+
+  useEffect(() => {
+    if (!searchQuery) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [channelMessages, searchQuery]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed && !stagedFile) return;
+
+    const currentChannel = activeChannelId || 'ch-geral';
 
     if (stagedFile) {
       setIsUploading(true);
@@ -66,27 +140,37 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
         const data = await res.json();
 
         const isImage = stagedFile.file.type.startsWith('image/');
-        onSendMessage(
-          trimmed || (isImage ? '📷 Imagem' : `📄 ${stagedFile.file.name}`),
-          isImage ? 'image' : 'file',
-          `${SERVER_URL}${data.url}`,
-          stagedFile.file.name
-        );
+        const fileUrl = `${SERVER_URL}${data.url}`;
+        const fileName = stagedFile.file.name;
+        const msgText = trimmed || (isImage ? '📷 Imagem' : `📄 ${fileName}`);
+        const msgType = isImage ? 'image' : 'file';
+
+        // Salvar no Supabase
+        if (room?.id && isServer) {
+          saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
+        }
+
+        onSendMessage(msgText, msgType, fileUrl, fileName, currentChannel);
 
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
       } catch (err) {
         console.error(err);
-        alert('Falha ao enviar a imagem.');
+        alert('Falha ao enviar o arquivo.');
       } finally {
         setIsUploading(false);
       }
     } else {
-      onSendMessage(trimmed);
+      // Salvar no Supabase
+      if (room?.id && isServer) {
+        saveMessageToSupabase(room.id, myName, trimmed, currentChannel, 'text');
+      }
+
+      onSendMessage(trimmed, 'text', undefined, undefined, currentChannel);
     }
 
     setInput('');
-  }, [input, stagedFile, onSendMessage]);
+  }, [input, stagedFile, onSendMessage, activeChannelId, room?.id, isServer, myName]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
@@ -145,7 +229,14 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
 
   const handleGifClick = (gif: any, e: React.SyntheticEvent<HTMLElement, Event>) => {
     e.preventDefault();
-    onSendMessage('GIF', 'giphy', gif.images.fixed_height.url);
+    const gifUrl = gif.images.fixed_height.url;
+    const currentChannel = activeChannelId || 'ch-geral';
+
+    if (room?.id && isServer) {
+      saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
+    }
+
+    onSendMessage('GIF', 'giphy', gifUrl, undefined, currentChannel);
     setShowGiphy(false);
     setGiphySearch('');
   };
@@ -164,24 +255,75 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* ── CABEÇALHO COM CANAL E BUSCA ── */}
       <div className={styles.header}>
-        <span className={styles.headerIcon}>💬</span>
-        <h2 className={styles.headerTitle}>Chat</h2>
+        <div className={styles.headerTitleArea}>
+          <span className={styles.headerIcon}>
+            {isServer ? '#' : '💬'}
+          </span>
+          <h2 className={styles.headerTitle}>
+            {isServer ? activeChannel.name : 'Chat da Sala'}
+          </h2>
+        </div>
+
+        <div className={styles.headerActions}>
+          {showSearch ? (
+            <div className={styles.searchBar}>
+              <span className={styles.searchIcon}>🔍</span>
+              <input
+                type="text"
+                placeholder="Pesquisar mensagens..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className={styles.searchInput}
+                autoFocus
+              />
+              {searchQuery && (
+                <span className={styles.searchCount}>
+                  {displayedMessages.length}
+                </span>
+              )}
+              <button 
+                className={styles.closeSearchBtn} 
+                onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                title="Fechar pesquisa"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button 
+              className={styles.toggleSearchBtn}
+              onClick={() => setShowSearch(true)}
+              title="Pesquisar mensagens"
+            >
+              🔍
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* ── LISTAGEM DE MENSAGENS ── */}
       <div className={styles.messages} id="chat-messages">
-        {messages.length === 0 && (
+        {displayedMessages.length === 0 && (
           <div className={styles.empty}>
-            <span className={styles.emptyIcon}>👋</span>
-            <p>Seja o primeiro a falar!</p>
+            <span className={styles.emptyIcon}>
+              {searchQuery ? '🔍' : '👋'}
+            </span>
+            <p>
+              {searchQuery 
+                ? `Nenhuma mensagem encontrada para "${searchQuery}"` 
+                : `Bem-vindo ao #${activeChannel.name}! Seja o primeiro a falar!`}
+            </p>
           </div>
         )}
-        {messages.map((msg) => (
+        {displayedMessages.map((msg) => (
           <MessageBubble key={msg.id} msg={msg} isMe={msg.userName === myName} />
         ))}
         <div ref={bottomRef} />
       </div>
 
+      {/* ── ÁREA DE DIGITAÇÃO ── */}
       <div className={styles.inputAreaWrapper}>
         {stagedFile && (
           <div className={styles.stagedFilePreview}>
@@ -199,7 +341,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
                 URL.revokeObjectURL(stagedFile.previewUrl);
                 setStagedFile(null);
               }}
-              title="Remover imagem"
+              title="Remover anexo"
             >
               ✕
             </button>
@@ -268,7 +410,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage }) => {
             id="chat-input"
             className={styles.input}
             type="text"
-            placeholder="Envie uma mensagem..."
+            placeholder={isServer ? `Conversar em #${activeChannel.name}...` : "Envie uma mensagem..."}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

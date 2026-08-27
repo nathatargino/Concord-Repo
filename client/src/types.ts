@@ -7,6 +7,20 @@ export interface UserInfo {
   callMuted: boolean;
 }
 
+export interface ServerChannel {
+  id: string;
+  name: string;
+  serverId?: string;
+}
+
+export interface ServerMember {
+  id: string;
+  username: string;
+  isOnline: boolean;
+  inVoice: boolean;
+  role?: string;
+}
+
 export interface MusicItem {
   videoId: string;
   token: number;
@@ -23,11 +37,15 @@ export interface ChatMessage {
   type?: 'text' | 'image' | 'giphy' | 'file';
   url?: string;
   filename?: string;
+  channelId?: string;
 }
 
 export interface RoomInfo {
   id: string;
   code: string;
+  name?: string;
+  isServer?: boolean;
+  channels?: ServerChannel[];
   createdAt: number;
   expiresAt: number;
   userCount: number;

@@ -24,6 +24,14 @@
   font-weight: 700;
   font-size: 16px;
   color: var(--text-primary);
+  min-width: 0;
+}
+
+.serverTitleText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 .logoImage {
@@ -58,16 +66,16 @@
 }
 
 .section {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .sectionLabel {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.6px;
   color: var(--text-muted);
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -76,12 +84,99 @@
 .sectionLabelLeft {
   display: flex;
   align-items: center;
+  gap: 6px;
+}
+
+.sectionIcon {
+  font-size: 13px;
+}
+
+.callBadgeDot {
+  font-size: 10px;
+}
+
+.onlineBadgeDot {
+  font-size: 10px;
+}
+
+.offlineBadgeDot {
+  font-size: 10px;
+  filter: grayscale(1);
+}
+
+.addChannelBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.addChannelBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  transform: scale(1.1);
+}
+
+.channelList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 4px;
+}
+
+.channelItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.channelItem:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.channelActive {
+  background: rgba(124, 58, 237, 0.15) !important;
+  color: #DDD6FE !important;
+  font-weight: 600;
+  border-color: rgba(124, 58, 237, 0.3);
+}
+
+.channelHash {
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 700;
+}
+
+.channelActive .channelHash {
+  color: var(--accent-bright);
+}
+
+.channelName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .clickable {
   cursor: pointer;
-  padding: 4px;
-  margin: -4px;
+  padding: 4px 6px;
+  margin: -4px -6px;
   border-radius: 4px;
   transition: all 0.2s ease;
 }
@@ -120,6 +215,13 @@
   gap: 4px;
 }
 
+.emptyListHint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+  padding: 6px 10px;
+}
+
 .userCard {
   display: flex;
   align-items: center;
@@ -140,37 +242,31 @@
   border-color: rgba(124, 58, 237, 0.2);
 }
 
-/* Speaking glow — applied via JS to user card */
-:global(.speaking-glow) {
-  border-color: rgba(16, 185, 129, 0.5) !important;
-  background: rgba(16, 185, 129, 0.08) !important;
-  box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.5), 0 0 12px rgba(16, 185, 129, 0.2) !important;
-  animation: cardSpeakingPulse 1.5s ease-in-out infinite;
+.userCardOffline {
+  opacity: 0.5;
 }
 
-@keyframes cardSpeakingPulse {
-  0%, 100% { 
-    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.3), 0 0 8px rgba(16, 185, 129, 0.15); 
-    border-color: rgba(16, 185, 129, 0.4);
-  }
-  50% { 
-    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.6), 0 0 16px rgba(16, 185, 129, 0.35); 
-    border-color: rgba(16, 185, 129, 0.7);
-  }
+.userCardOffline:hover {
+  opacity: 0.75;
 }
 
 .avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: white;
   flex-shrink: 0;
   font-family: 'Space Grotesk', sans-serif;
+}
+
+.avatarOffline {
+  background: #374151 !important;
+  color: #9CA3AF !important;
 }
 
 .userInfo {
@@ -182,7 +278,7 @@
 }
 
 .userName {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text-primary);
   white-space: nowrap;
@@ -191,6 +287,10 @@
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.userNameOffline {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .meTag {
@@ -236,6 +336,124 @@
 
 .mutedBadge {
   filter: grayscale(1) opacity(0.8);
+}
+
+/* ── Modal de Criação de Canal ── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modalCard {
+  background: #181824;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 20px;
+  padding: 28px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  animation: modalScale 0.2s ease;
+}
+
+@keyframes modalScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.modalTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: white;
+  margin: 0 0 6px;
+}
+
+.modalDesc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 0 20px;
+}
+
+.channelInputWrapper {
+  display: flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 4px 14px;
+  margin-bottom: 24px;
+  transition: border-color 0.2s;
+}
+
+.channelInputWrapper:focus-within {
+  border-color: var(--accent-bright);
+}
+
+.inputHash {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  margin-right: 8px;
+}
+
+.channelNameInput {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 15px;
+  padding: 10px 0;
+  width: 100%;
+  outline: none;
+}
+
+.channelNameInput::placeholder {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancelBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cancelBtn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+}
+
+.confirmBtn {
+  background: linear-gradient(135deg, #7C3AED, #06B6D4);
+  border: none;
+  color: white;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.confirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Context Menu ── */

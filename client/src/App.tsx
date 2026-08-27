@@ -132,6 +132,13 @@ export default function App() {
         persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
         localStorage.setItem('concord_pid', persistentId);
       }
+      
+      const searchParams = new URLSearchParams(window.location.search);
+      const isServerParam = searchParams.get('server') === '1' || window.location.hash.includes('server=1');
+      if (isServerParam) {
+        store.setIsServer(true);
+      }
+
       socket.emit('join_room', roomId, persistentId);
     };
 
@@ -230,6 +237,7 @@ export default function App() {
         onLeaveVoice={handleLeaveVoice}
         onStartScreenShare={screenShare.startScreenShare}
         onStopScreenShare={screenShare.stopScreenShare}
+        onCreateChannel={(name) => socket.emit('create_channel', name)}
         onAdminAction={(action, targetId) => {
           if (action === 'mute') socket.emit('admin_mute_user', targetId);
           else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
@@ -242,7 +250,7 @@ export default function App() {
 
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
-          <ChatPanel onSendMessage={(msg, type, url, filename) => {
+          <ChatPanel onSendMessage={(msg, type, url, filename, channelId) => {
             if (!type && !url) {
               const command = msg.trim().toLowerCase();
               if (command.startsWith('/')) {
@@ -265,13 +273,14 @@ export default function App() {
                     message: 'Comando não reconhecido. Comandos válidos: /clear, /skip, /pause, /play',
                     timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
                     isSystem: true,
-                    type: 'text'
+                    type: 'text',
+                    channelId: channelId || store.activeChannelId,
                   });
                   return;
                 }
               }
             }
-            socket.emit('send_message', msg, type, url, filename);
+            socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId);
           }} />
         </div>
 

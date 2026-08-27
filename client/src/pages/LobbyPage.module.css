@@ -238,6 +238,26 @@
   margin: 0;
 }
 
+/* ── Form Group for Server Name ── */
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.inputLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.inputHint {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: right;
+}
+
 /* ── Code Input ── */
 .codeInputWrapper {
   display: flex;
@@ -251,14 +271,11 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   color: white;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 8px;
   text-align: center;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
-  font-family: 'Courier New', monospace;
-  text-transform: uppercase;
 }
 
 .codeInput:focus {
@@ -267,9 +284,9 @@
 }
 
 .codeInput::placeholder {
-  color: rgba(255, 255, 255, 0.15);
-  letter-spacing: 4px;
-  font-size: 16px;
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 15px;
+  font-weight: 400;
 }
 
 /* ── Action Button ── */

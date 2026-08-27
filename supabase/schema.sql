@@ -66,16 +66,23 @@ CREATE TRIGGER on_auth_user_created
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 
--- 2. ROOMS TABLE (Shared rooms between website and voice call app)
+-- 2. ROOMS & SERVERS TABLE (Shared rooms and permanent servers)
 CREATE TABLE IF NOT EXISTS public.rooms (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
+    is_server BOOLEAN DEFAULT false,
     created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     is_private BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure is_server column exists if table was created previously
+ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS is_server BOOLEAN DEFAULT false;
+
+-- Enforce unique server names (case-insensitive) for servers (is_server = true)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_server_name_unique ON public.rooms (LOWER(name)) WHERE (is_server = true);
 
 -- Enable RLS on rooms
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
@@ -83,14 +90,54 @@ ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view rooms by code or list public rooms."
     ON public.rooms FOR SELECT USING (true);
 
-CREATE POLICY "Anyone can create a room."
+CREATE POLICY "Anyone can create a room or server."
     ON public.rooms FOR INSERT WITH CHECK (true);
 
 CREATE POLICY "Room creators can update their rooms."
     ON public.rooms FOR UPDATE USING (auth.uid() = created_by);
 
 
--- 3. ROOM PARTICIPANTS TABLE (Active or historical call members)
+-- 3. SERVER CHANNELS TABLE (Multiple text channels per server)
+CREATE TABLE IF NOT EXISTS public.server_channels (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id UUID REFERENCES public.rooms(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.server_channels ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view server channels."
+    ON public.server_channels FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can create server channels."
+    ON public.server_channels FOR INSERT WITH CHECK (true);
+
+
+-- 4. SERVER MEMBERS TABLE (Track offline, online and permanent server members)
+CREATE TABLE IF NOT EXISTS public.server_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    server_id UUID REFERENCES public.rooms(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    role TEXT DEFAULT 'member',
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(server_id, user_id)
+);
+
+ALTER TABLE public.server_members ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can view server members."
+    ON public.server_members FOR SELECT USING (true);
+
+CREATE POLICY "Anyone can join or register as server member."
+    ON public.server_members FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Members can update their membership status."
+    ON public.server_members FOR UPDATE USING (true);
+
+
+-- 5. ROOM PARTICIPANTS TABLE (Active or historical call members)
 CREATE TABLE IF NOT EXISTS public.rooms_participants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id UUID REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -112,15 +159,25 @@ CREATE POLICY "Participants can update their room status."
     ON public.rooms_participants FOR UPDATE USING (true);
 
 
--- 4. MESSAGES TABLE (Chat messages within rooms)
+-- 6. MESSAGES TABLE (Chat messages within rooms and channels)
 CREATE TABLE IF NOT EXISTS public.messages (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id UUID REFERENCES public.rooms(id) ON DELETE CASCADE,
+    channel_id UUID REFERENCES public.server_channels(id) ON DELETE CASCADE,
     user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
     sender_name TEXT NOT NULL,
     content TEXT NOT NULL,
+    msg_type TEXT DEFAULT 'text',
+    file_url TEXT,
+    file_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Ensure additional columns exist if table was created previously
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS channel_id UUID REFERENCES public.server_channels(id) ON DELETE CASCADE;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS msg_type TEXT DEFAULT 'text';
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS file_url TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS file_name TEXT;
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
@@ -133,5 +190,9 @@ CREATE POLICY "Anyone can insert room messages."
 
 -- INDEXES FOR PERFORMANCE
 CREATE INDEX IF NOT EXISTS idx_rooms_code ON public.rooms(code);
+CREATE INDEX IF NOT EXISTS idx_server_channels_server_id ON public.server_channels(server_id);
+CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON public.server_members(server_id);
 CREATE INDEX IF NOT EXISTS idx_messages_room_id ON public.messages(room_id);
+CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON public.messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_participants_room_id ON public.rooms_participants(room_id);
+

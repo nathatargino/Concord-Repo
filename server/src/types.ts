@@ -15,21 +15,37 @@ export interface MusicItem {
   title?: string;
 }
 
+export interface ServerChannel {
+  id: string;
+  name: string;
+  serverId?: string;
+}
+
 export interface RoomInfo {
   id: string;
   code: string;
+  name?: string;
+  isServer?: boolean;
   createdAt: number;
   expiresAt: number;
   userCount: number;
   adminIds: string[];
+  channels?: ServerChannel[];
 }
 
 // Client → Server events
 export interface ClientToServerEvents {
   set_username: (name: string) => void;
-  create_room: (persistentId: string) => void;
+  create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (roomIdOrCode: string, persistentId: string) => void;
-  send_message: (message: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
+  send_message: (
+    message: string,
+    type?: 'text' | 'image' | 'giphy' | 'file',
+    url?: string,
+    filename?: string,
+    channelId?: string
+  ) => void;
+  create_channel: (channelName: string) => void;
   request_music: (url: string) => void;
   music_ended: (token: number) => void;
   join_voice: () => void;
@@ -53,7 +69,16 @@ export interface ClientToServerEvents {
 // Server → Client events
 export interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
-  receive_message: (userName: string, message: string, timestamp: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string) => void;
+  receive_message: (
+    userName: string,
+    message: string,
+    timestamp: string,
+    type?: 'text' | 'image' | 'giphy' | 'file',
+    url?: string,
+    filename?: string,
+    channelId?: string
+  ) => void;
+  channel_created: (channel: ServerChannel) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;

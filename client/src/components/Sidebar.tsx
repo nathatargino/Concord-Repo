@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
+import { 
+  fetchServerChannels, 
+  fetchServerMembers, 
+  createChannelInSupabase, 
+  registerServerMember 
+} from '../lib/supabase';
+import toast from 'react-hot-toast';
 
 interface Props {
   onScreenShareClick: (userId: string) => void;
@@ -11,6 +18,7 @@ interface Props {
   onStartScreenShare: () => void;
   onStopScreenShare: () => void;
   onAdminAction: (action: 'mute' | 'unmute' | 'kick_voice' | 'kick_room' | 'give_admin' | 'local_mute', targetId: string) => void;
+  onCreateChannel?: (channelName: string) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -20,16 +28,68 @@ export const Sidebar: React.FC<Props> = ({
   onStartScreenShare,
   onStopScreenShare,
   onAdminAction,
+  onCreateChannel,
 }) => {
-  const { users, myId, connected, room } = useAppStore();
+  const { 
+    users, 
+    myId, 
+    myName, 
+    connected, 
+    room, 
+    isServer, 
+    channels, 
+    setChannels, 
+    addChannel, 
+    activeChannelId, 
+    setActiveChannelId,
+    serverMembers,
+    setServerMembers
+  } = useAppStore();
+
   const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
 
-  const voiceUsers = users.filter((u) => u.inVoice);
-
-  const [showOnline, setShowOnline] = useState(false);
+  const [showOnline, setShowOnline] = useState(true);
+  const [showOffline, setShowOffline] = useState(false);
+  const [showVoice, setShowVoice] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string } | null>(null);
 
-  React.useEffect(() => {
+  // Modal para criação de novos canais
+  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
+  const [newChannelName, setNewChannelName] = useState('');
+  const [isCreatingChannel, setIsCreatingChannel] = useState(false);
+
+  // Carregar canais e membros do servidor se for servidor permanente
+  useEffect(() => {
+    if (!room?.id || !isServer) return;
+
+    // Registrar membro atual
+    if (myName) {
+      registerServerMember(room.id, myName);
+    }
+
+    // Buscar canais
+    fetchServerChannels(room.id).then((chs) => {
+      if (chs && chs.length > 0) {
+        setChannels(chs.map(c => ({ id: c.id, name: c.name, serverId: c.server_id })));
+      }
+    });
+
+    // Buscar membros registrados
+    fetchServerMembers(room.id).then((mems) => {
+      if (mems) {
+        setServerMembers(mems.map(m => ({
+          id: m.id,
+          username: m.username,
+          isOnline: false,
+          inVoice: false,
+          role: m.role,
+        })));
+      }
+    });
+  }, [room?.id, isServer, myName, setChannels, setServerMembers]);
+
+  // Fechar menu de contexto no clique fora
+  useEffect(() => {
     const close = () => setContextMenu(null);
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
@@ -42,50 +102,154 @@ export const Sidebar: React.FC<Props> = ({
     }
   };
 
+  // Categorias de Usuários
+  const voiceUsers = users.filter((u) => u.inVoice);
+  const onlineUsers = users.filter((u) => !u.inVoice);
+  
+  // Usuários offline: membros do servidor que não estão presentes na lista `users` conectada
+  const offlineMembers = serverMembers.filter(
+    (m) => !users.some((u) => u.name && u.name.toLowerCase() === m.username.toLowerCase())
+  );
+
+  const isAdmin = room?.adminIds?.includes(myId) ?? false;
+
+  const handleCreateChannelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newChannelName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').slice(0, 25);
+    if (!cleanName) {
+      toast.error('Digite um nome válido para o canal');
+      return;
+    }
+
+    if (channels.some(c => c.name === cleanName)) {
+      toast.error('Já existe um canal com esse nome');
+      return;
+    }
+
+    setIsCreatingChannel(true);
+    try {
+      if (room?.id) {
+        await createChannelInSupabase(room.id, cleanName);
+      }
+
+      if (onCreateChannel) {
+        onCreateChannel(cleanName);
+      } else {
+        addChannel({ id: `ch-${Date.now()}`, name: cleanName, serverId: room?.id });
+      }
+
+      toast.success(`Canal #${cleanName} criado!`);
+      setNewChannelName('');
+      setShowCreateChannelModal(false);
+    } catch (err) {
+      toast.error('Erro ao criar canal');
+    } finally {
+      setIsCreatingChannel(false);
+    }
+  };
+
   return (
     <aside className={styles.sidebar}>
+      {/* Cabeçalho */}
       <div className={styles.header}>
-        <div className={styles.serverName}>
+        <div className={styles.serverName} title={room?.name || 'Concord'}>
           <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
-          <span>Concord</span>
+          <span className={styles.serverTitleText}>
+            {room?.name || 'Concord'}
+          </span>
         </div>
         <div className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />
       </div>
 
       <div className={styles.sections}>
-        {voiceUsers.length > 0 && (
+        {/* ── SEÇÃO DE CANAIS DE TEXTO (Para Servidores) ── */}
+        {isServer && (
           <section className={styles.section}>
             <div className={styles.sectionLabel}>
-              Na call — {voiceUsers.length}
+              <div className={styles.sectionLabelLeft}>
+                <span className={styles.sectionIcon}>💬</span>
+                Canais de Texto
+              </div>
+              {isAdmin && (
+                <button 
+                  className={styles.addChannelBtn} 
+                  onClick={() => setShowCreateChannelModal(true)}
+                  title="Criar novo canal de texto"
+                >
+                  ➕
+                </button>
+              )}
             </div>
-            <div className={styles.userList}>
-              {voiceUsers.map((user) => (
-                <UserCard
-                  key={user.id}
-                  id={user.id}
-                  name={user.name || 'Anônimo'}
-                  isMe={user.id === myId}
-                  inVoice={user.inVoice}
-                  screenSharing={user.screenSharing}
-                  micMuted={user.micMuted}
-                  callMuted={user.callMuted}
-                  isAdmin={room?.adminIds?.includes(user.id) ?? false}
-                  onScreenShareClick={onScreenShareClick}
-                  onContextMenu={handleContextMenu}
-                />
-              ))}
+
+            <div className={styles.channelList}>
+              {channels.map((channel) => {
+                const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && channel.name === 'geral');
+                return (
+                  <button
+                    key={channel.id}
+                    className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
+                    onClick={() => setActiveChannelId(channel.id)}
+                  >
+                    <span className={styles.channelHash}>#</span>
+                    <span className={styles.channelName}>{channel.name}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
         )}
 
+        {/* ── 1. USUÁRIOS NA CALL ── */}
+        <section className={styles.section}>
+          <div 
+            className={`${styles.sectionLabel} ${styles.clickable}`}
+            onClick={() => setShowVoice(!showVoice)}
+          >
+            <div className={styles.sectionLabelLeft}>
+              <span className={styles.callBadgeDot}>🔴</span>
+              Na Call — {voiceUsers.length}
+            </div>
+            <span className={`${styles.chevron} ${showVoice ? styles.chevronOpen : ''}`}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6"/>
+              </svg>
+            </span>
+          </div>
+
+          <div className={`${styles.collapsibleWrapper} ${showVoice ? styles.expanded : ''}`}>
+            <div className={styles.userList}>
+              {voiceUsers.length === 0 ? (
+                <div className={styles.emptyListHint}>Nenhum usuário na call</div>
+              ) : (
+                voiceUsers.map((user) => (
+                  <UserCard
+                    key={user.id}
+                    id={user.id}
+                    name={user.name || 'Anônimo'}
+                    isMe={user.id === myId}
+                    inVoice={user.inVoice}
+                    screenSharing={user.screenSharing}
+                    micMuted={user.micMuted}
+                    callMuted={user.callMuted}
+                    isAdmin={room?.adminIds?.includes(user.id) ?? false}
+                    onScreenShareClick={onScreenShareClick}
+                    onContextMenu={handleContextMenu}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* ── 2. USUÁRIOS ONLINE ── */}
         <section className={styles.section}>
           <div 
             className={`${styles.sectionLabel} ${styles.clickable}`} 
             onClick={() => setShowOnline(!showOnline)}
           >
             <div className={styles.sectionLabelLeft}>
-              <span className={styles.sectionIcon}>👥</span>
-              Online — {users.length}
+              <span className={styles.onlineBadgeDot}>🟢</span>
+              Online — {isServer ? onlineUsers.length : users.length}
             </div>
             <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -95,7 +259,7 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {users.map((user) => (
+              {(isServer ? onlineUsers : users).map((user) => (
                 <UserCard
                   key={user.id}
                   id={user.id}
@@ -113,6 +277,47 @@ export const Sidebar: React.FC<Props> = ({
             </div>
           </div>
         </section>
+
+        {/* ── 3. USUÁRIOS OFFLINE (Apenas para Servidores) ── */}
+        {isServer && (
+          <section className={styles.section}>
+            <div 
+              className={`${styles.sectionLabel} ${styles.clickable}`} 
+              onClick={() => setShowOffline(!showOffline)}
+            >
+              <div className={styles.sectionLabelLeft}>
+                <span className={styles.offlineBadgeDot}>⚫</span>
+                Offline — {offlineMembers.length}
+              </div>
+              <span className={`${styles.chevron} ${showOffline ? styles.chevronOpen : ''}`}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m9 18 6-6-6-6"/>
+                </svg>
+              </span>
+            </div>
+            <div className={`${styles.collapsibleWrapper} ${showOffline ? styles.expanded : ''}`}>
+              <div className={styles.userList}>
+                {offlineMembers.length === 0 ? (
+                  <div className={styles.emptyListHint}>Nenhum membro offline</div>
+                ) : (
+                  offlineMembers.map((member) => (
+                    <div key={member.id} className={`${styles.userCard} ${styles.userCardOffline}`}>
+                      <div className={`${styles.avatar} ${styles.avatarOffline}`}>
+                        {member.username.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className={styles.userInfo}>
+                        <span className={`${styles.userName} ${styles.userNameOffline}`}>
+                          {member.username}
+                          {member.role === 'owner' && <span className={styles.adminTag} title="Dono do Servidor">👑</span>}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+        )}
       </div>
 
       <VoicePanel
@@ -122,6 +327,49 @@ export const Sidebar: React.FC<Props> = ({
         onStopScreenShare={onStopScreenShare}
       />
 
+      {/* Modal de Criação de Canal */}
+      {showCreateChannelModal && (
+        <div className={styles.modalOverlay} onClick={() => setShowCreateChannelModal(false)}>
+          <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+            <h3 className={styles.modalTitle}>Criar Canal de Texto</h3>
+            <p className={styles.modalDesc}>Canais de texto servem para organizar conversas por assunto.</p>
+            
+            <form onSubmit={handleCreateChannelSubmit}>
+              <div className={styles.channelInputWrapper}>
+                <span className={styles.inputHash}>#</span>
+                <input
+                  type="text"
+                  placeholder="ex: avisos, jogos, musica"
+                  value={newChannelName}
+                  maxLength={25}
+                  onChange={(e) => setNewChannelName(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                  className={styles.channelNameInput}
+                  autoFocus
+                />
+              </div>
+
+              <div className={styles.modalActions}>
+                <button
+                  type="button"
+                  className={styles.cancelBtn}
+                  onClick={() => setShowCreateChannelModal(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={styles.confirmBtn}
+                  disabled={isCreatingChannel || !newChannelName.trim()}
+                >
+                  {isCreatingChannel ? 'Criando...' : 'Criar Canal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Menu de Contexto de Usuário */}
       {contextMenu && (
         <div 
           className={styles.contextMenu}
@@ -253,7 +501,7 @@ const UserCard: React.FC<UserCardProps> = ({
         <span className={styles.userName}>
           {name}
           {isMe && <span className={styles.meTag}>você</span>}
-          {isAdmin && <span className={styles.adminTag} title="Dono da sala">👑</span>}
+          {isAdmin && <span className={styles.adminTag} title="Dono / Admin">👑</span>}
         </span>
         <div className={styles.badges}>
           {callMuted && (

@@ -4,6 +4,7 @@ import {
   InterServerEvents,
   MusicItem,
   RoomInfo,
+  ServerChannel,
   ServerToClientEvents,
   SocketData,
   UserInfo,
@@ -17,9 +18,12 @@ type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEv
 const ROOM_DURATION_MS = 14 * 60 * 60 * 1000; // 14 hours
 const ROOM_CODE_LENGTH = 6;
 
-interface RoomState {
+export interface RoomState {
   id: string;
   code: string;
+  name?: string;
+  isServer?: boolean;
+  channels: ServerChannel[];
   createdAt: number;
   expiresAt: number;
   adminIds: string[];
@@ -49,7 +53,13 @@ function generateCode(): string {
   return code;
 }
 
-function createRoom(persistentId?: string, customCode?: string, customId?: string): RoomState {
+export function createRoom(
+  persistentId?: string,
+  customCode?: string,
+  customId?: string,
+  isServer?: boolean,
+  serverName?: string
+): RoomState {
   const id = customId || generateId();
   let code = customCode ? customCode.toUpperCase() : generateCode();
   // Ensure code uniqueness if auto-generated
@@ -59,11 +69,15 @@ function createRoom(persistentId?: string, customCode?: string, customId?: strin
     }
   }
   const now = Date.now();
+  const defaultChannel: ServerChannel = { id: 'ch-geral', name: 'geral', serverId: id };
   const room: RoomState = {
     id,
     code,
+    name: serverName || (isServer ? 'Servidor Concord' : 'Sala Concord'),
+    isServer: !!isServer,
+    channels: isServer ? [defaultChannel] : [],
     createdAt: now,
-    expiresAt: now + ROOM_DURATION_MS,
+    expiresAt: isServer ? Infinity : now + ROOM_DURATION_MS,
     adminIds: [],
     adminPersistentIds: persistentId ? [persistentId] : [],
     users: new Map(),
@@ -76,15 +90,15 @@ function createRoom(persistentId?: string, customCode?: string, customId?: strin
   };
   rooms.set(id, room);
   codeToRoomId.set(code, id);
-  console.log(`[Room] Created room ${id} (code: ${code})`);
+  console.log(`[Room] Created ${isServer ? 'server' : 'room'} ${id} (code: ${code})`);
   return room;
 }
 
-function getRoom(idOrCode: string): RoomState | null {
+export function getRoom(idOrCode: string): RoomState | null {
   // Try direct ID first
   if (rooms.has(idOrCode)) {
     const room = rooms.get(idOrCode)!;
-    if (Date.now() > room.expiresAt) {
+    if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
@@ -95,7 +109,7 @@ function getRoom(idOrCode: string): RoomState | null {
   if (id) {
     const room = rooms.get(id);
     if (!room) return null;
-    if (Date.now() > room.expiresAt) {
+    if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
@@ -104,28 +118,33 @@ function getRoom(idOrCode: string): RoomState | null {
   return null;
 }
 
-function destroyRoom(roomId: string) {
+export function destroyRoom(roomId: string) {
   const room = rooms.get(roomId);
   if (!room) return;
+  // Permanent servers should NEVER be destroyed automatically
+  if (room.isServer) return;
   codeToRoomId.delete(room.code);
   rooms.delete(roomId);
   console.log(`[Room] Destroyed room ${roomId}`);
 }
 
-// Clean up expired rooms every 5 minutes
+// Clean up expired rooms every 5 minutes (ignoring permanent servers)
 setInterval(() => {
   const now = Date.now();
   for (const [id, room] of rooms) {
-    if (now > room.expiresAt) {
+    if (!room.isServer && now > room.expiresAt) {
       destroyRoom(id);
     }
   }
 }, 5 * 60 * 1000);
 
-function toRoomInfo(room: RoomState): RoomInfo {
+export function toRoomInfo(room: RoomState): RoomInfo {
   return {
     id: room.id,
     code: room.code,
+    name: room.name,
+    isServer: room.isServer,
+    channels: room.channels,
     createdAt: room.createdAt,
     expiresAt: room.expiresAt,
     userCount: room.users.size,
@@ -210,23 +229,23 @@ export function registerHub(io: IoServer) {
       return rooms.get(roomId) ?? null;
     }
 
-    // ─── CREATE ROOM ───────────────────────────────────────────────
-    socket.on('create_room', () => {
-      const room = createRoom();
+    // ─── CREATE ROOM / SERVER ──────────────────────────────────────
+    socket.on('create_room', (persistentId?: string, isServer?: boolean, serverName?: string) => {
+      const room = createRoom(persistentId, undefined, undefined, isServer, serverName);
       room.adminIds = [socket.id];
       socket.data.roomId = room.id;
       socket.join(room.id);
-      user = { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+      user = { id: socket.id, persistentId, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
       socket.emit('room_joined', toRoomInfo(room));
-      console.log(`[Room] ${socket.id} created and joined ${room.id}`);
+      console.log(`[Room] ${socket.id} created and joined ${room.isServer ? 'server' : 'room'} ${room.id}`);
     });
 
-    // ─── JOIN ROOM ─────────────────────────────────────────────────
+    // ─── JOIN ROOM / SERVER ────────────────────────────────────────
     socket.on('join_room', (roomIdOrCode: string, persistentId?: string) => {
       const room = getRoom(roomIdOrCode.trim());
       if (!room) {
-        socket.emit('room_error', 'Sala não encontrada ou expirada. Verifique o código e tente novamente.');
+        socket.emit('room_error', 'Sala ou servidor não encontrado. Verifique o código e tente novamente.');
         return;
       }
 
@@ -237,7 +256,7 @@ export function registerHub(io: IoServer) {
         if (prevRoom) {
           handleLeaveVoice(socket, io, user, prevRoom);
           prevRoom.users.delete(socket.id);
-          if (prevRoom.users.size === 0) {
+          if (prevRoom.users.size === 0 && !prevRoom.isServer) {
             destroyRoom(prevRoom.id);
           } else {
             handleAdminReassignment(socket.id, io, prevRoom);
@@ -280,12 +299,39 @@ export function registerHub(io: IoServer) {
 
       if (room) {
         broadcastUserList(io, room);
-        socket.to(room.id).emit('toast_notification', `${trimmed} entrou na sala`, 'success');
+        socket.to(room.id).emit('toast_notification', `${trimmed} entrou`, 'success');
       }
     });
 
+    // ─── CREATE CHANNEL ────────────────────────────────────────────
+    socket.on('create_channel', (channelName: string) => {
+      const room = getCurrentRoom();
+      if (!room) return;
+
+      // Only admins can create channels
+      if (!room.adminIds.includes(socket.id)) {
+        socket.emit('toast_notification', 'Apenas administradores podem criar canais.', 'error');
+        return;
+      }
+
+      const clean = channelName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-_]/g, '').slice(0, 32);
+      if (!clean) return;
+
+      const newChannel: ServerChannel = {
+        id: `ch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: clean,
+        serverId: room.id,
+      };
+
+      if (!room.channels) room.channels = [];
+      room.channels.push(newChannel);
+
+      io.to(room.id).emit('channel_created', newChannel);
+      io.to(room.id).emit('toast_notification', `Canal #${clean} criado!`, 'info');
+    });
+
     // ─── CHAT MESSAGE ──────────────────────────────────────────────
-    socket.on('send_message', (message: string, type?, url?, filename?) => {
+    socket.on('send_message', (message: string, type?, url?, filename?, channelId?) => {
       if (!user.name) return;
       const room = getCurrentRoom();
       if (!room) return;
@@ -296,7 +342,7 @@ export function registerHub(io: IoServer) {
         minute: '2-digit',
         timeZone: 'America/Sao_Paulo'
       });
-      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename);
+      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId);
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
@@ -350,62 +396,53 @@ export function registerHub(io: IoServer) {
         io.to(room.id).emit('toast_notification', `${user.name} pulou a música`, 'info');
       } else if (action === 'pause') {
         io.to(room.id).emit('music_pause');
-        io.to(room.id).emit('toast_notification', `${user.name} pausou a música`, 'info');
       } else if (action === 'play') {
         io.to(room.id).emit('music_resume');
-        io.to(room.id).emit('toast_notification', `${user.name} retomou a música`, 'info');
       } else if (action === 'clear') {
-        room.musicQueue.length = 0;
-        if (room.currentMusicToken !== null) {
-          io.to(room.id).emit('stop_youtube', room.currentMusicToken);
-          room.currentMusicToken = null;
-          room.currentMusicVideoId = null;
-          room.currentMusicStartTime = null;
-        }
+        room.musicQueue = [];
+        room.currentMusicToken = null;
+        room.currentMusicVideoId = null;
+        room.currentMusicStartTime = null;
+        io.to(room.id).emit('stop_youtube', 0);
         broadcastQueueUpdate(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} limpou a playlist`, 'info');
+        io.to(room.id).emit('toast_notification', `${user.name} limpou a fila de música`, 'info');
       }
     });
 
+    // ─── REMOVE FROM QUEUE ─────────────────────────────────────────
     socket.on('remove_from_queue', (token: number) => {
       const room = getCurrentRoom();
       if (!room) return;
-      const idx = room.musicQueue.findIndex((q) => q.token === token);
-      if (idx !== -1) {
-        room.musicQueue.splice(idx, 1);
-        broadcastQueueUpdate(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} removeu uma música da fila`, 'info');
-      }
+      room.musicQueue = room.musicQueue.filter(item => item.token !== token);
+      broadcastQueueUpdate(io, room);
     });
 
+    // ─── REORDER QUEUE ─────────────────────────────────────────────
     socket.on('reorder_queue', (oldIndex: number, newIndex: number) => {
       const room = getCurrentRoom();
       if (!room) return;
-      const q = room.musicQueue;
-      if (oldIndex >= 0 && oldIndex < q.length && newIndex >= 0 && newIndex < q.length && oldIndex !== newIndex) {
-        const [item] = q.splice(oldIndex, 1);
-        q.splice(newIndex, 0, item);
-        broadcastQueueUpdate(io, room);
-      }
+      if (oldIndex < 0 || oldIndex >= room.musicQueue.length || newIndex < 0 || newIndex >= room.musicQueue.length) return;
+      const [item] = room.musicQueue.splice(oldIndex, 1);
+      room.musicQueue.splice(newIndex, 0, item);
+      broadcastQueueUpdate(io, room);
     });
 
     // ─── JOIN VOICE ────────────────────────────────────────────────
     socket.on('join_voice', () => {
       const room = getCurrentRoom();
       if (!room) return;
-      if (room.voiceUsers.has(socket.id)) return;
 
-      const existing = Array.from(room.voiceUsers);
-      socket.emit('existing_voice_users', existing);
-      socket.to(room.id).emit('user_joined_voice', socket.id);
-
-      room.voiceUsers.add(socket.id);
       user.inVoice = true;
+      room.voiceUsers.add(socket.id);
+
+      const existingInVoice = Array.from(room.voiceUsers).filter(id => id !== socket.id);
+      socket.emit('existing_voice_users', existingInVoice);
+      socket.to(room.id).emit('user_joined_voice', socket.id);
       broadcastUserList(io, room);
 
-      if (room.currentMusicToken && room.currentMusicVideoId && room.currentMusicStartTime) {
-        const elapsedSeconds = (Date.now() - room.currentMusicStartTime) / 1000;
-        socket.emit('play_youtube', room.currentMusicVideoId, elapsedSeconds, room.currentMusicToken);
+      if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
+        const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
+        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
       }
     });
 
@@ -417,15 +454,15 @@ export function registerHub(io: IoServer) {
     });
 
     // ─── WEBRTC SIGNALING ──────────────────────────────────────────
-    socket.on('send_offer', (targetId, offer) => {
+    socket.on('send_offer', (targetId: string, offer: RTCSessionDescriptionInit) => {
       io.to(targetId).emit('receive_offer', socket.id, offer);
     });
 
-    socket.on('send_answer', (targetId, answer) => {
+    socket.on('send_answer', (targetId: string, answer: RTCSessionDescriptionInit) => {
       io.to(targetId).emit('receive_answer', socket.id, answer);
     });
 
-    socket.on('send_ice', (targetId, candidate) => {
+    socket.on('send_ice', (targetId: string, candidate: RTCIceCandidateInit) => {
       io.to(targetId).emit('receive_ice', socket.id, candidate);
     });
 
@@ -433,23 +470,23 @@ export function registerHub(io: IoServer) {
     socket.on('start_screen_share', () => {
       const room = getCurrentRoom();
       if (!room) return;
-      room.screenSharingUsers.add(socket.id);
       user.screenSharing = true;
-      io.to(room.id).emit('user_started_screen_share', socket.id, user.name);
+      room.screenSharingUsers.add(socket.id);
+      socket.to(room.id).emit('user_started_screen_share', socket.id, user.name);
       broadcastUserList(io, room);
     });
 
     socket.on('stop_screen_share', () => {
       const room = getCurrentRoom();
       if (!room) return;
-      room.screenSharingUsers.delete(socket.id);
       user.screenSharing = false;
-      io.to(room.id).emit('user_stopped_screen_share', socket.id);
+      room.screenSharingUsers.delete(socket.id);
+      socket.to(room.id).emit('user_stopped_screen_share', socket.id);
       broadcastUserList(io, room);
     });
 
-    // ─── ADMIN & MEDIA EVENTS ──────────────────────────────────────
-    socket.on('update_media_state', (micMuted, callMuted) => {
+    // ─── MEDIA STATE ───────────────────────────────────────────────
+    socket.on('update_media_state', (micMuted: boolean, callMuted: boolean) => {
       const room = getCurrentRoom();
       if (!room) return;
       user.micMuted = micMuted;
@@ -457,94 +494,89 @@ export function registerHub(io: IoServer) {
       broadcastUserList(io, room);
     });
 
-    socket.on('admin_mute_user', (targetId) => {
+    // ─── ADMIN ACTIONS ─────────────────────────────────────────────
+    socket.on('admin_mute_user', (targetId: string) => {
       const room = getCurrentRoom();
-      if (room && room.adminIds.includes(socket.id)) {
-        io.to(targetId).emit('server_muted');
-        io.to(room.id).emit('toast_notification', `O admin mutou um usuário`, 'info');
-      }
+      if (!room || !room.adminIds.includes(socket.id)) return;
+      io.to(targetId).emit('server_muted');
     });
 
-    socket.on('admin_unmute_user', (targetId) => {
+    socket.on('admin_unmute_user', (targetId: string) => {
       const room = getCurrentRoom();
-      if (room && room.adminIds.includes(socket.id)) {
-        io.to(targetId).emit('server_unmuted');
-        io.to(room.id).emit('toast_notification', `O admin desmutou um usuário`, 'info');
-      }
+      if (!room || !room.adminIds.includes(socket.id)) return;
+      io.to(targetId).emit('server_unmuted');
     });
 
-    socket.on('admin_kick_voice', (targetId) => {
+    socket.on('admin_kick_voice', (targetId: string) => {
       const room = getCurrentRoom();
-      if (room && room.adminIds.includes(socket.id)) {
-        io.to(targetId).emit('kicked_from_voice');
-        io.to(room.id).emit('toast_notification', `O admin desconectou um usuário da voz`, 'info');
-      }
+      if (!room || !room.adminIds.includes(socket.id)) return;
+      io.to(targetId).emit('kicked_from_voice');
     });
 
-    socket.on('admin_kick_room', (targetId) => {
+    socket.on('admin_kick_room', (targetId: string) => {
       const room = getCurrentRoom();
-      if (room && room.adminIds.includes(socket.id)) {
-        // Se foi expulso, perde o direito de admin persistente
+      if (!room || !room.adminIds.includes(socket.id)) return;
+      io.to(targetId).emit('kicked_from_room');
+    });
+
+    socket.on('admin_transfer_role', (targetId: string) => {
+      const room = getCurrentRoom();
+      if (!room || !room.adminIds.includes(socket.id)) return;
+      if (!room.adminIds.includes(targetId)) {
+        room.adminIds.push(targetId);
         const targetUser = room.users.get(targetId);
-        if (targetUser && targetUser.persistentId) {
-          room.adminPersistentIds = room.adminPersistentIds.filter(id => id !== targetUser.persistentId);
+        if (targetUser?.persistentId && !room.adminPersistentIds.includes(targetUser.persistentId)) {
+          room.adminPersistentIds.push(targetUser.persistentId);
         }
-        io.to(targetId).emit('kicked_from_room');
-        io.to(room.id).emit('toast_notification', `Um usuário foi expulso da sala`, 'info');
-      }
-    });
-
-    socket.on('admin_transfer_role', (targetId) => {
-      const room = getCurrentRoom();
-      if (room && room.adminIds.includes(socket.id)) {
-        if (room.users.has(targetId) && !room.adminIds.includes(targetId)) {
-          room.adminIds.push(targetId);
-          const targetUser = room.users.get(targetId);
-          if (targetUser && targetUser.persistentId && !room.adminPersistentIds.includes(targetUser.persistentId)) {
-            room.adminPersistentIds.push(targetUser.persistentId);
-          }
-          io.to(room.id).emit('room_info', toRoomInfo(room));
-          io.to(targetId).emit('toast_notification', 'Você recebeu o cargo de Administrador', 'success');
-        }
+        io.to(targetId).emit('toast_notification', 'Você recebeu permissões de Administrador!', 'info');
+        io.to(room.id).emit('room_info', toRoomInfo(room));
       }
     });
 
     // ─── DISCONNECT ────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`[-] Disconnected: ${socket.id}`);
-
       const room = getCurrentRoom();
-      if (room) {
-        if (room.voiceUsers.has(socket.id)) {
-          handleLeaveVoice(socket, io, user, room);
-        }
-        if (room.screenSharingUsers.has(socket.id)) {
-          room.screenSharingUsers.delete(socket.id);
-          io.to(room.id).emit('user_stopped_screen_share', socket.id);
-        }
-        const name = user.name || 'Usuário';
-        room.users.delete(socket.id);
-        
-        if (room.users.size === 0) {
-          destroyRoom(room.id);
-        } else {
-          handleAdminReassignment(socket.id, io, room);
-          broadcastUserList(io, room);
-          if (name) {
-            io.to(room.id).emit('toast_notification', `${name} saiu da sala`, 'info');
-          }
-        }
+      if (!room) return;
+
+      handleLeaveVoice(socket, io, user, room);
+      room.users.delete(socket.id);
+
+      if (room.users.size === 0 && !room.isServer) {
+        destroyRoom(room.id);
+      } else {
+        handleAdminReassignment(socket.id, io, room);
+        broadcastUserList(io, room);
       }
     });
   });
 }
 
-function handleLeaveVoice(socket: IoSocket, io: IoServer, user: UserInfo, room: RoomState) {
-  room.voiceUsers.delete(socket.id);
+function handleLeaveVoice(
+  socket: IoSocket,
+  io: IoServer,
+  user: UserInfo,
+  room: RoomState
+) {
+  if (!user.inVoice) return;
   user.inVoice = false;
-  io.to(room.id).emit('user_left_voice', socket.id);
-  broadcastUserList(io, room);
-}
+  room.voiceUsers.delete(socket.id);
 
-// ─── EXPORT for REST ───────────────────────────────────────────────────────────
-export { rooms, codeToRoomId, getRoom, createRoom, toRoomInfo };
+  if (user.screenSharing) {
+    user.screenSharing = false;
+    room.screenSharingUsers.delete(socket.id);
+    socket.to(room.id).emit('user_stopped_screen_share', socket.id);
+  }
+
+  socket.to(room.id).emit('user_left_voice', socket.id);
+  broadcastUserList(io, room);
+
+  if (room.voiceUsers.size === 0) {
+    if (room.currentMusicToken !== null) {
+      io.to(room.id).emit('stop_youtube', room.currentMusicToken);
+      room.currentMusicToken = null;
+      room.currentMusicVideoId = null;
+      room.currentMusicStartTime = null;
+    }
+  }
+}
