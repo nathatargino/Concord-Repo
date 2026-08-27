@@ -42,6 +42,10 @@ interface ServerToClientEvents {
   server_unmuted: () => void;
   kicked_from_voice: () => void;
   kicked_from_room: () => void;
+  channel_deleted: (channelId: string) => void;
+  user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;
+  screen_viewer_joined: (viewer: { id: string; name: string }) => void;
+  screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
 }
 
 interface ClientToServerEvents {
@@ -62,7 +66,9 @@ interface ClientToServerEvents {
     channelId?: string
   ) => void;
   create_channel: (channelName: string) => void;
+  delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
+  set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   remove_from_queue: (token: number) => void;
@@ -75,6 +81,8 @@ interface ClientToServerEvents {
   send_ice: (targetId: string, candidate: RTCIceCandidateInit) => void;
   start_screen_share: () => void;
   stop_screen_share: () => void;
+  start_watching_screen: (broadcasterId: string) => void;
+  stop_watching_screen: (broadcasterId: string) => void;
   update_media_state: (micMuted: boolean, callMuted: boolean) => void;
   admin_mute_user: (targetId: string) => void;
   admin_unmute_user: (targetId: string) => void;
