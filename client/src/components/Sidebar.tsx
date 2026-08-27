@@ -430,8 +430,8 @@ export const Sidebar: React.FC<Props> = ({
 
       {/* Voice Controls */}
       <VoicePanel
-        onJoinVoice={onJoinVoice}
-        onLeaveVoice={onLeaveVoice}
+        onJoin={onJoinVoice}
+        onLeave={onLeaveVoice}
         onStartScreenShare={onStartScreenShare}
         onStopScreenShare={onStopScreenShare}
       />

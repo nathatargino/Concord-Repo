@@ -94,7 +94,7 @@ export interface SocketCallbacks {
   onReceiveAnswer: (senderId: string, answer: RTCSessionDescriptionInit) => void;
   onReceiveIce: (senderId: string, candidate: RTCIceCandidateInit) => void;
   onPlayYouTube: (videoId: string, startSeconds: number, token: number) => void;
-  onPauseYouTubeFromHub: (videoId: string, atSeconds: number, token: number) => void;
+  onPauseYouTubeFromHub?: (videoId: string, atSeconds: number, token: number) => void;
   onStopYouTube: (token: number) => void;
   onPauseYouTube: () => void;
   onResumeYouTube: () => void;
@@ -218,7 +218,7 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('pause_youtube', (videoId, atSeconds, token) => {
-      callbacksRef.current.onPauseYouTubeFromHub(videoId, atSeconds, token);
+      callbacksRef.current.onPauseYouTubeFromHub?.(videoId, atSeconds, token);
     });
 
     socket.on('stop_youtube', (token) => {
