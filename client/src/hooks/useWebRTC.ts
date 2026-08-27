@@ -167,6 +167,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             if (attachRemoteScreenAudio) {
               attachRemoteScreenAudio(screenAudioEl, stream, peerId);
             } else {
+              screenAudioEl.srcObject = stream;
+            }
+          }
+
           // Stream salvo para exibicao sob demanda ao clicar no botao de ver transmissao
           track.onended = () => {
             remoteScreenStreamsRef.current.delete(peerId);
