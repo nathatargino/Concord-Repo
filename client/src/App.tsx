@@ -277,15 +277,20 @@ export default function App() {
     if (!store.myName || !store.users || store.users.length === 0) return;
 
     const currentSocketId = socket.socket?.id;
+    const myPersistentId = localStorage.getItem('concord_pid');
     const lowerMyName = store.myName.trim().toLowerCase();
 
     const isDuplicate = store.users.some(
-      (u: UserInfo) => u.id !== currentSocketId && u.name && u.name.trim().toLowerCase() === lowerMyName
+      (u: UserInfo) => 
+        u.id !== currentSocketId && 
+        (!myPersistentId || u.persistentId !== myPersistentId) &&
+        u.name && 
+        u.name.trim().toLowerCase() === lowerMyName
     );
 
     if (isDuplicate) {
-      toast.error(`O nome "${store.myName}" já está em uso nesta chamada/servidor. Escolha outro nome.`, { duration: 5000 });
-      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada/servidor. Escolha outro nome.`);
+      toast.error(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`, { duration: 5000 });
+      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`);
       setShowLogin(true);
     }
   }, [store.users, store.myName, socket.socket?.id]);
@@ -308,14 +313,19 @@ export default function App() {
     }
 
     const currentSocketId = socket.socket?.id;
+    const myPersistentId = localStorage.getItem('concord_pid');
     const lowerMyName = store.myName.trim().toLowerCase();
     const isDuplicate = store.users.some(
-      (u: UserInfo) => u.id !== currentSocketId && u.name && u.name.trim().toLowerCase() === lowerMyName
+      (u: UserInfo) => 
+        u.id !== currentSocketId && 
+        (!myPersistentId || u.persistentId !== myPersistentId) &&
+        u.name && 
+        u.name.trim().toLowerCase() === lowerMyName
     );
 
     if (isDuplicate) {
-      toast.error(`O nome "${store.myName}" já está em uso nesta chamada. Escolha outro nome para continuar.`, { duration: 5000 });
-      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada.`);
+      toast.error(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário. Escolha outro nome.`, { duration: 5000 });
+      setLoginError(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário.`);
       setShowLogin(true);
       return;
     }

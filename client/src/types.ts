@@ -1,5 +1,6 @@
 export interface UserInfo {
   id: string;
+  persistentId?: string;
   name: string;
   inVoice: boolean;
   screenSharing: boolean;

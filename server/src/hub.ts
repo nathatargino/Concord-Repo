@@ -320,6 +320,22 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       
       socket.join(room.id);
+
+      // Limpar socket antigo/fantasma da mesma máquina/dispositivo (ex: F5 ou reconexão)
+      if (persistentId) {
+        for (const [existingSocketId, existingUser] of room.users.entries()) {
+          if (existingSocketId !== socket.id && existingUser.persistentId === persistentId) {
+            console.log(`[Room] Limpando socket fantasma anterior ${existingSocketId} para o persistentId ${persistentId}`);
+            room.users.delete(existingSocketId);
+            room.voiceUsers.delete(existingSocketId);
+            room.screenSharingUsers.delete(existingSocketId);
+            room.adminIds = room.adminIds.filter(id => id !== existingSocketId);
+            if (room.subOwnerIds) {
+              room.subOwnerIds = room.subOwnerIds.filter(id => id !== existingSocketId);
+            }
+          }
+        }
+      }
       
       if (persistentId && room.adminPersistentIds.includes(persistentId)) {
         if (!room.adminIds.includes(socket.id)) {
