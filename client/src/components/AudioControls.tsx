@@ -12,22 +12,19 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     ytVol,
     micVol,
     remoteVol,
-    screenShareVol,
     micMuted,
     callMuted,
     setYtVol,
     setMicVol,
     setRemoteVol,
-    setScreenShareVol,
     toggleMicMute,
     toggleCallMute,
     resetAll,
   } = useAudioStore();
 
-  const { isPlaying, currentVideoId, screenShareUserId, amSharing } = useAppStore();
+  const { isPlaying, currentVideoId } = useAppStore();
 
   const isMusicActive = isPlaying || currentVideoId !== null;
-  const isScreenShareActive = screenShareUserId !== null && !amSharing;
 
   const handlePointerDown = () => {
     onUnlockAudio();
