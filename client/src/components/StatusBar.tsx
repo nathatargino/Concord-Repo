@@ -18,13 +18,13 @@ function formatTimeLeft(ms: number): { text: string; isWarning: boolean; isCriti
 }
 
 export const StatusBar: React.FC = () => {
-  const { connected, myName, room } = useAppStore();
+  const { connected, myName, room, isServer } = useAppStore();
   const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState<ReturnType<typeof formatTimeLeft> | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!room) {
+    if (!room || room.isServer || isServer || !isFinite(room.expiresAt)) {
       setTimeLeft(null);
       return;
     }
@@ -42,7 +42,7 @@ export const StatusBar: React.FC = () => {
     update();
     const id = setInterval(update, 1000);
     return () => clearInterval(id);
-  }, [room, navigate]);
+  }, [room, isServer, navigate]);
 
   const handleCopyInvite = useCallback(() => {
     if (!room) return;
@@ -50,7 +50,8 @@ export const StatusBar: React.FC = () => {
     const baseUrl = isElectron 
       ? 'https://concord-olive.vercel.app' 
       : window.location.origin;
-    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}`;
+    const serverParam = (room.isServer || isServer) ? '&server=1' : '';
+    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
     try {
       if ((window as any).electron?.copyToClipboard) {
         (window as any).electron.copyToClipboard(url);
@@ -65,7 +66,7 @@ export const StatusBar: React.FC = () => {
     } catch (err) {
       console.warn('Clipboard write failed:', err);
     }
-  }, [room]);
+  }, [room, isServer]);
 
   const handleLeaveRoom = useCallback(() => {
     useAppStore.getState().setRoom(null);
@@ -85,21 +86,33 @@ export const StatusBar: React.FC = () => {
         )}
       </div>
 
-      {/* Center: room timer */}
-      {room && timeLeft && (
+      {/* Center: server or room info */}
+      {room && (
         <div className={styles.center}>
           <span className={styles.roomCode}>
-            <span className={styles.codeLabel}>Sala</span>
+            <span className={styles.codeLabel}>{room.isServer || isServer ? 'Servidor' : 'Sala'}</span>
             <span className={styles.codeValue}>{room.code}</span>
           </span>
-          <span className={styles.timerSep}>•</span>
-          <div
-            className={`${styles.timer} ${timeLeft.isWarning ? styles.timerWarning : ''} ${timeLeft.isCritical ? styles.timerCritical : ''}`}
-            title="Tempo restante da sala"
-          >
-            <span className={styles.timerIcon}>⏱</span>
-            <span className={styles.timerText}>{timeLeft.text}</span>
-          </div>
+          {room.isServer || isServer ? (
+            <>
+              <span className={styles.timerSep}>•</span>
+              <div className={styles.timer} title="Servidor Permanente sem expiração">
+                <span className={styles.timerIcon}>🛡️</span>
+                <span className={styles.timerText}>Permanente</span>
+              </div>
+            </>
+          ) : timeLeft ? (
+            <>
+              <span className={styles.timerSep}>•</span>
+              <div
+                className={`${styles.timer} ${timeLeft.isWarning ? styles.timerWarning : ''} ${timeLeft.isCritical ? styles.timerCritical : ''}`}
+                title="Tempo restante da sala"
+              >
+                <span className={styles.timerIcon}>⏱</span>
+                <span className={styles.timerText}>{timeLeft.text}</span>
+              </div>
+            </>
+          ) : null}
         </div>
       )}
 

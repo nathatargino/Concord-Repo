@@ -37,7 +37,13 @@ export interface RoomInfo {
 export interface ClientToServerEvents {
   set_username: (name: string) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
-  join_room: (roomIdOrCode: string, persistentId: string) => void;
+  join_room: (
+    roomIdOrCode: string,
+    persistentId: string,
+    fallbackCode?: string,
+    isServer?: boolean,
+    serverName?: string
+  ) => void;
   send_message: (
     message: string,
     type?: 'text' | 'image' | 'giphy' | 'file',

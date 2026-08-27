@@ -102,13 +102,22 @@ export const Sidebar: React.FC<Props> = ({
     }
   };
 
-  // Categorias de Usuários
-  const voiceUsers = users.filter((u) => u.inVoice);
-  const onlineUsers = users.filter((u) => !u.inVoice);
+  // Categorias de Usuários com fallback imediato para o usuário atual
+  const effectiveUsers = users.length > 0 ? users : (myName ? [{
+    id: myId || 'me',
+    name: myName,
+    inVoice: useAppStore.getState().inVoice,
+    screenSharing: false,
+    micMuted: false,
+    callMuted: false
+  }] : []);
+
+  const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
+  const onlineUsers = effectiveUsers.filter((u) => !u.inVoice);
   
   // Usuários offline: membros do servidor que não estão presentes na lista `users` conectada
   const offlineMembers = serverMembers.filter(
-    (m) => !users.some((u) => u.name && u.name.toLowerCase() === m.username.toLowerCase())
+    (m) => !effectiveUsers.some((u) => u.name && u.name.toLowerCase() === m.username.toLowerCase())
   );
 
   const isAdmin = room?.adminIds?.includes(myId) ?? false;
@@ -249,7 +258,7 @@ export const Sidebar: React.FC<Props> = ({
           >
             <div className={styles.sectionLabelLeft}>
               <span className={styles.onlineBadgeDot}>🟢</span>
-              Online — {isServer ? onlineUsers.length : users.length}
+              Online — {isServer ? onlineUsers.length : effectiveUsers.length}
             </div>
             <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -259,7 +268,7 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {(isServer ? onlineUsers : users).map((user) => (
+              {(isServer ? onlineUsers : effectiveUsers).map((user) => (
                 <UserCard
                   key={user.id}
                   id={user.id}

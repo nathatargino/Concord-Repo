@@ -242,11 +242,22 @@ export function registerHub(io: IoServer) {
     });
 
     // ─── JOIN ROOM / SERVER ────────────────────────────────────────
-    socket.on('join_room', (roomIdOrCode: string, persistentId?: string) => {
-      const room = getRoom(roomIdOrCode.trim());
+    socket.on('join_room', (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string) => {
+      const cleanIdOrCode = (roomIdOrCode || '').trim();
+      let room = getRoom(cleanIdOrCode);
+      if (!room && fallbackCode) {
+        room = getRoom(fallbackCode.trim());
+      }
+
+      // Auto-restore or create room state in memory so socket is never disconnected/orphaned
       if (!room) {
-        socket.emit('room_error', 'Sala ou servidor não encontrado. Verifique o código e tente novamente.');
-        return;
+        const isServer = Boolean(
+          isServerHint || 
+          cleanIdOrCode.toUpperCase().startsWith('SRV-') || 
+          (fallbackCode && fallbackCode.toUpperCase().startsWith('SRV-'))
+        );
+        const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
+        room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
       }
 
       // Leave previous room if any
@@ -284,11 +295,20 @@ export function registerHub(io: IoServer) {
         }
       }
       
-      user = room.users.get(socket.id) ?? { id: socket.id, persistentId, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+      user = room.users.get(socket.id) ?? { 
+        id: socket.id, 
+        persistentId, 
+        name: user.name || '', 
+        inVoice: false, 
+        screenSharing: false, 
+        micMuted: false, 
+        callMuted: false 
+      };
       room.users.set(socket.id, user);
 
       socket.emit('room_joined', toRoomInfo(room));
-      console.log(`[Room] ${socket.id} joined ${room.id}`);
+      broadcastUserList(io, room);
+      console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
     });
 
     // ─── SET USERNAME ──────────────────────────────────────────────

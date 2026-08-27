@@ -134,12 +134,37 @@ export default function App() {
       }
       
       const searchParams = new URLSearchParams(window.location.search);
-      const isServerParam = searchParams.get('server') === '1' || window.location.hash.includes('server=1');
+      const hashParams = window.location.hash.includes('?') 
+        ? new URLSearchParams(window.location.hash.substring(window.location.hash.indexOf('?')))
+        : new URLSearchParams();
+
+      const codeParam = searchParams.get('code') || hashParams.get('code') || (roomId.startsWith('SRV-') ? roomId : '');
+      const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.startsWith('SRV-') || roomId.startsWith('SRV-');
+      
       if (isServerParam) {
         store.setIsServer(true);
       }
 
-      socket.emit('join_room', roomId, persistentId);
+      // Pre-initialize room object in store immediately so UI, Invite button, and Status Bar work with 0 delay
+      if (!store.room || store.room.id !== roomId) {
+        store.setRoom({
+          id: roomId,
+          code: codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD'),
+          name: isServerParam ? (store.serverName || 'Servidor Concord') : 'Sala Concord',
+          isServer: isServerParam,
+          createdAt: Date.now(),
+          expiresAt: isServerParam ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
+          userCount: 1,
+          adminIds: [socket.socket?.id || 'admin'],
+          channels: isServerParam ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
+        });
+      }
+
+      socket.emit('join_room', roomId, persistentId, codeParam, isServerParam, store.serverName);
+      const currentName = store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      if (currentName) {
+        socket.emit('set_username', currentName);
+      }
     };
 
     // Give socket a tick to connect
