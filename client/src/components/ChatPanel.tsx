@@ -245,6 +245,20 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          stageFile(file);
+          break;
+        }
+      }
+    }
+  };
+
   const stageFile = (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       alert('O arquivo deve ter no máximo 5MB');
@@ -551,6 +565,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           maxLength={2000}
         />
 
