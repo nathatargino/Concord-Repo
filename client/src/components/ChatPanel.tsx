@@ -74,6 +74,40 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiBtnRef = useRef<HTMLButtonElement>(null);
+  const giphyPickerRef = useRef<HTMLDivElement>(null);
+  const giphyBtnRef = useRef<HTMLButtonElement>(null);
+
+  // Fechar popups ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        showEmojiPicker &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(target) &&
+        emojiBtnRef.current &&
+        !emojiBtnRef.current.contains(target)
+      ) {
+        setShowEmojiPicker(false);
+      }
+      if (
+        showGiphy &&
+        giphyPickerRef.current &&
+        !giphyPickerRef.current.contains(target) &&
+        giphyBtnRef.current &&
+        !giphyBtnRef.current.contains(target)
+      ) {
+        setShowGiphy(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker, showGiphy]);
 
   // Canal ativo
   const activeChannel = useMemo(() => {
@@ -523,9 +557,9 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         </div>
       )}
 
-      {/* Giphy picker modal/popover */}
+      {/* Giphy Popover */}
       {showGiphy && (
-        <div className={styles.giphyPopover}>
+        <div className={styles.giphyPopover} ref={giphyPickerRef}>
           <div className={styles.giphyHeader}>
             <input
               type="text"
@@ -576,6 +610,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
 
         <button
           type="button"
+          ref={giphyBtnRef}
           className={styles.actionIconBtn}
           onClick={() => setShowGiphy(!showGiphy)}
           title="Buscar GIF"
@@ -585,6 +620,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
 
         <button
           type="button"
+          ref={emojiBtnRef}
           className={styles.actionIconBtn}
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
           title="Inserir Emoji"
@@ -593,7 +629,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         </button>
 
         {showEmojiPicker && (
-          <div className={styles.emojiPickerContainer}>
+          <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
             <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
           </div>
         )}
