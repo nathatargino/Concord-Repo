@@ -125,7 +125,7 @@ function createWindow() {
         },
         frame: false,
         titleBarStyle: 'hidden',
-        // Customize titlebar or icon here
+        icon: path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
     });
     // Spoof User-Agent to bypass YouTube's Electron blocks
     // Already done globally via app.userAgentFallback
@@ -221,12 +221,11 @@ electron_1.app.whenReady().then(() => {
     // iframe sub-frames) look like Chrome, never Electron.
     electron_1.session.defaultSession.setUserAgent(CHROME_UA);
     fs.appendFileSync(logFile, `[Main] Session UA set to Chrome\n`);
-    // Fix CORS/Origin for Giphy API and YouTube iframes
+    // Fix CORS/Origin for YouTube iframes
     // Electron sends requests with Origin: http://127.0.0.1:PORT which YouTube blocks/mutes.
     // We spoof it to the production URL so YouTube treats the embed as legitimate.
-    electron_1.session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*.giphy.com/*', 'https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*', 'https://*.ggpht.com/*'] }, (details, callback) => {
+    electron_1.session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*', 'https://*.ggpht.com/*'] }, (details, callback) => {
         const isYouTube = details.url.includes('youtube.com') || details.url.includes('ytimg.com') || details.url.includes('googlevideo.com') || details.url.includes('ggpht.com');
-        const isGiphy = details.url.includes('giphy.com');
         if (isYouTube) {
             // Only spoof Referer for the iframe HTML itself.
             // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
@@ -236,10 +235,6 @@ electron_1.app.whenReady().then(() => {
             // Always override UA to Chrome for YouTube requests to avoid Electron blocks
             details.requestHeaders['User-Agent'] = CHROME_UA;
             fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);
-        }
-        if (isGiphy) {
-            details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
-            details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
         }
         callback({ requestHeaders: details.requestHeaders });
     });

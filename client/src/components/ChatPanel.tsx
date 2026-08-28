@@ -3,6 +3,7 @@ import { useAppStore } from '../stores/useAppStore';
 import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
+import EmojiPicker from 'emoji-picker-react';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
 
@@ -59,6 +60,12 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const onEmojiClick = (emojiData: any) => {
+    setInput(prev => prev + emojiData.emoji);
+    setShowEmojiPicker(false);
+  };
 
   // Barra de Pesquisa de Mensagens
   const [searchQuery, setSearchQuery] = useState('');
@@ -430,23 +437,45 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
                         />
                       </div>
                     ) : msg.type === 'image' && msg.url ? (
-                      <div className={styles.imageContainer}>
-                        <a href={msg.url} target="_blank" rel="noopener noreferrer">
-                          <img 
-                            src={msg.url} 
-                            alt={msg.filename || 'Imagem'} 
-                            className={styles.messageImage} 
-                            onLoad={() => scrollToBottom(false)}
+                      <>
+                        <div className={styles.imageContainer}>
+                          <a href={msg.url} target="_blank" rel="noopener noreferrer">
+                            <img 
+                              src={msg.url} 
+                              alt={msg.filename || 'Imagem'} 
+                              className={styles.messageImage} 
+                              onLoad={() => scrollToBottom(false)}
+                            />
+                          </a>
+                        </div>
+                        {msg.message && msg.message !== '📷 Imagem' && (
+                          <p
+                            className={styles.messageText}
+                            style={{ marginTop: '8px' }}
+                            dangerouslySetInnerHTML={{
+                              __html: parseLinks(escapeHtml(msg.message)),
+                            }}
                           />
-                        </a>
-                      </div>
+                        )}
+                      </>
                     ) : msg.type === 'file' && msg.url ? (
-                      <div className={styles.fileContainer}>
-                        <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
-                          <span className={styles.fileIcon}>📎</span>
-                          <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
-                        </a>
-                      </div>
+                      <>
+                        <div className={styles.fileContainer}>
+                          <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
+                            <span className={styles.fileIcon}>📎</span>
+                            <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
+                          </a>
+                        </div>
+                        {msg.message && msg.message !== '📄 ' + msg.filename && (
+                          <p
+                            className={styles.messageText}
+                            style={{ marginTop: '8px' }}
+                            dangerouslySetInnerHTML={{
+                              __html: parseLinks(escapeHtml(msg.message)),
+                            }}
+                          />
+                        )}
+                      </>
                     ) : (
                       <p
                         className={styles.messageText}
@@ -553,6 +582,21 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         >
           🎁
         </button>
+
+        <button
+          type="button"
+          className={styles.actionIconBtn}
+          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          title="Inserir Emoji"
+        >
+          😊
+        </button>
+
+        {showEmojiPicker && (
+          <div className={styles.emojiPickerContainer}>
+            <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
+          </div>
+        )}
 
         <input
           type="text"

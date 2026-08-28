@@ -516,3 +516,14 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.emojiPickerContainer {
+  position: absolute;
+  bottom: 100%;
+  right: 60px;
+  margin-bottom: 16px;
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+  animation: slideUpFade 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
