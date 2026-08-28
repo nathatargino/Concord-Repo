@@ -124,7 +124,7 @@ export const StatusBar: React.FC = () => {
             <button
               className={`${styles.inviteBtn} ${copied ? styles.inviteCopied : ''}`}
               onClick={handleCopyInvite}
-              title="Copiar link de convite"
+              title={`Clique para copiar o convite:\n\nVocê foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n[link da sala]`}
             >
               {copied ? '✓ Copiado!' : '🔗 Convidar'}
             </button>

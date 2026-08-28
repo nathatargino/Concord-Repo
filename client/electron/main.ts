@@ -23,8 +23,18 @@ const isDev = !app.isPackaged;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+// Disable web security restrictions that block YouTube iframe audio
+app.commandLine.appendSwitch('disable-web-security');
+app.commandLine.appendSwitch('allow-running-insecure-content');
+app.commandLine.appendSwitch('disable-site-isolation-trials');
+// Ensure audio is not silenced by the renderer
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
-app.userAgentFallback = app.userAgentFallback.replace(/Electron\/\S+ /, '').replace(/concord\/\S+ /, '');
+// Strip Electron from user-agent globally so YouTube doesn't detect and block the embed
+app.userAgentFallback = app.userAgentFallback
+    .replace(/Electron\/\S+\s*/g, '')
+    .replace(/concord\/\S+\s*/g, '');
 
 let mainWindow: BrowserWindowType | null = null;
 let localServerPort = 0;
@@ -192,12 +202,28 @@ app.whenReady().then(() => {
         });
     });
 
-    // Fix CORS/Origin for Giphy API
+    // Fix CORS/Origin for Giphy API and YouTube iframes
+    // Electron sends requests with Origin: http://127.0.0.1:PORT which YouTube blocks/mutes.
+    // We spoof it to the production URL so YouTube treats the embed as legitimate.
     session.defaultSession.webRequest.onBeforeSendHeaders(
-        { urls: ['https://*.giphy.com/*'] },
+        { urls: ['https://*.giphy.com/*', 'https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*', 'https://*.ggpht.com/*'] },
         (details, callback) => {
-            details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
-            details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
+            const isYouTube = details.url.includes('youtube.com') || details.url.includes('ytimg.com') || details.url.includes('googlevideo.com') || details.url.includes('ggpht.com');
+            const isGiphy = details.url.includes('giphy.com');
+
+            if (isYouTube) {
+                // Spoof origin and referer so YouTube accepts the embed request
+                details.requestHeaders['Origin'] = 'https://concord-olive.vercel.app';
+                details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
+                // Also set a browser-like user agent for the iframe requests
+                if (details.requestHeaders['User-Agent']?.includes('Electron')) {
+                    details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+                }
+            }
+            if (isGiphy) {
+                details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
+                details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
+            }
             callback({ requestHeaders: details.requestHeaders });
         }
     );

@@ -360,7 +360,9 @@ export default function App() {
     if (store.amSharing) {
       screenShare.stopScreenShare();
     }
-    yt.stopYouTube();
+    // Apenas pausa o YouTube localmente ao sair da call.
+    // NÃO para o player — assim ele retoma quando o usuário voltar à call.
+    yt.pauseYouTube();
     stopSpeaking(store.myId);
     
     // Ensure the raw microphone stream is also stopped
