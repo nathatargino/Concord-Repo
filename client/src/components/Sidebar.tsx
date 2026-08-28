@@ -906,6 +906,7 @@ const UserCard: React.FC<UserCardProps> = ({
 
   return (
     <div 
+      id={`user-${id}`}
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
       onContextMenu={(e) => onContextMenu(e, id)}
     >

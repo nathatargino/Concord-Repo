@@ -59,3 +59,10 @@ input, button, textarea {
   font-size: 14px !important;
   font-weight: 500 !important;
 }
+
+/* Voice Speaking Sensor */
+.speaking-glow [class*="avatarFallback"] {
+  box-shadow: 0 0 0 2px var(--success-color);
+  border-color: var(--success-color);
+  transition: box-shadow 0.1s ease-in-out;
+}

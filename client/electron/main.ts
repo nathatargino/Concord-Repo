@@ -202,6 +202,13 @@ app.whenReady().then(() => {
         });
     });
 
+    const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+    // Override UA globally for the entire session so ALL requests (including YouTube
+    // iframe sub-frames) look like Chrome, never Electron.
+    session.defaultSession.setUserAgent(CHROME_UA);
+    fs.appendFileSync(logFile, `[Main] Session UA set to Chrome\n`);
+
     // Fix CORS/Origin for Giphy API and YouTube iframes
     // Electron sends requests with Origin: http://127.0.0.1:PORT which YouTube blocks/mutes.
     // We spoof it to the production URL so YouTube treats the embed as legitimate.
@@ -212,13 +219,12 @@ app.whenReady().then(() => {
             const isGiphy = details.url.includes('giphy.com');
 
             if (isYouTube) {
-                // Spoof origin and referer so YouTube accepts the embed request
-                details.requestHeaders['Origin'] = 'https://concord-olive.vercel.app';
+                // Spoof Referer so YouTube server accepts the embed
                 details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
-                // Also set a browser-like user agent for the iframe requests
-                if (details.requestHeaders['User-Agent']?.includes('Electron')) {
-                    details.requestHeaders['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-                }
+                details.requestHeaders['Origin'] = 'https://concord-olive.vercel.app';
+                // Always override UA to Chrome for YouTube requests
+                details.requestHeaders['User-Agent'] = CHROME_UA;
+                fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);
             }
             if (isGiphy) {
                 details.requestHeaders['Origin'] = 'https://concord-repo.onrender.com';
@@ -228,7 +234,7 @@ app.whenReady().then(() => {
         }
     );
 
-    // Strip YouTube headers that block iframe audio/autoplay in Electron
+    // Strip YouTube response headers that block iframe audio/autoplay in Electron
     session.defaultSession.webRequest.onHeadersReceived(
         { urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] },
         (details, callback) => {
@@ -248,6 +254,7 @@ app.whenReady().then(() => {
     if (!isDev) {
         startLocalServer().then(port => {
             localServerPort = port;
+            fs.appendFileSync(logFile, `[Main] Local server on port ${port}\n`);
             createWindow();
         });
     } else {

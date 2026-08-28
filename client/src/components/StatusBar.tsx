@@ -51,9 +51,7 @@ export const StatusBar: React.FC = () => {
     const baseUrl = isElectron 
       ? 'https://concord-olive.vercel.app' 
       : window.location.origin;
-    const serverParam = (room.isServer || isServer) ? '&server=1' : '';
-    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
-    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${url}`;
+    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
     const copyAndNotify = (text: string, label: string) => {
       try {
         if ((window as any).electron?.copyToClipboard) {
@@ -81,9 +79,7 @@ export const StatusBar: React.FC = () => {
     const baseUrl = isElectron
       ? 'https://concord-olive.vercel.app'
       : window.location.origin;
-    const serverParam = (room.isServer || isServer) ? '&server=1' : '';
-    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
-    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${url}`;
+    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
     try {
       if ((window as any).electron?.copyToClipboard) {
         (window as any).electron.copyToClipboard(inviteMessage);
