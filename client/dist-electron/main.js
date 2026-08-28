@@ -121,7 +121,6 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false,
             autoplayPolicy: 'no-user-gesture-required'
         },
         frame: false,
@@ -229,10 +228,12 @@ electron_1.app.whenReady().then(() => {
         const isYouTube = details.url.includes('youtube.com') || details.url.includes('ytimg.com') || details.url.includes('googlevideo.com') || details.url.includes('ggpht.com');
         const isGiphy = details.url.includes('giphy.com');
         if (isYouTube) {
-            // Spoof Referer so YouTube server accepts the embed
-            details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
-            details.requestHeaders['Origin'] = 'https://concord-olive.vercel.app';
-            // Always override UA to Chrome for YouTube requests
+            // Only spoof Referer for the iframe HTML itself.
+            // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
+            if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
+                details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
+            }
+            // Always override UA to Chrome for YouTube requests to avoid Electron blocks
             details.requestHeaders['User-Agent'] = CHROME_UA;
             fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);
         }

@@ -218,13 +218,13 @@ app.whenReady().then(() => {
             const isGiphy = details.url.includes('giphy.com');
 
             if (isYouTube) {
-                // Spoof Referer only so YouTube server accepts the embed for restricted videos
-                details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
-                // DO NOT spoof Origin here! The iframe is hosted on youtube.com, so its internal
-                // API calls will naturally have Origin: https://www.youtube.com.
-                // Overriding it breaks YouTube's internal fetch calls (403 Forbidden).
+                // Only spoof Referer for the iframe HTML itself.
+                // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
+                if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
+                    details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
+                }
                 
-                // Always override UA to Chrome for YouTube requests
+                // Always override UA to Chrome for YouTube requests to avoid Electron blocks
                 details.requestHeaders['User-Agent'] = CHROME_UA;
                 fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);
             }

@@ -77,8 +77,9 @@ export function useYouTube(
       playerRef.current = new window.YT.Player('yt-player-inner', {
         height: '200',
         width: '200',
+        videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: { 
-          autoplay: 1, 
+          autoplay: 0, // Do not autoplay the placeholder
           controls: 0, 
           modestbranding: 1,
           enablejsapi: 1,
@@ -202,31 +203,22 @@ export function useYouTube(
   }, []);
 
   const unlock = useCallback(async () => {
-    const { ytVol, callMuted } = useAudioStore.getState();
-    const targetVol = callMuted ? 0 : ytVol;
-
-    if (playerRef.current) {
-      if (targetVol > 0) {
-        playerRef.current.unMute();
-        playerRef.current.setVolume(targetVol);
-      }
-      if (typeof (window as any).electron?.forceUnmute === 'function') {
-        (window as any).electron.forceUnmute();
-      }
-    }
-
     if (unlockedRef.current) return;
     unlockedRef.current = true;
 
     if (!useAppStore.getState().isPlaying) {
       try {
         const player = await ensurePlayer();
+        // Wait for player to be fully ready with API methods
+        if (typeof player.mute !== 'function') return;
+        
         player.mute();
         player.playVideo();
         setTimeout(() => {
           if (useAppStore.getState().isPlaying) return;
-          player.stopVideo();
-          if (targetVol > 0) player.unMute();
+          if (typeof player.stopVideo === 'function') player.stopVideo();
+          const targetVol = useAudioStore.getState().callMuted ? 0 : useAudioStore.getState().ytVol;
+          if (targetVol > 0 && typeof player.unMute === 'function') player.unMute();
         }, 500);
       } catch {
         // ignore
