@@ -141,6 +141,16 @@ function createWindow() {
     }
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
+        if (pendingDeepLink) {
+            mainWindow.webContents.send('deep-link', pendingDeepLink);
+            pendingDeepLink = null;
+        }
+        if (process.platform === 'win32' || process.platform === 'linux') {
+            const url = process.argv.find(arg => arg.startsWith('concord://'));
+            if (url) {
+                mainWindow.webContents.send('deep-link', url);
+            }
+        }
     });
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
@@ -193,6 +203,40 @@ function initAutoUpdater(window) {
     electron_updater_1.autoUpdater.checkForUpdates();
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
+// Deep Linking Setup
+let pendingDeepLink = null;
+if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+        electron_1.app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
+    }
+}
+else {
+    electron_1.app.setAsDefaultProtocolClient('concord');
+}
+const gotTheLock = electron_1.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    electron_1.app.quit();
+}
+electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+        if (mainWindow.isMinimized())
+            mainWindow.restore();
+        mainWindow.focus();
+    }
+    const url = commandLine.find(arg => arg.startsWith('concord://'));
+    if (url && mainWindow) {
+        mainWindow.webContents.send('deep-link', url);
+    }
+});
+electron_1.app.on('open-url', (event, url) => {
+    event.preventDefault();
+    if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('deep-link', url);
+    }
+    else {
+        pendingDeepLink = url;
+    }
+});
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 electron_1.app.whenReady().then(() => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');

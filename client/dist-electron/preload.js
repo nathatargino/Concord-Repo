@@ -14,5 +14,12 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     maximize: () => electron_1.ipcRenderer.send('window-maximize'),
     close: () => electron_1.ipcRenderer.send('window-close'),
     copyToClipboard: (text) => electron_1.ipcRenderer.send('copy-to-clipboard', text),
-    forceUnmute: () => electron_1.ipcRenderer.send('force-unmute')
+    forceUnmute: () => electron_1.ipcRenderer.send('force-unmute'),
+    onDeepLink: (callback) => {
+        const subscription = (_event, url) => callback(url);
+        electron_1.ipcRenderer.on('deep-link', subscription);
+        return () => {
+            electron_1.ipcRenderer.removeListener('deep-link', subscription);
+        };
+    }
 });
