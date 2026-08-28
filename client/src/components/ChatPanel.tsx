@@ -630,7 +630,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
 
         {showEmojiPicker && (
           <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
-            <EmojiPicker onEmojiClick={onEmojiClick} theme="dark" />
+            <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
           </div>
         )}
 
