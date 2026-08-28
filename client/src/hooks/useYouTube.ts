@@ -15,7 +15,7 @@ let ytApiReady = false;
 const ytReadyCallbacks: (() => void)[] = [];
 
 function loadYTApi(): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (ytApiReady) return resolve();
     ytReadyCallbacks.push(resolve);
     if (ytApiLoaded) return;
@@ -49,7 +49,7 @@ export function useYouTube(
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (resolve) => {
       console.log('[YT] ensurePlayer called');
       await loadYTApi();
       console.log('[YT] API ready, playerRef.current =', !!playerRef.current);
