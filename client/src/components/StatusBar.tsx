@@ -52,13 +52,14 @@ export const StatusBar: React.FC = () => {
       : window.location.origin;
     const serverParam = (room.isServer || isServer) ? '&server=1' : '';
     const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
+    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${url}`;
     try {
       if ((window as any).electron?.copyToClipboard) {
-        (window as any).electron.copyToClipboard(url);
+        (window as any).electron.copyToClipboard(inviteMessage);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } else {
-        navigator.clipboard.writeText(url).then(() => {
+        navigator.clipboard.writeText(inviteMessage).then(() => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
         });

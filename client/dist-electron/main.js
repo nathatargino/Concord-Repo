@@ -213,6 +213,19 @@ electron_1.app.whenReady().then(() => {
         details.requestHeaders['Referer'] = 'https://concord-repo.onrender.com/';
         callback({ requestHeaders: details.requestHeaders });
     });
+    // Strip YouTube headers that block iframe audio/autoplay in Electron
+    electron_1.session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] }, (details, callback) => {
+        const headers = { ...details.responseHeaders };
+        // Remove X-Frame-Options so the YT iframe embeds without restriction
+        delete headers['x-frame-options'];
+        delete headers['X-Frame-Options'];
+        // Remove CSP that blocks autoplay / media
+        delete headers['content-security-policy'];
+        delete headers['Content-Security-Policy'];
+        // Allow cross-origin so audio can be piped
+        headers['access-control-allow-origin'] = ['*'];
+        callback({ responseHeaders: headers });
+    });
     if (!isDev) {
         startLocalServer().then(port => {
             localServerPort = port;

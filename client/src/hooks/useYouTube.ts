@@ -55,6 +55,13 @@ export function useYouTube(
       div.id = 'yt-player-inner';
       container.appendChild(div);
 
+      const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
+      // Use the production URL as origin when in Electron so YouTube accepts the iframe.
+      // Local 127.0.0.1 origins are rejected/muted by YouTube's embed policy.
+      const ytOrigin = isElectron
+        ? 'https://concord-olive.vercel.app'
+        : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
+
       playerRef.current = new window.YT.Player('yt-player-inner', {
         height: '200',
         width: '200',
@@ -62,12 +69,16 @@ export function useYouTube(
           autoplay: 1, 
           controls: 0, 
           modestbranding: 1,
-          ...(window.location.protocol !== 'file:' ? { origin: window.location.origin } : {})
+          ...(ytOrigin ? { origin: ytOrigin } : {})
         },
         events: {
           onReady: () => {
              const { ytVol, callMuted } = useAudioStore.getState();
              const targetVol = callMuted ? 0 : ytVol;
+             // Force-unmute at the Electron audio pipeline level immediately on ready
+             if (typeof (window as any).electron?.forceUnmute === 'function') {
+               (window as any).electron.forceUnmute();
+             }
              if (targetVol > 0) {
                playerRef.current?.unMute();
                playerRef.current?.setVolume(targetVol);
@@ -122,6 +133,11 @@ export function useYouTube(
     async (videoId: string, startSeconds: number, token: number) => {
       currentTokenRef.current = token;
       suppressEndedRef.current = false;
+
+      // Force-unmute Electron audio pipeline before loading so audio isn't blocked
+      if (typeof (window as any).electron?.forceUnmute === 'function') {
+        (window as any).electron.forceUnmute();
+      }
 
       const player = await ensurePlayer();
       player.loadVideoById(videoId, Math.floor(startSeconds));

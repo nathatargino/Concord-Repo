@@ -89,12 +89,13 @@ export const LobbyPage: React.FC = () => {
         ? 'https://concord-olive.vercel.app' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${roomId}?code=${generatedCode}`;
+      const inviteMessage = `Você foi convidado para uma sala no Concord! Acesse o link abaixo para entrar:\n${inviteUrl}`;
       
       try {
         if ((window as any).electron?.copyToClipboard) {
-          (window as any).electron.copyToClipboard(inviteUrl);
+          (window as any).electron.copyToClipboard(inviteMessage);
         } else {
-          await navigator.clipboard.writeText(inviteUrl);
+          await navigator.clipboard.writeText(inviteMessage);
         }
         toast.success('Link de convite copiado!');
       } catch (err) {
@@ -200,12 +201,13 @@ export const LobbyPage: React.FC = () => {
         ? 'https://concord-olive.vercel.app' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${createdServer?.id || serverId}?code=${generatedCode}&server=1`;
+      const inviteMessage = `Você foi convidado para um servidor no Concord! Acesse o link abaixo para entrar:\n${inviteUrl}`;
       
       try {
         if ((window as any).electron?.copyToClipboard) {
-          (window as any).electron.copyToClipboard(inviteUrl);
+          (window as any).electron.copyToClipboard(inviteMessage);
         } else {
-          await navigator.clipboard.writeText(inviteUrl);
+          await navigator.clipboard.writeText(inviteMessage);
         }
         toast.success('Link permanente do servidor copiado!');
       } catch (err) {
