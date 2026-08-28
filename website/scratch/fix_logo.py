@@ -25,4 +25,4 @@ def remove_black_bg_sharp(input_path, output_path):
     except Exception as e:
         print("Error processing logo:", e)
 
-remove_black_bg_sharp('assets/logo.jpg', 'assets/logo.png')
+remove_black_bg_sharp('assets/logo.png', 'assets/logo.png')

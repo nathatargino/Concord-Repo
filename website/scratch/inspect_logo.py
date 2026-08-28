@@ -7,4 +7,4 @@ def inspect(img_path):
     pixels = [img.getpixel((x, y)) for y in range(10) for x in range(10)]
     print("Top-left pixels sample:", pixels[:10])
 
-inspect('assets/logo.jpg')
+inspect('assets/logo.png')

@@ -25,4 +25,4 @@ def remove_black_bg(input_path, output_path):
     except Exception as e:
         print("Error:", e)
 
-remove_black_bg('assets/logo.jpg', 'assets/logo.png')
+remove_black_bg('assets/logo.png', 'assets/logo.png')
