@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import styles from './StatusBar.module.css';
 
@@ -53,15 +54,43 @@ export const StatusBar: React.FC = () => {
     const serverParam = (room.isServer || isServer) ? '&server=1' : '';
     const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
     const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${url}`;
+    const copyAndNotify = (text: string, label: string) => {
+      try {
+        if ((window as any).electron?.copyToClipboard) {
+          (window as any).electron.copyToClipboard(text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+          toast.success(label);
+        } else {
+          navigator.clipboard.writeText(text).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+            toast.success(label);
+          });
+        }
+      } catch (err) {
+        console.warn('Clipboard write failed:', err);
+      }
+    };
+    copyAndNotify(inviteMessage, 'Convite copiado!');
+  }, [room, isServer]);
+
+  const handleCopyCode = useCallback(() => {
+    if (!room) return;
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    const baseUrl = isElectron
+      ? 'https://concord-olive.vercel.app'
+      : window.location.origin;
+    const serverParam = (room.isServer || isServer) ? '&server=1' : '';
+    const url = `${baseUrl}/#/room/${room.id}?code=${room.code}${serverParam}`;
+    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${url}`;
     try {
       if ((window as any).electron?.copyToClipboard) {
         (window as any).electron.copyToClipboard(inviteMessage);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        toast.success('Código de convite copiado!');
       } else {
         navigator.clipboard.writeText(inviteMessage).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2000);
+          toast.success('Código de convite copiado!');
         });
       }
     } catch (err) {
@@ -92,7 +121,13 @@ export const StatusBar: React.FC = () => {
         <div className={styles.center}>
           <span className={styles.roomCode}>
             <span className={styles.codeLabel}>{room.isServer || isServer ? 'Servidor' : 'Sala'}</span>
-            <span className={styles.codeValue}>{room.code}</span>
+            <span
+              className={styles.codeValue}
+              onClick={handleCopyCode}
+              title="Clique para copiar o código de convite"
+            >
+              {room.code}
+            </span>
           </span>
           {room.isServer || isServer ? (
             <>
