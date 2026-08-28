@@ -115,6 +115,18 @@ function createWindow() {
 
     mainWindow.once('ready-to-show', () => {
         mainWindow!.show();
+        
+        if (pendingDeepLink) {
+            mainWindow!.webContents.send('deep-link', pendingDeepLink);
+            pendingDeepLink = null;
+        }
+        
+        if (process.platform === 'win32' || process.platform === 'linux') {
+            const url = process.argv.find(arg => arg.startsWith('concord://'));
+            if (url) {
+                mainWindow!.webContents.send('deep-link', url);
+            }
+        }
     });
 
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -175,6 +187,41 @@ function initAutoUpdater(window: BrowserWindowType) {
     autoUpdater.checkForUpdates();
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
+// Deep Linking Setup
+let pendingDeepLink: string | null = null;
+
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('concord');
+}
+
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
+app.on('second-instance', (event, commandLine, workingDirectory) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+  const url = commandLine.find(arg => arg.startsWith('concord://'));
+  if (url && mainWindow) {
+      mainWindow.webContents.send('deep-link', url);
+  }
+});
+
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('deep-link', url);
+  } else {
+    pendingDeepLink = url;
+  }
+});
 
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 app.whenReady().then(() => {

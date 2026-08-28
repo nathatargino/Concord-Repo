@@ -377,6 +377,16 @@ export const LobbyPage: React.FC = () => {
             >
               {loading ? <span className={styles.spinner} /> : '🚀 Entrar na Sala'}
             </button>
+            
+            {!(window as any).electron && code.trim().length >= 4 && (
+              <a 
+                href={`concord://join?code=${code.trim().toUpperCase()}`}
+                className={styles.actionBtnSecondary}
+                style={{ marginTop: '10px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'rgba(255, 255, 255, 0.8)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '14px', borderRadius: '12px', fontSize: '1rem', fontWeight: 600, transition: 'all 0.2s ease' }}
+              >
+                💻 Abrir no App Desktop
+              </a>
+            )}
           </div>
         )}
 
@@ -566,11 +576,21 @@ export const LobbyPage: React.FC = () => {
 
             <button
               className={styles.actionBtn}
-              onClick={handleJoinRoom}
+              onClick={handleJoinServer}
               disabled={loading || !code.trim()}
             >
-              {loading ? <span className={styles.spinner} /> : '🌐 Entrar no Servidor'}
+              {loading ? <span className={styles.spinner} /> : '🚪 Entrar no Servidor'}
             </button>
+
+            {!(window as any).electron && code.trim().length >= 4 && (
+              <a 
+                href={`concord://join?code=${code.trim().toUpperCase()}`}
+                className={styles.actionBtnSecondary}
+                style={{ marginTop: '10px', textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.05)', color: 'rgba(255, 255, 255, 0.8)', border: '1px solid rgba(255, 255, 255, 0.1)', padding: '14px', borderRadius: '12px', fontSize: '1rem', fontWeight: 600, transition: 'all 0.2s ease' }}
+              >
+                💻 Abrir no App Desktop
+              </a>
+            )}
           </div>
         )}
 

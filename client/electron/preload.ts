@@ -10,6 +10,7 @@ declare global {
             close: () => void;
             copyToClipboard?: (text: string) => void;
             forceUnmute?: () => void;
+            onDeepLink?: (callback: (url: string) => void) => () => void;
         }
     }
 }
@@ -27,5 +28,12 @@ contextBridge.exposeInMainWorld('electron', {
     maximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
     copyToClipboard: (text: string) => ipcRenderer.send('copy-to-clipboard', text),
-    forceUnmute: () => ipcRenderer.send('force-unmute')
+    forceUnmute: () => ipcRenderer.send('force-unmute'),
+    onDeepLink: (callback: (url: string) => void) => {
+        const subscription = (_event: any, url: string) => callback(url);
+        ipcRenderer.on('deep-link', subscription);
+        return () => {
+            ipcRenderer.removeListener('deep-link', subscription);
+        };
+    }
 });

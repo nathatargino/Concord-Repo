@@ -56,6 +56,38 @@ export default function App() {
     };
   }, [yt]);
 
+  // ─── DEEP LINKING (Electron) ─────────────────────────────────────
+  useEffect(() => {
+    if (window.electron && window.electron.onDeepLink) {
+      const unsubscribe = window.electron.onDeepLink((url) => {
+        try {
+          const parsed = new URL(url);
+          if (parsed.hostname === 'auth') {
+            const access_token = parsed.searchParams.get('access_token');
+            const refresh_token = parsed.searchParams.get('refresh_token');
+            if (access_token && refresh_token) {
+              supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+                if (!error) {
+                  toast.success('Login sincronizado com a Web!');
+                  setTimeout(() => window.location.reload(), 1000);
+                }
+              });
+            }
+          } else if (parsed.hostname === 'join') {
+            const code = parsed.searchParams.get('code');
+            if (code) {
+              navigate(`/room/${code}?server=1`);
+              window.location.reload();
+            }
+          }
+        } catch (err) {
+          console.error("Deep link parsing error", err);
+        }
+      });
+      return unsubscribe;
+    }
+  }, [navigate]);
+
   // Sync audio volumes when store changes
   useEffect(() => {
     const unsub = useAudioStore.subscribe(() => {

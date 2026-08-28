@@ -752,13 +752,63 @@
 
 .offlineDot {
   position: absolute;
-  bottom: -1px;
-  right: -1px;
-  width: 8px;
-  height: 8px;
+  bottom: 0px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  background-color: #747f8d; /* discord offline grey */
   border-radius: 50%;
-  background: #6B7280;
-  border: 1.5px solid var(--bg-elevated);
+  border: 2px solid var(--sidebar-bg);
+}
+
+.userFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.userFooterInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.userFooterAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0070f3, #7928ca);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.userFooterName {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.userFooterSettingsBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.userFooterSettingsBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
 .avatarWrapper {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
+import { ProfileModal } from './ProfileModal';
 import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
 import { 
@@ -88,6 +89,9 @@ export const Sidebar: React.FC<Props> = ({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editName, setEditName] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
+  
+  // Modal de Perfil de Usuário
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -607,6 +611,33 @@ export const Sidebar: React.FC<Props> = ({
         onStartScreenShare={onStartScreenShare}
         onStopScreenShare={onStopScreenShare}
       />
+
+      {/* User Profile Footer */}
+      <div className={styles.userFooter}>
+        <div className={styles.userFooterInfo}>
+          <div className={styles.userFooterAvatar}>
+            {myName.charAt(0).toUpperCase()}
+          </div>
+          <span className={styles.userFooterName}>{myName}</span>
+        </div>
+        <button 
+          className={styles.userFooterSettingsBtn}
+          onClick={() => setShowProfileModal(true)}
+          title="Configurações de Perfil"
+        >
+          ⚙️
+        </button>
+      </div>
+
+      {showProfileModal && (
+        <ProfileModal 
+          onClose={() => setShowProfileModal(false)}
+          onUpdate={(newName) => {
+            // Se necessário, o myName já seria atualizado na store por outro listener ou reload
+            // window.location.reload(); 
+          }}
+        />
+      )}
 
       {/* ── MODAL: CRIAR NOVO CANAL DE TEXTO ── */}
       {showCreateChannelModal && (

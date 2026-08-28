@@ -471,10 +471,39 @@ export async function getMyServers(): Promise<SavedServer[]> {
       }
     }
 
-    // Se deslogado no Supabase, retorna apenas do localStorage
+    // Retorna do localStorage, mas atualiza os metadados (nome/logo) buscando do Supabase
     const raw = localStorage.getItem(MY_SERVERS_KEY);
     let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
     localList = localList.filter(s => s.code && s.code.trim().length > 0);
+    
+    if (localList.length > 0 && supabaseUrl && supabaseAnonKey) {
+      try {
+        const localIds = localList.map(s => s.id);
+        const { data: remoteRooms } = await supabase
+          .from('rooms')
+          .select('id, name, icon_url, code')
+          .in('id', localIds);
+          
+        if (remoteRooms && remoteRooms.length > 0) {
+          localList = localList.map(localServer => {
+            const remoteServer = remoteRooms.find(r => r.id === localServer.id);
+            if (remoteServer) {
+              return {
+                ...localServer,
+                name: remoteServer.name,
+                icon_url: remoteServer.icon_url,
+                code: remoteServer.code
+              };
+            }
+            return localServer;
+          });
+          localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(localList));
+        }
+      } catch (err) {
+        console.warn('Erro ao atualizar metadados locais:', err);
+      }
+    }
+    
     return localList;
   } catch {
     return [];
@@ -694,9 +723,17 @@ export async function fetchChannelMessages(roomId: string, channelId?: string | 
   if (!supabaseUrl || !supabaseAnonKey) return cached;
 
   try {
-    // Resolver quarto/servidor para obter tanto o ID quanto o Código oficial
+    // Resolver quarto/servidor para obter o ID canônico
     const dbRoom = await findRoomInSupabase(roomId);
-    const roomIdsToMatch = Array.from(new Set([roomId, dbRoom?.id, dbRoom?.code].filter(Boolean) as string[]));
+    
+    // Postgres falhará se passarmos strings comuns (ex: 'CONCORD') para uma coluna UUID
+    const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const rawIds = [roomId, dbRoom?.id].filter(Boolean) as string[];
+    const roomIdsToMatch = Array.from(new Set(rawIds.filter(isValidUUID)));
+
+    if (roomIdsToMatch.length === 0) {
+      return cached;
+    }
 
     let query = supabase
       .from('messages')
@@ -763,6 +800,12 @@ export async function saveMessageToSupabase(
   } catch {}
 
   if (!supabaseUrl || !supabaseAnonKey) return newMsg;
+
+  const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  if (!isValidUUID(canonicalRoomId)) {
+    console.warn('[Supabase] Não foi possível salvar mensagem, room_id não é UUID válido:', canonicalRoomId);
+    return newMsg;
+  }
 
   try {
     const { data: { user } } = await supabase.auth.getUser();

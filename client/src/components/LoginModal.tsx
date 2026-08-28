@@ -11,6 +11,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
   const [name, setName] = useState('');
   const [error, setError] = useState(initialError || '');
   const [visible, setVisible] = useState(false);
+  const [sessionData, setSessionData] = useState<{access_token: string, refresh_token: string} | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -24,6 +25,12 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
     const syncAccountName = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          setSessionData({ access_token: session.access_token, refresh_token: session.refresh_token });
+        }
+
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
@@ -102,12 +109,33 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
             {error && <span className={styles.error}>{error}</span>}
           </div>
 
-          <button type="submit" className={styles.btn} disabled={!name.trim()}>
-            <span>Entrar no Concord</span>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button type="submit" className={styles.btn} disabled={!name.trim()}>
+              <span>Entrar no Concord</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+              </svg>
+            </button>
+            
+            {sessionData && !window.electron && (
+              <a 
+                href={`concord://auth?access_token=${sessionData.access_token}&refresh_token=${sessionData.refresh_token}`}
+                className={styles.btnSecondary}
+                onClick={() => {
+                  setTimeout(() => {
+                    onLogin(name.trim() || 'Usuário');
+                  }, 1500);
+                }}
+              >
+                <span>Abrir no App Desktop</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                  <line x1="8" y1="21" x2="16" y2="21"/>
+                  <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+              </a>
+            )}
+          </div>
         </form>
 
         <p className={styles.footer}>
