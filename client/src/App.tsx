@@ -58,8 +58,9 @@ export default function App() {
 
   // ─── DEEP LINKING (Electron) ─────────────────────────────────────
   useEffect(() => {
-    if (window.electron && window.electron.onDeepLink) {
-      const unsubscribe = window.electron.onDeepLink((url) => {
+    const electron = (window as any).electron;
+    if (electron && electron.onDeepLink) {
+      const unsubscribe = electron.onDeepLink((url: string) => {
         try {
           const parsed = new URL(url);
           if (parsed.hostname === 'auth') {

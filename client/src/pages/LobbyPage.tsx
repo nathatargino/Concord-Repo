@@ -576,7 +576,7 @@ export const LobbyPage: React.FC = () => {
 
             <button
               className={styles.actionBtn}
-              onClick={handleJoinServer}
+              onClick={handleJoinRoom}
               disabled={loading || !code.trim()}
             >
               {loading ? <span className={styles.spinner} /> : '🚪 Entrar no Servidor'}

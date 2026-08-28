@@ -632,7 +632,7 @@ export const Sidebar: React.FC<Props> = ({
       {showProfileModal && (
         <ProfileModal 
           onClose={() => setShowProfileModal(false)}
-          onUpdate={(newName) => {
+          onUpdate={(_newName) => {
             // Se necessário, o myName já seria atualizado na store por outro listener ou reload
             // window.location.reload(); 
           }}

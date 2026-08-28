@@ -117,7 +117,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
               </svg>
             </button>
             
-            {sessionData && !window.electron && (
+            {sessionData && !(window as any).electron && (
               <a 
                 href={`concord://auth?access_token=${sessionData.access_token}&refresh_token=${sessionData.refresh_token}`}
                 className={styles.btnSecondary}
