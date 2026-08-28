@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import packageJson from '../../package.json';
 import toast from 'react-hot-toast';
 import styles from './LobbyPage.module.css';
 import { 
@@ -576,6 +577,7 @@ export const LobbyPage: React.FC = () => {
         {/* Footer info */}
         <p className={styles.footer}>
           Concord WebRTC • Criptografado de ponta a ponta
+          {(/electron/i.test(navigator.userAgent) || !!(window as any).electron) && ` • v${packageJson.version}`}
         </p>
       </div>
     </div>
