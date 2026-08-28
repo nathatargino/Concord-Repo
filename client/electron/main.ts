@@ -92,7 +92,6 @@ function createWindow() {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false,
             autoplayPolicy: 'no-user-gesture-required'
         },
         frame: false,
@@ -219,9 +218,12 @@ app.whenReady().then(() => {
             const isGiphy = details.url.includes('giphy.com');
 
             if (isYouTube) {
-                // Spoof Referer so YouTube server accepts the embed
+                // Spoof Referer only so YouTube server accepts the embed for restricted videos
                 details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
-                details.requestHeaders['Origin'] = 'https://concord-olive.vercel.app';
+                // DO NOT spoof Origin here! The iframe is hosted on youtube.com, so its internal
+                // API calls will naturally have Origin: https://www.youtube.com.
+                // Overriding it breaks YouTube's internal fetch calls (403 Forbidden).
+                
                 // Always override UA to Chrome for YouTube requests
                 details.requestHeaders['User-Agent'] = CHROME_UA;
                 fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);

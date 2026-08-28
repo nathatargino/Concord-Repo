@@ -68,15 +68,9 @@ export function useYouTube(
 
       const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
 
-      // CRITICAL: In Electron the app runs at http://127.0.0.1:PORT.
-      // If we pass origin:'https://concord-olive.vercel.app', YouTube sends postMessages
-      // targeted at that origin. Since our actual origin is 127.0.0.1:PORT, the browser
-      // SILENTLY DROPS every postMessage — including onReady/onStateChange.
-      // Fix: never pass origin in Electron so YouTube uses '*' as postMessage target.
-      // The Referer spoof in main.ts handles the server-side embed authorization.
-      const ytOrigin = isElectron
-        ? undefined  // No origin in Electron → YouTube uses '*' for postMessage
-        : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
+      // Always pass the current window's origin to YouTube so it knows where to send postMessages.
+      // In Electron, this will be http://127.0.0.1:PORT or http://localhost:PORT
+      const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
 
