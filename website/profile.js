@@ -72,75 +72,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     const passwordSentState = document.getElementById('passwordSentState');
     const sentConfirmEmail = document.getElementById('sentConfirmEmail');
 
-    // ---- Check Session ----
-    let currentUser = null;
-    let currentDisplayName = '';
-
-    try {
-        const { data: { session }, error } = await supabaseClient.auth.getSession();
-        if (error || !session?.user) {
-            // Not authenticated, redirect to login
-            window.location.href = 'login.html';
-            return;
-        }
-
-        currentUser = session.user;
-        const meta = currentUser.user_metadata || {};
-        currentDisplayName = meta.display_name || meta.username || currentUser.email.split('@')[0];
-
-        // Also fetch profile from public.profiles table to ensure latest username
-        const { data: profileData } = await supabaseClient
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', currentUser.id)
-            .maybeSingle();
-
-        if (profileData?.username) {
-            currentDisplayName = profileData.username;
-        }
-
-        // Render user details
-        profileDisplayName.textContent = currentDisplayName;
-        profileDisplayEmail.textContent = currentUser.email;
-        if (passwordTargetEmail) passwordTargetEmail.textContent = currentUser.email;
-        if (newUsernameInput) newUsernameInput.value = currentDisplayName;
-
-        if (profileData?.avatar_url || meta.avatar_url) {
-            const url = profileData?.avatar_url || meta.avatar_url;
-            profileAvatar.innerHTML = `<img src="${url}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-        } else {
-            profileAvatar.textContent = getInitials(currentDisplayName);
-        }
-
-    } catch (err) {
-        console.error('Session error:', err);
-        window.location.href = 'login.html';
-        return;
-    }
-
-    // ---- Tab Switching ----
+    // ---- Tab Switching (Attach Immediately) ----
     function switchTab(tabName) {
         if (tabName === 'password') {
-            tabBtnPassword.classList.add('active');
-            tabBtnUsername.classList.remove('active');
-            tabContentPassword.classList.add('active');
-            tabContentUsername.classList.remove('active');
+            tabBtnPassword?.classList.add('active');
+            tabBtnUsername?.classList.remove('active');
+            tabContentPassword?.classList.add('active');
+            tabContentUsername?.classList.remove('active');
             window.location.hash = 'password';
         } else {
-            tabBtnUsername.classList.add('active');
-            tabBtnPassword.classList.remove('active');
-            tabContentUsername.classList.add('active');
-            tabContentPassword.classList.remove('active');
+            tabBtnUsername?.classList.add('active');
+            tabBtnPassword?.classList.remove('active');
+            tabContentUsername?.classList.add('active');
+            tabContentPassword?.classList.remove('active');
             window.location.hash = 'username';
         }
     }
 
-    tabBtnUsername.addEventListener('click', () => switchTab('username'));
-    tabBtnPassword.addEventListener('click', () => switchTab('password'));
+    tabBtnUsername?.addEventListener('click', () => switchTab('username'));
+    tabBtnPassword?.addEventListener('click', () => switchTab('password'));
 
-    // Check hash on load
     if (window.location.hash === '#password') {
         switchTab('password');
+    }
+
+    // ---- Check Session ----
+    let currentUser = null;
+    let currentDisplayName = localStorage.getItem('concord_username') || 'Usuário';
+
+    try {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user) {
+            currentUser = session.user;
+            const meta = currentUser.user_metadata || {};
+            currentDisplayName = meta.display_name || meta.username || currentUser.email.split('@')[0];
+
+            const { data: profileData } = await supabaseClient
+                .from('profiles')
+                .select('username, avatar_url')
+                .eq('id', currentUser.id)
+                .maybeSingle();
+
+            if (profileData?.username) {
+                currentDisplayName = profileData.username;
+            }
+
+            if (profileDisplayName) profileDisplayName.textContent = currentDisplayName;
+            if (profileDisplayEmail) profileDisplayEmail.textContent = currentUser.email;
+            if (passwordTargetEmail) passwordTargetEmail.textContent = currentUser.email;
+            if (newUsernameInput) newUsernameInput.value = currentDisplayName;
+
+            if (profileData?.avatar_url || meta.avatar_url) {
+                const url = profileData?.avatar_url || meta.avatar_url;
+                if (profileAvatar) profileAvatar.innerHTML = `<img src="${url}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+            } else if (profileAvatar) {
+                profileAvatar.textContent = getInitials(currentDisplayName);
+            }
+        } else {
+            // Fallback for local user
+            if (profileDisplayName) profileDisplayName.textContent = currentDisplayName;
+            if (profileDisplayEmail) profileDisplayEmail.textContent = 'Conta Local';
+            if (newUsernameInput) newUsernameInput.value = currentDisplayName;
+            if (profileAvatar) profileAvatar.textContent = getInitials(currentDisplayName);
+        }
+
+    } catch (err) {
+        console.warn('Session check warning:', err);
     }
 
     // ---- TAB 1: Change Username ----
@@ -166,55 +163,58 @@ document.addEventListener('DOMContentLoaded', async () => {
         setButtonLoading(saveUsernameBtn, true);
 
         try {
-            // Check if username already exists in public.profiles table (case-insensitive)
-            const { data: existingUser, error: queryErr } = await supabaseClient
-                .from('profiles')
-                .select('id')
-                .ilike('username', newUsername)
-                .neq('id', currentUser.id)
-                .maybeSingle();
+            if (currentUser) {
+                // Check if username already exists in public.profiles table (case-insensitive)
+                const { data: existingUser, error: queryErr } = await supabaseClient
+                    .from('profiles')
+                    .select('id')
+                    .ilike('username', newUsername)
+                    .neq('id', currentUser.id)
+                    .maybeSingle();
 
-            if (queryErr) {
-                console.warn('Profile search warning:', queryErr);
-            }
-
-            if (existingUser) {
-                setButtonLoading(saveUsernameBtn, false);
-                showMessage(changeUsernameForm, 'Este nome de usuário já está em uso por outra conta. Por favor, escolha outro.', true);
-                return;
-            }
-
-            // 1. Update public.profiles
-            const { error: profileErr } = await supabaseClient
-                .from('profiles')
-                .update({ 
-                    username: newUsername,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', currentUser.id);
-
-            if (profileErr) {
-                console.error('Update profiles error:', profileErr);
-                setButtonLoading(saveUsernameBtn, false);
-                showMessage(changeUsernameForm, 'Erro ao salvar alterações no perfil: ' + profileErr.message, true);
-                return;
-            }
-
-            // 2. Update Auth metadata
-            await supabaseClient.auth.updateUser({
-                data: {
-                    username: newUsername,
-                    display_name: newUsername
+                if (queryErr) {
+                    console.warn('Profile search warning:', queryErr);
                 }
-            });
+
+                if (existingUser) {
+                    setButtonLoading(saveUsernameBtn, false);
+                    showMessage(changeUsernameForm, 'Este nome de usuário já está em uso por outra conta. Por favor, escolha outro.', true);
+                    return;
+                }
+
+                // 1. Update public.profiles
+                const { error: profileErr } = await supabaseClient
+                    .from('profiles')
+                    .update({ 
+                        username: newUsername,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', currentUser.id);
+
+                if (profileErr) {
+                    console.error('Update profiles error:', profileErr);
+                    setButtonLoading(saveUsernameBtn, false);
+                    showMessage(changeUsernameForm, 'Erro ao salvar alterações no perfil: ' + profileErr.message, true);
+                    return;
+                }
+
+                // 2. Update Auth metadata
+                await supabaseClient.auth.updateUser({
+                    data: {
+                        username: newUsername,
+                        display_name: newUsername
+                    }
+                });
+            }
 
             // 3. Update localStorage
             localStorage.setItem('concord_username', newUsername);
+            localStorage.setItem('concord_username_v1', newUsername);
             currentDisplayName = newUsername;
 
             // 4. Update UI
-            profileDisplayName.textContent = newUsername;
-            profileAvatar.textContent = getInitials(newUsername);
+            if (profileDisplayName) profileDisplayName.textContent = newUsername;
+            if (profileAvatar) profileAvatar.textContent = getInitials(newUsername);
             setButtonLoading(saveUsernameBtn, false);
 
             showMessage(changeUsernameForm, `Nome de usuário alterado com sucesso para "${newUsername}"!`, false);
