@@ -20,6 +20,7 @@ import { AudioControls } from './components/AudioControls';
 import { BroadcasterScreenPanel } from './components/BroadcasterScreenPanel';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
 import { StatusBar } from './components/StatusBar';
+import { AccountModals } from './components/AccountModals';
 
 import styles from './App.module.css';
 
@@ -474,6 +475,8 @@ export default function App() {
       <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
         <StatusBar />
       </div>
+
+      <AccountModals />
     </div>
   );
 }

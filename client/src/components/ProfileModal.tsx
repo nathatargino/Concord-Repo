@@ -130,6 +130,31 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
           <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
             {saving ? 'Salvando...' : 'Salvar Alterações'}
           </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', width: '100%' }}>
+            <button
+              type="button"
+              className="botao-neon"
+              style={{ padding: '10px', fontSize: '0.9rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #2a2a40' }}
+              onClick={() => {
+                onClose();
+                window.abrirModal?.('modal-alterar-usuario');
+              }}
+            >
+              ✏️ Alterar Nome de Usuário
+            </button>
+            <button
+              type="button"
+              className="botao-neon"
+              style={{ padding: '10px', fontSize: '0.9rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #2a2a40' }}
+              onClick={() => {
+                onClose();
+                window.abrirModal?.('modal-alterar-senha');
+              }}
+            >
+              🔑 Redefinir Senha
+            </button>
+          </div>
         </form>
       </div>
     </div>
