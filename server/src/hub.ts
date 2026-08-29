@@ -228,7 +228,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
   io.on('connection', (socket: IoSocket) => {
     console.log(`[+] Connected: ${socket.id}`);
 
-    let user: UserInfo = { id: socket.id, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+    let user: UserInfo = { id: socket.id, name: '', avatarUrl: null, inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
 
     // Helper: get current room (returns null if socket not in a room)
     function getCurrentRoom(): RoomState | null {
@@ -243,14 +243,14 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       room.adminIds = [socket.id];
       socket.data.roomId = room.id;
       socket.join(room.id);
-      user = { id: socket.id, persistentId, name: '', inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+      user = { id: socket.id, persistentId, name: '', avatarUrl: user.avatarUrl || null, inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
       room.users.set(socket.id, user);
       socket.emit('room_joined', toRoomInfo(room));
       console.log(`[Room] ${socket.id} created and joined ${room.isServer ? 'server' : 'room'} ${room.id}`);
     });
 
     // ─── JOIN ROOM / SERVER ────────────────────────────────────────
-    socket.on('join_room', (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string) => {
+    socket.on('join_room', (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string) => {
       const cleanIdOrCode = (roomIdOrCode || '').trim();
       let room = getRoom(cleanIdOrCode);
       if (!room && fallbackCode) {
@@ -349,15 +349,20 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
       
+      const effectiveAvatar = initialAvatarUrl || user.avatarUrl || null;
       user = room.users.get(socket.id) ?? { 
         id: socket.id, 
         persistentId, 
         name: user.name || '', 
+        avatarUrl: effectiveAvatar,
         inVoice: false, 
         screenSharing: false, 
         micMuted: false, 
         callMuted: false 
       };
+      if (effectiveAvatar) {
+        user.avatarUrl = effectiveAvatar;
+      }
       room.users.set(socket.id, user);
 
       socket.emit('room_joined', toRoomInfo(room));
@@ -365,15 +370,28 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
     });
 
-    // ─── SET USERNAME ──────────────────────────────────────────────
-    socket.on('set_username', (name: string) => {
+    // ─── SET USERNAME & AVATAR ─────────────────────────────────────
+    socket.on('set_username', (name: string, avatarUrl?: string | null) => {
       const room = getCurrentRoom();
       const trimmed = name.trim().slice(0, 32) || `User_${socket.id.slice(0, 4)}`;
       user.name = trimmed;
+      if (avatarUrl !== undefined) {
+        user.avatarUrl = avatarUrl;
+      }
 
       if (room) {
         broadcastUserList(io, room);
         socket.to(room.id).emit('toast_notification', `${trimmed} entrou`, 'success');
+      }
+    });
+
+    // ─── UPDATE AVATAR ─────────────────────────────────────────────
+    socket.on('update_avatar', (avatarUrl: string | null) => {
+      const room = getCurrentRoom();
+      user.avatarUrl = avatarUrl;
+
+      if (room) {
+        broadcastUserList(io, room);
       }
     });
 

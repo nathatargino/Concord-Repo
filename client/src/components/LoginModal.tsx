@@ -36,7 +36,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
     const savedUsername = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
     if (savedUsername) setUsername(savedUsername);
 
-    // Sync account name from active Supabase session if logged in
+    // Sync account name and avatar from active Supabase session if logged in
     const syncSession = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -44,9 +44,15 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
           if (user.email) setEmail(user.email);
           const { data: profile } = await supabase
             .from('profiles')
-            .select('username')
+            .select('username, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
+
+          const avatar = profile?.avatar_url || user.user_metadata?.avatar_url;
+          if (avatar) {
+            localStorage.setItem('concord_avatar_url', avatar);
+            useAppStore.getState().setMyAvatarUrl(avatar);
+          }
 
           const name = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
           if (name) {
@@ -95,9 +101,15 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
         if (data.user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('username')
+            .select('username, avatar_url')
             .eq('id', data.user.id)
             .maybeSingle();
+
+          const avatar = profile?.avatar_url || data.user.user_metadata?.avatar_url;
+          if (avatar) {
+            localStorage.setItem('concord_avatar_url', avatar);
+            useAppStore.getState().setMyAvatarUrl(avatar);
+          }
 
           const displayName = profile?.username || data.user.user_metadata?.username || username || data.user.email?.split('@')[0] || 'Usuário';
           localStorage.setItem('concord_username', displayName);

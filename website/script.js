@@ -225,25 +225,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (user) {
             const meta = user.user_metadata || {};
-            const displayName = meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
-            const initials = getInitials(displayName);
-            const avatarUrl = meta.avatar_url;
+            const localSavedAvatar = localStorage.getItem('concord_avatar_url');
+            let displayName = meta.display_name || meta.full_name || meta.username || user.email.split('@')[0];
+            let avatarUrl = meta.avatar_url || localSavedAvatar || null;
 
-            // Update nav
+            // Update nav immediately
             navAuth.style.display = 'none';
             navUser.style.display = 'flex';
             navUserName.textContent = displayName;
 
-            if (avatarUrl) {
-                navUserAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-                if (dropdownAvatar) dropdownAvatar.innerHTML = `<img src="${avatarUrl}" alt="${displayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-            } else {
-                navUserAvatar.textContent = initials;
-                if (dropdownAvatar) dropdownAvatar.textContent = initials;
+            function renderAvatar(url, name) {
+                const initials = getInitials(name);
+                if (url) {
+                    navUserAvatar.innerHTML = `<img src="${url}" alt="${name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+                    if (dropdownAvatar) dropdownAvatar.innerHTML = `<img src="${url}" alt="${name}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+                } else {
+                    navUserAvatar.textContent = initials;
+                    if (dropdownAvatar) dropdownAvatar.textContent = initials;
+                }
             }
+
+            renderAvatar(avatarUrl, displayName);
 
             if (dropdownName) dropdownName.textContent = displayName;
             if (dropdownEmail) dropdownEmail.textContent = user.email;
+
+            // Asynchronously fetch latest profile from Supabase profiles table
+            if (typeof supabaseClient !== 'undefined' && user) {
+                const criteria = [];
+                if (user.id) criteria.push(`id.eq.${user.id}`);
+                if (user.email) criteria.push(`email.eq.${user.email}`);
+                if (displayName) criteria.push(`username.ilike.${displayName}`);
+
+                supabaseClient
+                    .from('profiles')
+                    .select('username, avatar_url')
+                    .or(criteria.join(','))
+                    .maybeSingle()
+                    .then(({ data: profileData }) => {
+                        if (profileData) {
+                            if (profileData.username) {
+                                displayName = profileData.username;
+                                navUserName.textContent = displayName;
+                                if (dropdownName) dropdownName.textContent = displayName;
+                            }
+                            if (profileData.avatar_url) {
+                                avatarUrl = profileData.avatar_url;
+                                localStorage.setItem('concord_avatar_url', avatarUrl);
+                            }
+                            renderAvatar(avatarUrl, displayName);
+                        }
+                    })
+                    .catch(err => console.warn('Fetch profile for nav warning:', err));
+            }
 
             // Update Hero button
             if (heroCtaBtn && heroCtaText) {

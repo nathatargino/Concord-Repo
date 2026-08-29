@@ -50,14 +50,16 @@ interface ServerToClientEvents {
 }
 
 interface ClientToServerEvents {
-  set_username: (name: string) => void;
+  set_username: (name: string, avatarUrl?: string | null) => void;
+  update_avatar: (avatarUrl: string | null) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
     roomIdOrCode: string,
     persistentId: string,
     fallbackCode?: string,
     isServer?: boolean,
-    serverName?: string
+    serverName?: string,
+    initialAvatarUrl?: string | null
   ) => void;
   send_message: (
     message: string,
@@ -143,18 +145,22 @@ export function useSocket(callbacks: SocketCallbacks) {
         localStorage.setItem('concord_pid', persistentId);
       }
 
-      // Auto-login with saved name
+      // Auto-login with saved name and avatar
       const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      const savedAvatar = localStorage.getItem('concord_avatar_url');
       if (savedName) {
         store.setMyName(savedName);
-        socket.emit('set_username', savedName);
+        if (savedAvatar) {
+          store.setMyAvatarUrl(savedAvatar);
+        }
+        socket.emit('set_username', savedName, savedAvatar || null);
       }
 
       // If there's already a room in the store, re-join it after reconnect with full params
       const currentRoom = useAppStore.getState().room;
       if (currentRoom) {
         const isServer = Boolean(useAppStore.getState().isServer || currentRoom.isServer);
-        socket.emit('join_room', currentRoom.id, persistentId, currentRoom.code, isServer, currentRoom.name);
+        socket.emit('join_room', currentRoom.id, persistentId, currentRoom.code, isServer, currentRoom.name, savedAvatar || null);
       }
     });
 

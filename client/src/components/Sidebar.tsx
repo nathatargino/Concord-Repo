@@ -30,6 +30,7 @@ interface Props {
   onDeleteChannel?: (channelId: string) => void;
   onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
   onSetUserRole?: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
+  onUpdateProfile?: (name: string, avatarUrl: string | null) => void;
 }
 
 export const Sidebar: React.FC<Props> = ({ 
@@ -44,6 +45,7 @@ export const Sidebar: React.FC<Props> = ({
   onDeleteChannel,
   onUpdateServer,
   onSetUserRole,
+  onUpdateProfile,
 }) => {
   const { 
     users, 
@@ -136,6 +138,7 @@ export const Sidebar: React.FC<Props> = ({
         setServerMembers(mems.map(m => ({
           id: m.id,
           username: m.username,
+          avatarUrl: (m as any).avatar_url || null,
           isOnline: false,
           inVoice: false,
           role: m.role as any,
@@ -162,6 +165,7 @@ export const Sidebar: React.FC<Props> = ({
   const effectiveUsers = users.length > 0 ? users : (myName ? [{
     id: myId || 'me',
     name: myName,
+    avatarUrl: myAvatarUrl || null,
     inVoice: useAppStore.getState().inVoice,
     screenSharing: false,
     micMuted: false,
@@ -492,16 +496,19 @@ export const Sidebar: React.FC<Props> = ({
                 <div className={styles.emptyCategory}>Nenhum usuário na call</div>
               ) : (
                 voiceUsers.map((user) => {
-                  const mem = serverMembers.find(m => m.username.toLowerCase() === user.name.toLowerCase());
+                  const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
                   const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
                   const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+                  const isCurrentUser = user.id === myId || (Boolean(user.name) && Boolean(myName) && user.name.trim().toLowerCase() === myName.trim().toLowerCase());
+                  const userAvatar = user.avatarUrl || (isCurrentUser ? (myAvatarUrl || localStorage.getItem('concord_avatar_url')) : null) || mem?.avatarUrl || null;
 
                   return (
                     <UserCard
                       key={user.id}
                       id={user.id}
                       name={user.name || 'Anônimo'}
-                      isMe={user.id === myId}
+                      avatarUrl={userAvatar}
+                      isMe={isCurrentUser}
                       inVoice={user.inVoice}
                       screenSharing={user.screenSharing}
                       micMuted={user.micMuted}
@@ -537,16 +544,19 @@ export const Sidebar: React.FC<Props> = ({
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
               {(isServer ? onlineUsers : effectiveUsers).map((user) => {
-                const mem = serverMembers.find(m => m.username.toLowerCase() === user.name.toLowerCase());
+                const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
                 const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
                 const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+                const isCurrentUser = user.id === myId || (Boolean(user.name) && Boolean(myName) && user.name.trim().toLowerCase() === myName.trim().toLowerCase());
+                const userAvatar = user.avatarUrl || (isCurrentUser ? (myAvatarUrl || localStorage.getItem('concord_avatar_url')) : null) || mem?.avatarUrl || null;
 
                 return (
                   <UserCard
                     key={user.id}
                     id={user.id}
                     name={user.name || 'Anônimo'}
-                    isMe={user.id === myId}
+                    avatarUrl={userAvatar}
+                    isMe={isCurrentUser}
                     inVoice={user.inVoice}
                     screenSharing={user.screenSharing}
                     micMuted={user.micMuted}
@@ -587,9 +597,13 @@ export const Sidebar: React.FC<Props> = ({
                   offlineMembers.map((member) => (
                     <div key={member.id} className={styles.offlineUserItem}>
                       <div className={styles.avatarWrapper}>
-                        <div className={styles.avatarFallback}>
-                          {member.username.charAt(0).toUpperCase()}
-                        </div>
+                        {member.avatarUrl ? (
+                          <img src={member.avatarUrl} alt={member.username} className={styles.offlineUserAvatarImg} />
+                        ) : (
+                          <div className={styles.avatarFallback}>
+                            {member.username.charAt(0).toUpperCase()}
+                          </div>
+                        )}
                         <div className={styles.offlineDot} />
                       </div>
                       <span className={styles.offlineUserName}>{member.username}</span>
@@ -643,6 +657,9 @@ export const Sidebar: React.FC<Props> = ({
             setMyName(newName);
             if (newAvatar !== undefined) {
               setMyAvatarUrl(newAvatar || null);
+            }
+            if (onUpdateProfile) {
+              onUpdateProfile(newName, newAvatar || null);
             }
           }}
         />
@@ -918,6 +935,7 @@ export const Sidebar: React.FC<Props> = ({
 interface UserCardProps {
   id: string;
   name: string;
+  avatarUrl?: string | null;
   isMe: boolean;
   inVoice: boolean;
   screenSharing: boolean;
@@ -932,6 +950,7 @@ interface UserCardProps {
 const UserCard: React.FC<UserCardProps> = ({
   id,
   name,
+  avatarUrl,
   isMe,
   inVoice,
   screenSharing,
@@ -942,7 +961,10 @@ const UserCard: React.FC<UserCardProps> = ({
   onScreenShareClick,
   onContextMenu,
 }) => {
+  const storeAvatar = useAppStore((s) => s.myAvatarUrl);
   const initials = name ? name.slice(0, 2).toUpperCase() : '??';
+  const myAvatar = isMe ? (storeAvatar || localStorage.getItem('concord_avatar_url')) : null;
+  const displayAvatar = avatarUrl || myAvatar;
 
   return (
     <div 
@@ -951,7 +973,11 @@ const UserCard: React.FC<UserCardProps> = ({
       onContextMenu={(e) => onContextMenu(e, id)}
     >
       <div className={styles.avatarWrapper}>
-        <div className={styles.avatarFallback}>{initials}</div>
+        {displayAvatar ? (
+          <img src={displayAvatar} alt={name} className={styles.avatarImg} />
+        ) : (
+          <div className={styles.avatarFallback}>{initials}</div>
+        )}
         <div className={`${styles.statusBadge} ${inVoice ? styles.badgeVoice : styles.badgeOnline}`} />
       </div>
 

@@ -2,6 +2,7 @@ export interface UserInfo {
   id: string;
   persistentId?: string;
   name: string;
+  avatarUrl?: string | null;
   inVoice: boolean;
   screenSharing: boolean;
   micMuted: boolean;
@@ -18,6 +19,7 @@ export interface ServerChannel {
 export interface ServerMember {
   id: string;
   username: string;
+  avatarUrl?: string | null;
   isOnline: boolean;
   inVoice: boolean;
   role?: 'owner' | 'sub_owner' | 'member' | string;

@@ -122,23 +122,105 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (passwordTargetEmail) passwordTargetEmail.textContent = currentUser.email;
             if (newUsernameInput) newUsernameInput.value = currentDisplayName;
 
-            if (profileData?.avatar_url || meta.avatar_url) {
-                const url = profileData?.avatar_url || meta.avatar_url;
-                if (profileAvatar) profileAvatar.innerHTML = `<img src="${url}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+            const localAvatar = localStorage.getItem('concord_avatar_url');
+            if (profileData?.avatar_url || meta.avatar_url || localAvatar) {
+                const url = profileData?.avatar_url || meta.avatar_url || localAvatar;
+                if (profileAvatar) profileAvatar.innerHTML = `<img src="${url}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
             } else if (profileAvatar) {
                 profileAvatar.textContent = getInitials(currentDisplayName);
             }
         } else {
             // Fallback for local user
+            const localAvatar = localStorage.getItem('concord_avatar_url');
             if (profileDisplayName) profileDisplayName.textContent = currentDisplayName;
             if (profileDisplayEmail) profileDisplayEmail.textContent = 'Conta Local';
             if (newUsernameInput) newUsernameInput.value = currentDisplayName;
-            if (profileAvatar) profileAvatar.textContent = getInitials(currentDisplayName);
+            if (localAvatar && profileAvatar) {
+                profileAvatar.innerHTML = `<img src="${localAvatar}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+            } else if (profileAvatar) {
+                profileAvatar.textContent = getInitials(currentDisplayName);
+            }
         }
 
     } catch (err) {
         console.warn('Session check warning:', err);
     }
+
+    // ---- Avatar Upload on Website Profile Page ----
+    const websiteAvatarFileInput = document.getElementById('websiteAvatarFileInput');
+    const btnChangeWebsiteAvatar = document.getElementById('btnChangeWebsiteAvatar');
+
+    function triggerAvatarPicker() {
+        websiteAvatarFileInput?.click();
+    }
+
+    profileAvatar?.addEventListener('click', triggerAvatarPicker);
+    btnChangeWebsiteAvatar?.addEventListener('click', triggerAvatarPicker);
+
+    websiteAvatarFileInput?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (loadEvt) => {
+            const rawSrc = loadEvt.target?.result;
+            if (!rawSrc) return;
+
+            const img = new Image();
+            img.onload = async () => {
+                const canvas = document.createElement('canvas');
+                const maxDim = 256;
+                let w = img.width;
+                let h = img.height;
+                if (w > h) {
+                    if (w > maxDim) {
+                        h = Math.round((h * maxDim) / w);
+                        w = maxDim;
+                    }
+                } else {
+                    if (h > maxDim) {
+                        w = Math.round((w * maxDim) / h);
+                        h = maxDim;
+                    }
+                }
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0, w, h);
+                    const compressed = canvas.toDataURL('image/jpeg', 0.88);
+
+                    if (profileAvatar) {
+                        profileAvatar.innerHTML = `<img src="${compressed}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+                    }
+                    localStorage.setItem('concord_avatar_url', compressed);
+
+                    if (currentUser) {
+                        try {
+                            await supabaseClient
+                                .from('profiles')
+                                .upsert({
+                                    id: currentUser.id,
+                                    username: currentDisplayName,
+                                    avatar_url: compressed,
+                                    updated_at: new Date().toISOString()
+                                });
+
+                            await supabaseClient.auth.updateUser({
+                                data: {
+                                    avatar_url: compressed
+                                }
+                            });
+                        } catch (err) {
+                            console.warn('Error saving avatar to Supabase:', err);
+                        }
+                    }
+                }
+            };
+            img.src = rawSrc;
+        };
+        reader.readAsDataURL(file);
+    });
 
     // ---- TAB 1: Change Username ----
     changeUsernameForm.addEventListener('submit', async (e) => {

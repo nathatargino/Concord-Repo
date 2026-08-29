@@ -58,11 +58,13 @@
                 
                 <!-- Account Summary -->
                 <div class="profile-user-summary">
-                    <div class="profile-avatar-large" id="profileAvatar">?</div>
+                    <div class="profile-avatar-large" id="profileAvatar" style="cursor: pointer; position: relative;" title="Clique para alterar a foto de perfil">?</div>
                     <div class="profile-user-details">
                         <span class="user-display-name" id="profileDisplayName">Carregando...</span>
                         <span class="user-display-email" id="profileDisplayEmail">...</span>
+                        <button type="button" id="btnChangeWebsiteAvatar" style="background: none; border: none; color: var(--accent-cyan); font-size: 0.82rem; font-weight: 600; cursor: pointer; text-align: left; padding: 4px 0 0 0; display: inline-flex; align-items: center; gap: 4px;">📷 Alterar Foto de Perfil</button>
                     </div>
+                    <input type="file" id="websiteAvatarFileInput" accept="image/*" style="display: none;">
                 </div>
 
                 <!-- Alterar Senha Section -->

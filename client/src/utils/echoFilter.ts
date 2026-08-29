@@ -42,17 +42,20 @@ export class EchoFilter {
     try {
       // Use 48 kHz to match WebRTC's preferred sample-rate
       this.ctx = new AudioContext({ sampleRate: 48_000 });
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
       this.dest = this.ctx.createMediaStreamDestination();
+
+      // If no remote streams to filter, pass the loopback audio directly
+      if (remoteStreams.size === 0) {
+        return loopbackTrack;
+      }
 
       // ── 1. Loopback passthrough ────────────────────────────────────
       const loopbackOnly = new MediaStream([loopbackTrack]);
       this.loopbackSource = this.ctx.createMediaStreamSource(loopbackOnly);
       this.loopbackSource.connect(this.dest);
-
-      if (remoteStreams.size === 0) {
-        this.processedTrack = this.dest.stream.getAudioTracks()[0] ?? null;
-        return this.processedTrack ?? loopbackTrack;
-      }
 
       // ── 2. Estimate playback latency ───────────────────────────────
       // outputLatency tells us how long audio takes to reach the DAC.

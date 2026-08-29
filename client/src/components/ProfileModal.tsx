@@ -23,16 +23,50 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('A imagem deve ter no máximo 5MB!');
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 8MB!');
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setAvatarUrl(reader.result);
+    reader.onload = (loadEvent) => {
+      const src = loadEvent.target?.result as string;
+      if (!src) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 256;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > maxDim) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          }
+        } else {
+          if (h > maxDim) {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL('image/jpeg', 0.88);
+          setAvatarUrl(compressed);
+        } else {
+          setAvatarUrl(src);
+        }
         toast.success('Imagem selecionada! Clique em "Salvar Alterações" para confirmar.');
-      }
+      };
+      img.onerror = () => {
+        setAvatarUrl(src);
+        toast.success('Imagem selecionada! Clique em "Salvar Alterações" para confirmar.');
+      };
+      img.src = src;
     };
     reader.readAsDataURL(file);
   };
@@ -85,22 +119,51 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         localStorage.removeItem('concord_avatar_url');
       }
 
-      // 2. Tentar atualizar no Supabase se usuário estiver autenticado
-      if (userId) {
-        const updates = {
-          id: userId,
-          username: cleanName,
-          avatar_url: avatarUrl.trim() || null,
-          updated_at: new Date().toISOString(),
-        };
-
-        const { error } = await supabase
-          .from('profiles')
-          .upsert(updates);
-
-        if (error) {
-          console.warn('Erro ao atualizar Supabase profile:', error);
+      // 2. Atualizar no Supabase (se autenticado ou por busca de conta correspondente)
+      try {
+        let activeUid = userId;
+        if (!activeUid) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) activeUid = user.id;
         }
+
+        if (activeUid) {
+          const updates = {
+            id: activeUid,
+            username: cleanName,
+            avatar_url: avatarUrl.trim() || null,
+            updated_at: new Date().toISOString(),
+          };
+
+          await supabase.from('profiles').upsert(updates);
+
+          await supabase.auth.updateUser({
+            data: {
+              username: cleanName,
+              display_name: cleanName,
+              avatar_url: avatarUrl.trim() || null,
+            }
+          });
+        } else {
+          // Atualizar perfil existente correspondente pelo nome de usuário se houver no DB
+          const { data: existingProf } = await supabase
+            .from('profiles')
+            .select('id')
+            .ilike('username', cleanName)
+            .maybeSingle();
+
+          if (existingProf?.id) {
+            await supabase
+              .from('profiles')
+              .update({
+                avatar_url: avatarUrl.trim() || null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingProf.id);
+          }
+        }
+      } catch (sbErr) {
+        console.warn('Supabase sync warning:', sbErr);
       }
 
       onUpdate(cleanName, avatarUrl);

@@ -68,12 +68,17 @@ export function useScreenShare(
 
   const startScreenShare = useCallback(async () => {
     try {
-      // Single getDisplayMedia call — never retry to avoid a second picker dialog.
-      // audio:true lets the browser offer system/tab audio; if the user declines,
-      // the stream simply won't have an audio track (which is fine).
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
+        video: {
+          displaySurface: 'monitor',
+          frameRate: { ideal: 30, max: 60 },
+        },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          systemAudio: 'include',
+        } as any,
       });
 
       streamRef.current = stream;
@@ -107,8 +112,16 @@ export function useScreenShare(
   const changeScreenShare = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
+        video: {
+          displaySurface: 'monitor',
+          frameRate: { ideal: 30, max: 60 },
+        },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          systemAudio: 'include',
+        } as any,
       });
 
       // Stop previous tracks to release previous window/screen

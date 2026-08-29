@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const DEFAULT_SUPABASE_URL = 'https://zryjdjvqprdrhunmvhbj.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyeWpkanZxcHJkcmh1bm12aGJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1NzUwOTAsImV4cCI6MjEwMzE1MTA5MH0.YTdvlUu3TivaghK9eDqkupXyup8GVRmyT0dKB31lGrQ';
+
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
 
 // Sanitize URL (ensure https:// prefix)
 let supabaseUrl = rawUrl.trim();
@@ -61,6 +64,7 @@ export interface DbMember {
   server_id: string;
   user_id?: string | null;
   username: string;
+  avatar_url?: string | null;
   role?: string;
   joined_at: string;
 }
@@ -692,12 +696,22 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
   try {
     const { data, error } = await supabase
       .from('server_members')
-      .select('*')
+      .select('*, profiles(avatar_url)')
       .eq('server_id', serverId)
       .order('joined_at', { ascending: true });
 
-    if (error || !data) return [];
-    return data as DbMember[];
+    if (error || !data) {
+      const { data: fallbackData } = await supabase
+        .from('server_members')
+        .select('*')
+        .eq('server_id', serverId)
+        .order('joined_at', { ascending: true });
+      return (fallbackData || []) as DbMember[];
+    }
+    return data.map((m: any) => ({
+      ...m,
+      avatar_url: m.profiles?.avatar_url || m.avatar_url || null,
+    })) as DbMember[];
   } catch (err) {
     console.warn('[Supabase] Erro ao buscar membros:', err);
     return [];

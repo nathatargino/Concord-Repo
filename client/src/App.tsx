@@ -249,10 +249,11 @@ export default function App() {
         });
       }
 
-      socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName);
       const currentName = store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
+      socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName, currentAvatar);
       if (currentName) {
-        socket.emit('set_username', currentName);
+        socket.emit('set_username', currentName, currentAvatar);
       }
     };
 
@@ -269,17 +270,24 @@ export default function App() {
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('username')
+            .select('username, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
 
           const profileName = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
+          const profileAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || null;
+
+          if (profileAvatar) {
+            store.setMyAvatarUrl(profileAvatar);
+            localStorage.setItem('concord_avatar_url', profileAvatar);
+          }
+
           if (profileName && profileName.trim()) {
             const cleanName = profileName.trim();
             store.setMyName(cleanName);
             localStorage.setItem('concord_username', cleanName);
             localStorage.setItem('concord_username_v1', cleanName);
-            socket.emit('set_username', cleanName);
+            socket.emit('set_username', cleanName, profileAvatar || store.myAvatarUrl || null);
             setShowLogin(false);
             setLoginError('');
             return;
@@ -290,6 +298,10 @@ export default function App() {
       }
 
       const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      const savedAvatar = localStorage.getItem('concord_avatar_url');
+      if (savedAvatar) {
+        store.setMyAvatarUrl(savedAvatar);
+      }
       if (savedName && savedName.trim()) {
         store.setMyName(savedName.trim());
         setShowLogin(false);
@@ -303,9 +315,9 @@ export default function App() {
 
   useEffect(() => {
     if (store.myName) {
-      socket.emit('set_username', store.myName);
+      socket.emit('set_username', store.myName, store.myAvatarUrl || null);
     }
-  }, [store.myName]);
+  }, [store.myName, store.myAvatarUrl]);
 
   // ─── VALIDAÇÃO DE NOME DUPLICADO NA SALA/SERVIDOR ─────────────────
   useEffect(() => {
@@ -428,6 +440,10 @@ export default function App() {
         onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
         onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
         onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
+        onUpdateProfile={(name, avatarUrl) => {
+          socket.emit('set_username', name, avatarUrl);
+          socket.emit('update_avatar', avatarUrl);
+        }}
         onAdminAction={(action, targetId) => {
           if (action === 'mute') socket.emit('admin_mute_user', targetId);
           else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);

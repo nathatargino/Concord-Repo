@@ -2,6 +2,7 @@ export interface UserInfo {
   id: string;
   persistentId?: string;
   name: string;
+  avatarUrl?: string | null;
   inVoice: boolean;
   screenSharing: boolean;
   micMuted: boolean;
@@ -39,7 +40,8 @@ export interface RoomInfo {
 
 // Client → Server events
 export interface ClientToServerEvents {
-  set_username: (name: string) => void;
+  set_username: (name: string, avatarUrl?: string | null) => void;
+  update_avatar: (avatarUrl: string | null) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
     roomIdOrCode: string,
