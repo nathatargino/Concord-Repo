@@ -238,13 +238,21 @@ app.whenReady().then(() => {
     });
 
     // Handle screen share requests natively
+    // Pass audio: 'loopback' so the system audio is captured alongside the screen video.
+    // Without this, getDisplayMedia({ audio: true }) from the renderer gets no audio track.
     session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-        desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-            callback({ video: sources[0] });
+        desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+            if (!sources.length) {
+                console.error('No desktop sources found');
+                // @ts-ignore – Electron types don't allow null but it's the documented way to reject
+                callback({ video: null, audio: null });
+                return;
+            }
+            callback({ video: sources[0], audio: 'loopback' });
         }).catch((err) => {
             console.error('Error getting desktop sources:', err);
             // @ts-ignore
-            callback({ video: null });
+            callback({ video: null, audio: null });
         });
     });
 
