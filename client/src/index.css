@@ -174,3 +174,145 @@ input, button, textarea {
   cursor: not-allowed;
 }
 
+/* Layout centralizado para a área do formulário */
+.auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 100vh;
+    padding: 20px;
+    background-color: var(--bg-base);
+}
+
+.auth-card {
+    background-color: #12121c; /* Fundo escuro */
+    border: 1px solid #2a2a40;
+    border-radius: 12px;
+    padding: 40px;
+    width: 100%;
+    max-width: 450px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    color: #e0e0e0;
+}
+
+.auth-cabecalho h2 {
+    color: #ffffff;
+    font-size: 1.8rem;
+    margin-bottom: 5px;
+}
+
+.auth-cabecalho p {
+    color: #a0a0b5;
+    font-size: 0.95rem;
+    margin-bottom: 30px;
+}
+
+/* Reutilizando e ajustando os inputs do modal */
+.input-grupo label {
+    display: block;
+    font-size: 0.85rem;
+    color: #a0a0b5;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+/* Opções auxiliares (Checkbox e Esqueci a Senha) */
+.auth-opcoes {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    font-size: 0.85rem;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: #a0a0b5;
+    user-select: none;
+}
+
+.checkbox-container input[type="checkbox"] {
+    accent-color: #00ffff;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.link-neon {
+    color: #00ffff;
+    text-decoration: none;
+    cursor: pointer;
+    transition: color 0.3s ease, text-shadow 0.3s ease;
+}
+
+.link-neon:hover {
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.6);
+}
+
+/* Divisor "Ou continue com" */
+.divisor {
+    text-align: center;
+    margin: 25px 0;
+    position: relative;
+}
+
+.divisor::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background-color: #2a2a40;
+    z-index: 1;
+}
+
+.divisor span {
+    position: relative;
+    z-index: 2;
+    background-color: #12121c;
+    padding: 0 15px;
+    color: #a0a0b5;
+    font-size: 0.85rem;
+}
+
+/* Botão Secundário (Google) */
+.botao-secundario {
+    width: 100%;
+    padding: 12px;
+    background-color: transparent;
+    color: #fff;
+    border: 1px solid #33334d;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.botao-secundario:hover {
+    background-color: #1a1a2e;
+    border-color: #00ffff;
+}
+
+.icone-btn {
+    width: 20px;
+    height: 20px;
+}
+
+.auth-rodape {
+    text-align: center;
+    margin-top: 25px;
+    font-size: 0.9rem;
+    color: #a0a0b5;
+}
+
+
