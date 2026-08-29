@@ -72,11 +72,11 @@
                             Entrar no Concord
                         </a>
                         <div class="dropdown-divider"></div>
-                        <button class="dropdown-item" id="changeUsernameBtn" onclick="if(window.abrirModal)window.abrirModal('modal-alterar-usuario'); document.getElementById('userDropdown')?.classList.remove('active');">
+                        <button class="dropdown-item" id="changeUsernameBtn" onclick="if(window.abrirModal)window.abrirModal('modal-alterar-usuario'); var d=document.getElementById('userDropdown'); if(d)d.classList.remove('active');">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                             Alterar Nome de Usuário
                         </button>
-                        <button class="dropdown-item" id="changePasswordBtn" onclick="if(window.abrirModal)window.abrirModal('modal-alterar-senha'); document.getElementById('userDropdown')?.classList.remove('active');">
+                        <button class="dropdown-item" id="changePasswordBtn" onclick="if(window.abrirModal)window.abrirModal('modal-alterar-senha'); var d=document.getElementById('userDropdown'); if(d)d.classList.remove('active');">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                             Alterar Senha
                         </button>

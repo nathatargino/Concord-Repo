@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './ProfileModal.module.css';
 import { supabase } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -14,6 +14,24 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('A imagem deve ter no máximo 5MB!');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setAvatarUrl(reader.result);
+        toast.success('Imagem selecionada do computador!');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -95,7 +113,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         
         <form onSubmit={handleSave} className={styles.form}>
           <div className={styles.avatarPreviewArea}>
-            <div className={styles.avatarCircle}>
+            <div className={styles.avatarCircle} style={{ position: 'relative', cursor: 'pointer' }} onClick={() => fileInputRef.current?.click()}>
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Avatar" className={styles.avatarImg} />
               ) : (
@@ -104,8 +122,29 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             </div>
           </div>
 
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={handleAvatarFileChange}
+          />
+
           <div className={styles.inputGroup}>
-            <label className={styles.label}>Seu Apelido</label>
+            <label className={styles.label}>Foto de Perfil (Arquivo do Computador)</label>
+            <button
+              type="button"
+              className={styles.input}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(255, 255, 255, 0.05)', textAlign: 'center' }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <span>📁</span>
+              <span>{avatarUrl ? 'Alterar Imagem do Computador' : 'Selecionar Imagem do Computador'}</span>
+            </button>
+          </div>
+
+          <div className={styles.inputGroup}>
+            <label className={styles.label}>Seu Apelido / Nome de Usuário</label>
             <input
               type="text"
               className={styles.input}
@@ -116,45 +155,9 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             />
           </div>
 
-          <div className={styles.inputGroup}>
-            <label className={styles.label}>Link da Foto (Avatar URL)</label>
-            <input
-              type="text"
-              className={styles.input}
-              value={avatarUrl}
-              onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://exemplo.com/foto.png"
-            />
-          </div>
-
           <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
             {saving ? 'Salvando...' : 'Salvar Alterações'}
           </button>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', width: '100%' }}>
-            <button
-              type="button"
-              className="botao-neon"
-              style={{ padding: '10px', fontSize: '0.9rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #2a2a40' }}
-              onClick={() => {
-                onClose();
-                window.abrirModal?.('modal-alterar-usuario');
-              }}
-            >
-              ✏️ Alterar Nome de Usuário
-            </button>
-            <button
-              type="button"
-              className="botao-neon"
-              style={{ padding: '10px', fontSize: '0.9rem', background: 'rgba(255, 255, 255, 0.05)', border: '1px solid #2a2a40' }}
-              onClick={() => {
-                onClose();
-                window.abrirModal?.('modal-alterar-senha');
-              }}
-            >
-              🔑 Redefinir Senha
-            </button>
-          </div>
         </form>
       </div>
     </div>
