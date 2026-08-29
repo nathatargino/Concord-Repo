@@ -3,6 +3,24 @@
    Theme Toggle, Auth Tabs, Mobile Menu, Animations
    ================================================ */
 
+window.abrirModal = function(idModal) {
+    const modal = document.getElementById(idModal);
+    if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+    }
+};
+
+window.fecharModal = function(idModal) {
+    const modal = document.getElementById(idModal);
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+        const msgEl = modal.querySelector('[id^="msg-alterar-"]');
+        if (msgEl) msgEl.style.display = 'none';
+    }
+};
+
 document.addEventListener('DOMContentLoaded', () => {
 
     // ---- Theme Toggle ----
@@ -260,16 +278,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Modais e Funções Globais
+    // Modais e Funções Globais (Instantâneos e Síncronos)
     window.abrirModal = function(idModal) {
         const modal = document.getElementById(idModal);
-        if (modal) modal.style.display = 'flex';
+        if (modal) {
+            modal.style.display = 'flex';
+            modal.classList.add('active');
+        }
     };
 
     window.fecharModal = function(idModal) {
         const modal = document.getElementById(idModal);
         if (modal) {
             modal.style.display = 'none';
+            modal.classList.remove('active');
             const msgEl = modal.querySelector('[id^="msg-alterar-"]');
             if (msgEl) msgEl.style.display = 'none';
         }
@@ -277,28 +299,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('click', (event) => {
         if (event.target && event.target.classList && event.target.classList.contains('modal-concord')) {
-            event.target.style.display = 'none';
+            window.fecharModal(event.target.id);
         }
     });
 
-    // Alterar Nome de Usuário — Abrir Modal
+    // Alterar Nome de Usuário — Abrir Modal (Síncrono)
     const changeUsernameBtn = document.getElementById('changeUsernameBtn');
     if (changeUsernameBtn) {
-        changeUsernameBtn.addEventListener('click', async () => {
+        changeUsernameBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             if (userDropdown) userDropdown.classList.remove('active');
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session?.user) return;
-
-            const inputNovoUsuario = document.getElementById('novo-usuario');
-            if (inputNovoUsuario) {
-                const currentName = localStorage.getItem('concord_username') || session.user.user_metadata?.username || '';
-                inputNovoUsuario.value = currentName;
-            }
+            
+            // Abrir o modal imediatamente no clique
+            window.abrirModal('modal-alterar-usuario');
 
             const msgBox = document.getElementById('msg-alterar-usuario');
             if (msgBox) msgBox.style.display = 'none';
 
-            window.abrirModal('modal-alterar-usuario');
+            // Carregar dados de nome do usuário preenchendo no campo
+            const inputNovoUsuario = document.getElementById('novo-usuario');
+            if (inputNovoUsuario) {
+                const savedName = localStorage.getItem('concord_username') || '';
+                inputNovoUsuario.value = savedName;
+
+                if (typeof supabaseClient !== 'undefined' && supabaseClient.auth) {
+                    supabaseClient.auth.getSession().then(({ data }) => {
+                        if (data?.session?.user) {
+                            const name = localStorage.getItem('concord_username') || data.session.user.user_metadata?.username || '';
+                            if (name) inputNovoUsuario.value = name;
+                        }
+                    }).catch(() => {});
+                }
+            }
         });
     }
 
@@ -406,22 +438,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Alterar Senha — Abrir Modal
+    // Alterar Senha — Abrir Modal (Síncrono)
     const changePasswordBtn = document.getElementById('changePasswordBtn');
     if (changePasswordBtn) {
-        changePasswordBtn.addEventListener('click', async () => {
+        changePasswordBtn.addEventListener('click', (e) => {
+            e.preventDefault();
             if (userDropdown) userDropdown.classList.remove('active');
-            const { data: { session } } = await supabaseClient.auth.getSession();
 
-            const inputEmail = document.getElementById('email-confirmacao');
-            if (inputEmail && session?.user?.email) {
-                inputEmail.value = session.user.email;
-            }
+            window.abrirModal('modal-alterar-senha');
 
             const msgBox = document.getElementById('msg-alterar-senha');
             if (msgBox) msgBox.style.display = 'none';
 
-            window.abrirModal('modal-alterar-senha');
+            const inputEmail = document.getElementById('email-confirmacao');
+            if (inputEmail && typeof supabaseClient !== 'undefined' && supabaseClient.auth) {
+                supabaseClient.auth.getSession().then(({ data }) => {
+                    if (data?.session?.user?.email) {
+                        inputEmail.value = data.session.user.email;
+                    }
+                }).catch(() => {});
+            }
         });
     }
 
