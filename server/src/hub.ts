@@ -522,10 +522,13 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         viewers = new Map<string, string>();
         screenViewersMap.set(broadcasterId, viewers);
       }
+      const alreadyWatching = viewers.has(socket.id);
       viewers.set(socket.id, user.name || 'Espectador');
 
-      // Notifica quem está transmitindo com o novo espectador (para tocar o chime)
-      io.to(broadcasterId).emit('screen_viewer_joined', { id: socket.id, name: user.name || 'Espectador' });
+      // Notifica quem está transmitindo apenas se o espectador for novo (evita chime repetido)
+      if (!alreadyWatching) {
+        io.to(broadcasterId).emit('screen_viewer_joined', { id: socket.id, name: user.name || 'Espectador' });
+      }
 
       // Atualiza a contagem e lista de espectadores
       const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));

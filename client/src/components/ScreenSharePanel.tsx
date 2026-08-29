@@ -23,15 +23,23 @@ export const ScreenSharePanel: React.FC<Props> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  const onStartWatchingRef = useRef(onStartWatching);
+  const onStopWatchingRef = useRef(onStopWatching);
+
+  useEffect(() => {
+    onStartWatchingRef.current = onStartWatching;
+    onStopWatchingRef.current = onStopWatching;
+  });
+
   // Notificar entrada/saída como espectador
   useEffect(() => {
     if (screenShareUserId && !amSharing) {
-      onStartWatching?.(screenShareUserId);
+      onStartWatchingRef.current?.(screenShareUserId);
       return () => {
-        onStopWatching?.(screenShareUserId);
+        onStopWatchingRef.current?.(screenShareUserId);
       };
     }
-  }, [screenShareUserId, amSharing, onStartWatching, onStopWatching]);
+  }, [screenShareUserId, amSharing]);
 
   // Bind screenStream to the video element whenever stream changes
   useEffect(() => {
