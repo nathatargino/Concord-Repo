@@ -34,8 +34,10 @@ interface AppState {
   // User
   myId: string;
   myName: string;
+  myAvatarUrl: string | null;
   setMyId: (id: string) => void;
   setMyName: (name: string) => void;
+  setMyAvatarUrl: (url: string | null) => void;
 
   // Users currently in the room
   users: UserInfo[];
@@ -127,8 +129,10 @@ export const useAppStore = create<AppState>((set) => ({
   // User
   myId: '',
   myName: localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '',
+  myAvatarUrl: localStorage.getItem('concord_avatar_url') || null,
   setMyId: (id) => set({ myId: id }),
   setMyName: (name) => set({ myName: name }),
+  setMyAvatarUrl: (url) => set({ myAvatarUrl: url }),
 
   // Users
   users: [],

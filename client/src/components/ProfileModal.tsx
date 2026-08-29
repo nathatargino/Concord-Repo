@@ -1,16 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './ProfileModal.module.css';
 import { supabase } from '../lib/supabase';
+import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
 interface Props {
   onClose: () => void;
-  onUpdate: (newName: string) => void;
+  onUpdate: (newName: string, newAvatar?: string) => void;
 }
 
 export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
-  const [username, setUsername] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const initialName = useAppStore.getState().myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '';
+  const initialAvatar = useAppStore.getState().myAvatarUrl || localStorage.getItem('concord_avatar_url') || '';
+
+  const [username, setUsername] = useState(initialName);
+  const [avatarUrl, setAvatarUrl] = useState(initialAvatar);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -27,7 +31,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
     reader.onload = () => {
       if (typeof reader.result === 'string') {
         setAvatarUrl(reader.result);
-        toast.success('Imagem selecionada do computador!');
+        toast.success('Imagem selecionada! Clique em "Salvar Alterações" para confirmar.');
       }
     };
     reader.readAsDataURL(file);
@@ -46,12 +50,12 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             .maybeSingle();
 
           if (profile) {
-            setUsername(profile.username || '');
-            setAvatarUrl(profile.avatar_url || '');
+            if (profile.username) setUsername(profile.username);
+            if (profile.avatar_url) setAvatarUrl(profile.avatar_url);
           }
         }
       } catch (err) {
-        console.error('Error fetching profile:', err);
+        console.error('Error fetching profile from Supabase:', err);
       } finally {
         setLoading(false);
       }
@@ -61,35 +65,50 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
+    const cleanName = username.trim();
+    if (!cleanName) {
       toast.error('O apelido não pode ser vazio!');
       return;
     }
-    if (!userId) return;
 
     setSaving(true);
     try {
-      const updates = {
-        username: username.trim(),
-        avatar_url: avatarUrl.trim() || null,
-        updated_at: new Date().toISOString(),
-      };
+      // 1. Atualizar estado global Zustand & LocalStorage imediatamente
+      useAppStore.getState().setMyName(cleanName);
+      useAppStore.getState().setMyAvatarUrl(avatarUrl || null);
 
-      const { error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', userId);
+      localStorage.setItem('concord_username', cleanName);
+      localStorage.setItem('concord_username_v1', cleanName);
+      if (avatarUrl) {
+        localStorage.setItem('concord_avatar_url', avatarUrl);
+      } else {
+        localStorage.removeItem('concord_avatar_url');
+      }
 
-      if (error) throw error;
-      
-      localStorage.setItem('concord_username', username.trim());
-      localStorage.setItem('concord_username_v1', username.trim());
-      onUpdate(username.trim());
+      // 2. Tentar atualizar no Supabase se usuário estiver autenticado
+      if (userId) {
+        const updates = {
+          id: userId,
+          username: cleanName,
+          avatar_url: avatarUrl.trim() || null,
+          updated_at: new Date().toISOString(),
+        };
+
+        const { error } = await supabase
+          .from('profiles')
+          .upsert(updates);
+
+        if (error) {
+          console.warn('Erro ao atualizar Supabase profile:', error);
+        }
+      }
+
+      onUpdate(cleanName, avatarUrl);
       toast.success('Perfil atualizado com sucesso!');
       onClose();
     } catch (err) {
       console.error('Save profile error:', err);
-      toast.error('Não foi possível salvar o perfil.');
+      toast.error('Erro ao salvar o perfil.');
     } finally {
       setSaving(false);
     }
@@ -113,12 +132,23 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         
         <form onSubmit={handleSave} className={styles.form}>
           <div className={styles.avatarPreviewArea}>
-            <div className={styles.avatarCircle} style={{ position: 'relative', cursor: 'pointer' }} onClick={() => fileInputRef.current?.click()}>
+            <div 
+              className={styles.avatarCircle} 
+              onClick={() => fileInputRef.current?.click()}
+              title="Clique para alterar a foto de perfil"
+            >
               {avatarUrl ? (
                 <img src={avatarUrl} alt="Avatar" className={styles.avatarImg} />
               ) : (
                 <span className={styles.avatarInitial}>{username.charAt(0).toUpperCase() || '?'}</span>
               )}
+              <div className={styles.avatarHoverOverlay}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                <span className={styles.avatarHoverText}>Alterar</span>
+              </div>
             </div>
           </div>
 
@@ -129,19 +159,6 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             style={{ display: 'none' }}
             onChange={handleAvatarFileChange}
           />
-
-          <div className={styles.inputGroup}>
-            <label className={styles.label}>Foto de Perfil (Arquivo do Computador)</label>
-            <button
-              type="button"
-              className={styles.input}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', background: 'rgba(255, 255, 255, 0.05)', textAlign: 'center' }}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <span>📁</span>
-              <span>{avatarUrl ? 'Alterar Imagem do Computador' : 'Selecionar Imagem do Computador'}</span>
-            </button>
-          </div>
 
           <div className={styles.inputGroup}>
             <label className={styles.label}>Seu Apelido / Nome de Usuário</label>

@@ -234,7 +234,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         try {
             // Define redirect URL pointing to reset-password.html on the site
-            const redirectTo = window.location.origin + '/reset-password.html';
+            const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+            const redirectTo = window.location.origin + basePath + 'reset-password.html';
 
             const { error } = await supabaseClient.auth.resetPasswordForEmail(currentUser.email, {
                 redirectTo

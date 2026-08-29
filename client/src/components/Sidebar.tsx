@@ -49,6 +49,9 @@ export const Sidebar: React.FC<Props> = ({
     users, 
     myId, 
     myName, 
+    myAvatarUrl,
+    setMyName,
+    setMyAvatarUrl,
     connected, 
     room, 
     isServer, 
@@ -616,7 +619,11 @@ export const Sidebar: React.FC<Props> = ({
       <div className={styles.userFooter}>
         <div className={styles.userFooterInfo}>
           <div className={styles.userFooterAvatar}>
-            {myName.charAt(0).toUpperCase()}
+            {myAvatarUrl ? (
+              <img src={myAvatarUrl} alt={myName} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              (myName.charAt(0).toUpperCase() || '?')
+            )}
           </div>
           <span className={styles.userFooterName}>{myName}</span>
         </div>
@@ -632,9 +639,11 @@ export const Sidebar: React.FC<Props> = ({
       {showProfileModal && (
         <ProfileModal 
           onClose={() => setShowProfileModal(false)}
-          onUpdate={(_newName) => {
-            // Se necessário, o myName já seria atualizado na store por outro listener ou reload
-            // window.location.reload(); 
+          onUpdate={(newName, newAvatar) => {
+            setMyName(newName);
+            if (newAvatar !== undefined) {
+              setMyAvatarUrl(newAvatar || null);
+            }
           }}
         />
       )}

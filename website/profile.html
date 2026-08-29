@@ -36,19 +36,10 @@
                 <img src="assets/logo.png" alt="Concord Logo" class="main-logo-auth logo-dark">
                 <img src="assets/logo-light.png" alt="Concord Logo" class="main-logo-auth logo-light">
             </a>
-            <h1 class="auth-branding-title">Editar Perfil</h1>
-            <p class="auth-branding-desc">Gerencie os detalhes da sua conta Concord. Altere seu nome visível ou solicite uma redefinição segura de senha.</p>
+            <h1 class="auth-branding-title">Redefinir Senha</h1>
+            <p class="auth-branding-desc">Gerencie a segurança da sua conta Concord. Solicite uma redefinição segura de senha para criar novas credenciais de acesso.</p>
 
             <div class="auth-branding-features">
-                <div class="auth-feature">
-                    <div class="auth-feature-icon">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    </div>
-                    <div>
-                        <h4>Identidade Exclusiva</h4>
-                        <p>Nomes únicos para você ser facilmente encontrado</p>
-                    </div>
-                </div>
                 <div class="auth-feature">
                     <div class="auth-feature-icon">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -74,44 +65,8 @@
                     </div>
                 </div>
 
-                <!-- Tabs: Alterar Nome vs Alterar Senha -->
-                <div class="profile-tabs">
-                    <button type="button" class="profile-tab active" id="tabBtnUsername" data-tab="username">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        Alterar Nome de Usuário
-                    </button>
-                    <button type="button" class="profile-tab" id="tabBtnPassword" data-tab="password">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        Alterar Senha
-                    </button>
-                </div>
-
-                <!-- TAB 1: Alterar Nome de Usuário -->
-                <div class="profile-tab-content active" id="tabContentUsername">
-                    <div class="auth-card-header" style="text-align: left; margin-bottom: 20px;">
-                        <h2 style="font-size: 1.3rem;">Nome de Usuário</h2>
-                        <p>Escolha um novo nome de usuário disponível.</p>
-                    </div>
-
-                    <form class="auth-form" id="changeUsernameForm">
-                        <div class="form-group">
-                            <label for="newUsernameInput">Novo Nome de Usuário</label>
-                            <div class="input-wrapper">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                                <input type="text" id="newUsernameInput" placeholder="Seu novo nome de usuário" minlength="2" maxlength="32" required>
-                            </div>
-                            <p class="input-hint">Deve ter entre 2 e 32 caracteres. Nomes já em uso não são permitidos.</p>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary btn-full btn-auth" id="saveUsernameBtn">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                            Salvar Alterações
-                        </button>
-                    </form>
-                </div>
-
-                <!-- TAB 2: Alterar Senha -->
-                <div class="profile-tab-content" id="tabContentPassword">
+                <!-- Alterar Senha Section -->
+                <div class="profile-tab-content active" id="tabContentPassword" style="display: block;">
                     <div class="auth-card-header" style="text-align: left; margin-bottom: 20px;">
                         <h2 style="font-size: 1.3rem;">Alterar Senha</h2>
                         <p>Solicite a redefinição de segurança para criar uma nova senha.</p>

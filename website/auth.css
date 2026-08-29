@@ -538,9 +538,16 @@
     color: var(--accent-cyan);
 }
 
+#logoutBtn:hover,
 .dropdown-item-danger:hover {
-    background: rgba(255, 45, 85, 0.1) !important;
-    color: #ff4d6a !important;
+    background: rgba(244, 63, 94, 0.15) !important;
+    color: #F43F5E !important;
+}
+
+#logoutBtn:hover svg,
+.dropdown-item-danger:hover svg {
+    stroke: #F43F5E !important;
+    color: #F43F5E !important;
 }
 
 /* ================================================
