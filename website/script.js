@@ -260,75 +260,223 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Alterar Nome de Usuário
+    // Modais e Funções Globais
+    window.abrirModal = function(idModal) {
+        const modal = document.getElementById(idModal);
+        if (modal) modal.style.display = 'flex';
+    };
+
+    window.fecharModal = function(idModal) {
+        const modal = document.getElementById(idModal);
+        if (modal) {
+            modal.style.display = 'none';
+            const msgEl = modal.querySelector('[id^="msg-alterar-"]');
+            if (msgEl) msgEl.style.display = 'none';
+        }
+    };
+
+    window.addEventListener('click', (event) => {
+        if (event.target && event.target.classList && event.target.classList.contains('modal-concord')) {
+            event.target.style.display = 'none';
+        }
+    });
+
+    // Alterar Nome de Usuário — Abrir Modal
     const changeUsernameBtn = document.getElementById('changeUsernameBtn');
     if (changeUsernameBtn) {
         changeUsernameBtn.addEventListener('click', async () => {
+            if (userDropdown) userDropdown.classList.remove('active');
             const { data: { session } } = await supabaseClient.auth.getSession();
             if (!session?.user) return;
 
-            const newUsername = prompt('Digite o seu novo Nome de Usuário:');
-            if (!newUsername || !newUsername.trim()) return;
-
-            const trimmedName = newUsername.trim();
-            if (trimmedName.length < 2 || trimmedName.length > 32) {
-                alert('O nome de usuário deve ter entre 2 e 32 caracteres.');
-                return;
+            const inputNovoUsuario = document.getElementById('novo-usuario');
+            if (inputNovoUsuario) {
+                const currentName = localStorage.getItem('concord_username') || session.user.user_metadata?.username || '';
+                inputNovoUsuario.value = currentName;
             }
 
-            // Verificar se o nome de usuário já está em uso
-            const { data: existingUser } = await supabaseClient
-                .from('profiles')
-                .select('id')
-                .ilike('username', trimmedName)
-                .neq('id', session.user.id)
-                .maybeSingle();
+            const msgBox = document.getElementById('msg-alterar-usuario');
+            if (msgBox) msgBox.style.display = 'none';
 
-            if (existingUser) {
-                alert('Este nome de usuário já está em uso por outra conta. Escolha outro.');
-                return;
-            }
-
-            // Atualizar na tabela profiles
-            const { error: profileErr } = await supabaseClient
-                .from('profiles')
-                .update({ username: trimmedName, updated_at: new Date().toISOString() })
-                .eq('id', session.user.id);
-
-            if (profileErr) {
-                alert('Erro ao atualizar nome no perfil: ' + profileErr.message);
-                return;
-            }
-
-            // Atualizar no auth metadata
-            await supabaseClient.auth.updateUser({
-                data: { username: trimmedName, display_name: trimmedName }
-            });
-
-            localStorage.setItem('concord_username', trimmedName);
-            alert('Nome de usuário alterado com sucesso para "' + trimmedName + '"!');
-            window.location.reload();
+            window.abrirModal('modal-alterar-usuario');
         });
     }
 
-    // Alterar Senha com confirmação por e-mail
+    // Alterar Nome de Usuário — Submeter Formulário
+    const formAlterarUsuario = document.getElementById('form-alterar-usuario');
+    if (formAlterarUsuario) {
+        formAlterarUsuario.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const inputNovoUsuario = document.getElementById('novo-usuario');
+            const msgBox = document.getElementById('msg-alterar-usuario');
+            const btnSalvar = document.getElementById('btn-salvar-usuario');
+
+            if (!inputNovoUsuario || !msgBox) return;
+
+            const trimmedName = inputNovoUsuario.value.trim();
+            if (trimmedName.length < 2 || trimmedName.length > 32) {
+                msgBox.style.display = 'block';
+                msgBox.style.color = '#F43F5E';
+                msgBox.textContent = 'O nome de usuário deve ter entre 2 e 32 caracteres.';
+                return;
+            }
+
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (!session?.user) return;
+
+            if (btnSalvar) {
+                btnSalvar.disabled = true;
+                btnSalvar.textContent = 'Verificando...';
+            }
+
+            try {
+                // Verificar se o nome de usuário já está em uso por outra conta
+                const { data: existingUser } = await supabaseClient
+                    .from('profiles')
+                    .select('id')
+                    .ilike('username', trimmedName)
+                    .neq('id', session.user.id)
+                    .maybeSingle();
+
+                if (existingUser) {
+                    msgBox.style.display = 'block';
+                    msgBox.style.color = '#F43F5E';
+                    msgBox.textContent = 'Este nome de usuário já está em uso por outra conta. Escolha um diferente.';
+                    if (btnSalvar) {
+                        btnSalvar.disabled = false;
+                        btnSalvar.textContent = 'Salvar Alteração';
+                    }
+                    return;
+                }
+
+                // Atualizar na tabela profiles
+                const { error: profileErr } = await supabaseClient
+                    .from('profiles')
+                    .update({ username: trimmedName, updated_at: new Date().toISOString() })
+                    .eq('id', session.user.id);
+
+                if (profileErr) {
+                    msgBox.style.display = 'block';
+                    msgBox.style.color = '#F43F5E';
+                    msgBox.textContent = 'Erro ao atualizar nome no perfil: ' + profileErr.message;
+                    if (btnSalvar) {
+                        btnSalvar.disabled = false;
+                        btnSalvar.textContent = 'Salvar Alteração';
+                    }
+                    return;
+                }
+
+                // Atualizar no auth metadata
+                await supabaseClient.auth.updateUser({
+                    data: { username: trimmedName, display_name: trimmedName }
+                });
+
+                localStorage.setItem('concord_username', trimmedName);
+                localStorage.setItem('concord_username_v1', trimmedName);
+
+                msgBox.style.display = 'block';
+                msgBox.style.color = '#10B981';
+                msgBox.textContent = 'Nome de usuário alterado com sucesso!';
+
+                // Atualizar elementos da nav sem precisar de reload
+                const navUserName = document.getElementById('navUserName');
+                const dropdownName = document.getElementById('dropdownName');
+                if (navUserName) navUserName.textContent = trimmedName;
+                if (dropdownName) dropdownName.textContent = trimmedName;
+
+                setTimeout(() => {
+                    window.fecharModal('modal-alterar-usuario');
+                    if (btnSalvar) {
+                        btnSalvar.disabled = false;
+                        btnSalvar.textContent = 'Salvar Alteração';
+                    }
+                }, 1500);
+
+            } catch (err) {
+                console.error('Erro ao alterar usuário:', err);
+                msgBox.style.display = 'block';
+                msgBox.style.color = '#F43F5E';
+                msgBox.textContent = 'Ocorreu um erro ao salvar a alteração.';
+                if (btnSalvar) {
+                    btnSalvar.disabled = false;
+                    btnSalvar.textContent = 'Salvar Alteração';
+                }
+            }
+        });
+    }
+
+    // Alterar Senha — Abrir Modal
     const changePasswordBtn = document.getElementById('changePasswordBtn');
     if (changePasswordBtn) {
         changePasswordBtn.addEventListener('click', async () => {
+            if (userDropdown) userDropdown.classList.remove('active');
             const { data: { session } } = await supabaseClient.auth.getSession();
-            if (!session?.user?.email) return;
 
-            const confirmAction = confirm('Enviaremos um e-mail de redefinição de senha com um link de segurança para: ' + session.user.email + '.\n\nDeseja continuar?');
-            if (!confirmAction) return;
+            const inputEmail = document.getElementById('email-confirmacao');
+            if (inputEmail && session?.user?.email) {
+                inputEmail.value = session.user.email;
+            }
 
-            const { error } = await supabaseClient.auth.resetPasswordForEmail(session.user.email, {
-                redirectTo: window.location.origin + '/login.html'
-            });
+            const msgBox = document.getElementById('msg-alterar-senha');
+            if (msgBox) msgBox.style.display = 'none';
 
-            if (error) {
-                alert('Erro ao enviar e-mail de redefinição: ' + error.message);
-            } else {
-                alert('E-mail enviado com sucesso! Verifique a sua caixa de entrada para redefinir a senha.');
+            window.abrirModal('modal-alterar-senha');
+        });
+    }
+
+    // Alterar Senha — Submeter Formulário
+    const formAlterarSenha = document.getElementById('form-alterar-senha');
+    if (formAlterarSenha) {
+        formAlterarSenha.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const inputEmail = document.getElementById('email-confirmacao');
+            const msgBox = document.getElementById('msg-alterar-senha');
+            const btnEnviar = document.getElementById('btn-enviar-link-senha');
+
+            if (!inputEmail || !msgBox) return;
+
+            const emailVal = inputEmail.value.trim();
+            if (!emailVal || !emailVal.includes('@')) {
+                msgBox.style.display = 'block';
+                msgBox.style.color = '#F43F5E';
+                msgBox.textContent = 'Por favor, informe um e-mail válido.';
+                return;
+            }
+
+            if (btnEnviar) {
+                btnEnviar.disabled = true;
+                btnEnviar.textContent = 'Enviando...';
+            }
+
+            try {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(emailVal, {
+                    redirectTo: window.location.origin + '/reset-password.html'
+                });
+
+                if (error) {
+                    msgBox.style.display = 'block';
+                    msgBox.style.color = '#F43F5E';
+                    msgBox.textContent = 'Erro ao enviar e-mail: ' + error.message;
+                } else {
+                    msgBox.style.display = 'block';
+                    msgBox.style.color = '#10B981';
+                    msgBox.textContent = 'E-mail de redefinição enviado com sucesso! Verifique sua caixa de entrada.';
+                    setTimeout(() => {
+                        window.fecharModal('modal-alterar-senha');
+                    }, 2500);
+                }
+            } catch (err) {
+                console.error('Erro ao enviar reset de senha:', err);
+                msgBox.style.display = 'block';
+                msgBox.style.color = '#F43F5E';
+                msgBox.textContent = 'Erro ao solicitar redefinição de senha.';
+            } finally {
+                if (btnEnviar) {
+                    btnEnviar.disabled = false;
+                    btnEnviar.textContent = 'Enviar Link';
+                }
             }
         });
     }

@@ -681,6 +681,38 @@
         </div>
     </footer>
 
+    <!-- Estrutura do Modal para Alterar Nome de Usuário -->
+    <div id="modal-alterar-usuario" class="modal-concord">
+        <div class="modal-conteudo">
+            <span class="fechar-modal" onclick="fecharModal('modal-alterar-usuario')">&times;</span>
+            <h2>Alterar Nome de Usuário</h2>
+            <p>Digite seu novo nome de usuário abaixo.</p>
+            <form id="form-alterar-usuario">
+                <div id="msg-alterar-usuario" style="display: none; margin-bottom: 15px; font-size: 0.85rem;"></div>
+                <div class="input-grupo">
+                    <input type="text" id="novo-usuario" placeholder="Ex: CromaGamer" autocomplete="off" required>
+                </div>
+                <button type="submit" class="botao-neon" id="btn-salvar-usuario">Salvar Alteração</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Estrutura do Modal para Alterar Senha -->
+    <div id="modal-alterar-senha" class="modal-concord">
+        <div class="modal-conteudo">
+            <span class="fechar-modal" onclick="fecharModal('modal-alterar-senha')">&times;</span>
+            <h2>Redefinir Senha</h2>
+            <p>Enviaremos um e-mail com um link de segurança para redefinir sua senha.</p>
+            <form id="form-alterar-senha">
+                <div id="msg-alterar-senha" style="display: none; margin-bottom: 15px; font-size: 0.85rem;"></div>
+                <div class="input-grupo">
+                    <input type="email" id="email-confirmacao" placeholder="seu@email.com" autocomplete="off" required>
+                </div>
+                <button type="submit" class="botao-neon" id="btn-enviar-link-senha">Enviar Link</button>
+            </form>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabase.js"></script>
     <script src="script.js"></script>

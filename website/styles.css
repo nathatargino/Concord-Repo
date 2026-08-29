@@ -2731,5 +2731,113 @@ h1, h2, h3, h4, h5, h6 {
     margin-top: 15px;
 }
 
+/* CSS Base para Modais Concord */
+.modal-concord {
+    display: none; /* Inicia oculto */
+    position: fixed;
+    z-index: 99999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(10, 10, 15, 0.85); /* Fundo translúcido escuro */
+    backdrop-filter: blur(8px); /* Efeito de vidro jateado */
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-concord.active {
+    display: flex;
+}
+
+/* Caixa do Modal */
+.modal-conteudo {
+    background-color: #12121c; /* Azul marinho quase preto */
+    border: 1px solid #2a2a40;
+    border-radius: 12px;
+    padding: 30px;
+    width: 90%;
+    max-width: 400px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 255, 0.1);
+    color: #e0e0e0;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+}
+
+.modal-conteudo h2 {
+    color: #ffffff;
+    margin-bottom: 10px;
+    font-size: 1.5rem;
+}
+
+.modal-conteudo p {
+    color: #a0a0b5;
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+}
+
+/* Botão de Fechar no Canto */
+.fechar-modal {
+    color: #a0a0b5;
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.fechar-modal:hover {
+    color: #00ffff; /* Brilho neon ao passar o mouse */
+}
+
+/* Campos de Texto (Inputs) */
+.input-grupo {
+    margin-bottom: 20px;
+}
+
+.input-grupo input {
+    width: 100%;
+    padding: 12px 15px;
+    background-color: #1a1a2e;
+    border: 1px solid #33334d;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+}
+
+.input-grupo input:focus {
+    outline: none;
+    border-color: #00ffff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+}
+
+/* Botão de Ação */
+.botao-neon {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(90deg, #0052ff, #00ffff);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.botao-neon:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 255, 255, 0.4);
+}
+
+.botao-neon:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+
 
 
