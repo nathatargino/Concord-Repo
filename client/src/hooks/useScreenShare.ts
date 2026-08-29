@@ -2,22 +2,69 @@ import { useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
+import { EchoFilter } from '../utils/echoFilter';
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
+type GetRemoteStreamsFn = () => Map<string, MediaStream>;
 
-export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: MediaStream) => void, removeScreenShareTrack: () => void) {
+export function useScreenShare(
+  emit: EmitFn,
+  addScreenShareTrack: (stream: MediaStream) => void,
+  removeScreenShareTrack: () => void,
+  getRemoteAudioStreams?: GetRemoteStreamsFn,
+) {
   const streamRef = useRef<MediaStream | null>(null);
+  const echoFilterRef = useRef<EchoFilter | null>(null);
+
+  /** Dispose any active echo filter */
+  const disposeEchoFilter = useCallback(() => {
+    echoFilterRef.current?.dispose();
+    echoFilterRef.current = null;
+  }, []);
+
+  /**
+   * Process the loopback audio through the echo filter so that remote
+   * participants' voices (already playing through the speakers) are
+   * subtracted from the captured audio before it is sent via WebRTC.
+   *
+   * Returns a *new* MediaStream whose audio track is the filtered one.
+   */
+  const filterLoopbackEcho = useCallback((stream: MediaStream): MediaStream => {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack || !getRemoteAudioStreams) return stream;
+
+    const remoteStreams = getRemoteAudioStreams();
+    if (remoteStreams.size === 0) return stream;
+
+    // Clean any previous filter
+    disposeEchoFilter();
+
+    const filter = new EchoFilter();
+    const cleanTrack = filter.start(audioTrack, remoteStreams);
+    echoFilterRef.current = filter;
+
+    if (cleanTrack && cleanTrack !== audioTrack) {
+      // Build a new stream: original video + filtered audio
+      const filtered = new MediaStream();
+      stream.getVideoTracks().forEach((t) => filtered.addTrack(t));
+      filtered.addTrack(cleanTrack);
+      return filtered;
+    }
+
+    return stream;
+  }, [getRemoteAudioStreams, disposeEchoFilter]);
 
   const stopScreenShare = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    disposeEchoFilter();
     removeScreenShareTrack();
     emit('stop_screen_share');
     useAppStore.getState().setAmSharing(false);
     useAppStore.getState().setScreenShare(null, null);
     playScreenShareStopSound();
     toast('🖥️ Compartilhamento encerrado', { duration: 2000 });
-  }, [emit, removeScreenShareTrack]);
+  }, [emit, removeScreenShareTrack, disposeEchoFilter]);
 
   const startScreenShare = useCallback(async () => {
     try {
@@ -30,7 +77,10 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
       });
 
       streamRef.current = stream;
-      addScreenShareTrack(stream);
+
+      // Filter echo from the loopback audio before sending via WebRTC
+      const processed = filterLoopbackEcho(stream);
+      addScreenShareTrack(processed);
 
       emit('start_screen_share');
       useAppStore.getState().setAmSharing(true);
@@ -52,7 +102,7 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
         console.error('[ScreenShare] startScreenShare error:', err);
       }
     }
-  }, [emit, addScreenShareTrack, stopScreenShare]);
+  }, [emit, addScreenShareTrack, stopScreenShare, filterLoopbackEcho]);
 
   const changeScreenShare = useCallback(async () => {
     try {
@@ -64,7 +114,10 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = stream;
-      addScreenShareTrack(stream);
+
+      // Re-apply echo filter for the new stream
+      const processed = filterLoopbackEcho(stream);
+      addScreenShareTrack(processed);
 
       // Listen for user stopping via browser UI
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
@@ -78,7 +131,8 @@ export function useScreenShare(emit: EmitFn, addScreenShareTrack: (stream: Media
         console.error('[ScreenShare] changeScreenShare error:', err);
       }
     }
-  }, [addScreenShareTrack, stopScreenShare]);
+  }, [addScreenShareTrack, stopScreenShare, filterLoopbackEcho]);
 
   return { startScreenShare, stopScreenShare, changeScreenShare, streamRef };
 }
+

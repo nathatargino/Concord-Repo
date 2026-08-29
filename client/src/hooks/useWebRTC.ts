@@ -426,12 +426,26 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     });
   }, []);
 
+  // Collect remote voice MediaStreams so the echo filter can subtract them
+  // from the screen-share loopback audio.
+  const getRemoteAudioStreams = useCallback((): Map<string, MediaStream> => {
+    const streams = new Map<string, MediaStream>();
+    peersRef.current.forEach((peer, peerId) => {
+      const srcObj = peer.audioEl?.srcObject;
+      if (srcObj && srcObj instanceof MediaStream && srcObj.getAudioTracks().length > 0) {
+        streams.set(peerId, srcObj);
+      }
+    });
+    return streams;
+  }, []);
+
   return {
     joinVoice,
     leaveVoice,
     addScreenShareTrack,
     removeScreenShareTrack,
     remoteScreenStreams,
+    getRemoteAudioStreams,
     onExistingVoiceUsers,
     onUserJoinedVoice,
     onUserLeftVoice,

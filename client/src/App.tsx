@@ -160,7 +160,8 @@ export default function App() {
   const screenShare = useScreenShare(
     (event, ...args) => socket.emit(event as any, ...args),
     rtc.addScreenShareTrack,
-    rtc.removeScreenShareTrack
+    rtc.removeScreenShareTrack,
+    rtc.getRemoteAudioStreams
   );
 
   // ─── JOIN ROOM on mount ───────────────────────────────────────────
