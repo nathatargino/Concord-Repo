@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useAudioStore } from '../stores/useAudioStore';
+import { useAppStore } from '../stores/useAppStore';
 
 interface AudioNodes {
   ctx: AudioContext;
