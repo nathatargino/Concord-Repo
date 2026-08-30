@@ -326,12 +326,23 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             pc.setLocalDescription({ type: 'rollback' }),
             pc.setRemoteDescription(offer),
           ]);
+          // The rollback discarded our pending local offer. If it carried a
+          // freshly-added track (e.g. screen-share audio), that track is still
+          // attached to the connection but no longer advertised — we owe the
+          // remote a new offer once we're back to `stable`.
+          peerData.renegotiateQueued = true;
         } else {
           await pc.setRemoteDescription(offer);
         }
         await pc.setLocalDescription();
         emit('send_answer', senderId, pc.localDescription!);
         await flushPendingIce(senderId);
+
+        // Answering brought us back to `stable`; send any offer we still owe.
+        if (peerData.renegotiateQueued && pc.signalingState === 'stable') {
+          peerData.renegotiateQueued = false;
+          peerData.makeOffer?.();
+        }
       } catch (err) {
         console.error('[WebRTC] receive_offer error', err);
       }
@@ -456,11 +467,26 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // New transceivers require an SDP round-trip. Route through the
       // queue-aware negotiator so the offer is still sent even if the
-      // connection is mid-handshake right now.
-      if (addedTrack) {
+      // connection is mid-handshake right now. Also renegotiate if a previous
+      // attempt's offer was stranded by glare (renegotiateQueued still set).
+      if (addedTrack || peer.renegotiateQueued) {
         await peer.makeOffer?.();
       }
     });
+
+    // Belt-and-suspenders: with several browser peers, the first offer can lose
+    // a glare race and get rolled back. Re-check shortly after and re-offer for
+    // any peer that still owes an offer (renegotiateQueued never cleared).
+    if (audioTrack) {
+      setTimeout(() => {
+        peersRef.current.forEach((peer) => {
+          if (peer.renegotiateQueued && peer.pc.signalingState === 'stable') {
+            peer.renegotiateQueued = false;
+            peer.makeOffer?.();
+          }
+        });
+      }, 1500);
+    }
   }, []);
 
   const removeScreenShareTrack = useCallback(() => {
