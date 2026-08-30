@@ -7,6 +7,54 @@ import { EchoFilter } from '../utils/echoFilter';
 type EmitFn = (event: string, ...args: unknown[]) => void;
 type GetRemoteStreamsFn = () => Map<string, MediaStream>;
 
+/** Helper function to request display media with multi-level fallbacks */
+async function captureDisplayMedia(): Promise<MediaStream> {
+  // Option 1: Ideal constraints with system audio included
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+      systemAudio: 'include',
+      selfBrowserSurface: 'include',
+      surfaceSwitching: 'include',
+      monitorTypeSurfaces: 'include',
+    } as any);
+    return stream;
+  } catch (err: any) {
+    if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+      throw err;
+    }
+    console.warn('[ScreenShare] Advanced audio constraints failed, trying standard audio:', err);
+  }
+
+  // Option 2: Standard video + audio boolean
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        frameRate: { ideal: 30, max: 60 },
+      },
+      audio: true,
+    });
+    return stream;
+  } catch (err: any) {
+    if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+      throw err;
+    }
+    console.warn('[ScreenShare] Standard audio capture failed, falling back to video only:', err);
+  }
+
+  // Option 3: Video only fallback
+  return await navigator.mediaDevices.getDisplayMedia({
+    video: true,
+  });
+}
+
 export function useScreenShare(
   emit: EmitFn,
   addScreenShareTrack: (stream: MediaStream) => void,
@@ -18,7 +66,11 @@ export function useScreenShare(
 
   /** Dispose any active echo filter */
   const disposeEchoFilter = useCallback(() => {
-    echoFilterRef.current?.dispose();
+    try {
+      echoFilterRef.current?.dispose();
+    } catch (e) {
+      console.warn('[ScreenShare] Error disposing echo filter:', e);
+    }
     echoFilterRef.current = null;
   }, []);
 
@@ -30,28 +82,33 @@ export function useScreenShare(
    * Returns a *new* MediaStream whose audio track is the filtered one.
    */
   const filterLoopbackEcho = useCallback((stream: MediaStream): MediaStream => {
-    const audioTrack = stream.getAudioTracks()[0];
-    if (!audioTrack || !getRemoteAudioStreams) return stream;
+    try {
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack || !getRemoteAudioStreams) return stream;
 
-    const remoteStreams = getRemoteAudioStreams();
-    if (remoteStreams.size === 0) return stream;
+      const remoteStreams = getRemoteAudioStreams();
+      if (!remoteStreams || remoteStreams.size === 0) return stream;
 
-    // Clean any previous filter
-    disposeEchoFilter();
+      // Clean any previous filter
+      disposeEchoFilter();
 
-    const filter = new EchoFilter();
-    const cleanTrack = filter.start(audioTrack, remoteStreams);
-    echoFilterRef.current = filter;
+      const filter = new EchoFilter();
+      const cleanTrack = filter.start(audioTrack, remoteStreams);
+      echoFilterRef.current = filter;
 
-    if (cleanTrack && cleanTrack !== audioTrack) {
-      // Build a new stream: original video + filtered audio
-      const filtered = new MediaStream();
-      stream.getVideoTracks().forEach((t) => filtered.addTrack(t));
-      filtered.addTrack(cleanTrack);
-      return filtered;
+      if (cleanTrack && cleanTrack !== audioTrack) {
+        // Build a new stream: original video + filtered audio
+        const filtered = new MediaStream();
+        stream.getVideoTracks().forEach((t) => filtered.addTrack(t));
+        filtered.addTrack(cleanTrack);
+        return filtered;
+      }
+
+      return stream;
+    } catch (err) {
+      console.warn('[ScreenShare] Error in filterLoopbackEcho, using raw stream:', err);
+      return stream;
     }
-
-    return stream;
   }, [getRemoteAudioStreams, disposeEchoFilter]);
 
   const stopScreenShare = useCallback(() => {
@@ -68,19 +125,7 @@ export function useScreenShare(
 
   const startScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'monitor',
-          frameRate: { ideal: 30, max: 60 },
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          systemAudio: 'include',
-        } as any,
-      });
-
+      const stream = await captureDisplayMedia();
       streamRef.current = stream;
 
       // Filter echo from the loopback audio before sending via WebRTC
@@ -111,18 +156,7 @@ export function useScreenShare(
 
   const changeScreenShare = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'monitor',
-          frameRate: { ideal: 30, max: 60 },
-        },
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          systemAudio: 'include',
-        } as any,
-      });
+      const stream = await captureDisplayMedia();
 
       // Stop previous tracks to release previous window/screen
       streamRef.current?.getTracks().forEach((t) => t.stop());

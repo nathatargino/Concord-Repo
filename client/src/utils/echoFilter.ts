@@ -39,18 +39,24 @@ export class EchoFilter {
     remoteStreams: Map<string, MediaStream>,
     remoteGainValues?: Map<string, number>,
   ): MediaStreamTrack {
+    // If no remote streams to filter, pass the loopback audio directly without allocating AudioContext
+    if (!remoteStreams || remoteStreams.size === 0) {
+      return loopbackTrack;
+    }
+
     try {
-      // Use 48 kHz to match WebRTC's preferred sample-rate
-      this.ctx = new AudioContext({ sampleRate: 48_000 });
+      // Use 48 kHz if supported by the hardware, otherwise fallback to default sample rate
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      try {
+        this.ctx = new AudioContextClass({ sampleRate: 48_000 });
+      } catch {
+        this.ctx = new AudioContextClass();
+      }
+
       if (this.ctx.state === 'suspended') {
         this.ctx.resume().catch(() => {});
       }
       this.dest = this.ctx.createMediaStreamDestination();
-
-      // If no remote streams to filter, pass the loopback audio directly
-      if (remoteStreams.size === 0) {
-        return loopbackTrack;
-      }
 
       // ── 1. Loopback passthrough ────────────────────────────────────
       const loopbackOnly = new MediaStream([loopbackTrack]);
@@ -58,37 +64,43 @@ export class EchoFilter {
       this.loopbackSource.connect(this.dest);
 
       // ── 2. Estimate playback latency ───────────────────────────────
-      // outputLatency tells us how long audio takes to reach the DAC.
-      // The same latency applies to <audio> elements feeding the speakers,
-      // so the loopback capture of those elements is delayed by roughly
-      // this amount relative to the raw MediaStream.
       const rawDelay = (this.ctx as any).outputLatency as number | undefined;
       const estimatedDelay = Math.max(rawDelay ?? 0.03, 0.015); // floor 15 ms
 
       // ── 3. Subtract each remote stream ─────────────────────────────
+      let connectedSources = 0;
       remoteStreams.forEach((stream, peerId) => {
         const audioTrack = stream.getAudioTracks()[0];
         if (!audioTrack || audioTrack.readyState === 'ended') return;
 
-        const source = this.ctx!.createMediaStreamSource(new MediaStream([audioTrack]));
+        try {
+          const source = this.ctx!.createMediaStreamSource(new MediaStream([audioTrack]));
 
-        // Align with the loopback capture delay
-        const delay = this.ctx!.createDelay(1.0);
-        delay.delayTime.value = estimatedDelay;
+          // Align with the loopback capture delay
+          const delay = this.ctx!.createDelay(1.0);
+          delay.delayTime.value = estimatedDelay;
 
-        // Invert the signal. Use -0.8 instead of -1 to avoid over-cancellation
-        // artifacts when the delay estimate isn't perfectly aligned.
-        // If we know the actual gain applied to this user's audio, scale accordingly.
-        const userGain = remoteGainValues?.get(peerId) ?? 1;
-        const invertGain = this.ctx!.createGain();
-        invertGain.gain.value = -0.8 * userGain;
+          // Invert the signal. Use -0.8 instead of -1 to avoid over-cancellation
+          // artifacts when the delay estimate isn't perfectly aligned.
+          const userGain = remoteGainValues?.get(peerId) ?? 1;
+          const invertGain = this.ctx!.createGain();
+          invertGain.gain.value = -0.8 * userGain;
 
-        source.connect(delay);
-        delay.connect(invertGain);
-        invertGain.connect(this.dest!);
+          source.connect(delay);
+          delay.connect(invertGain);
+          invertGain.connect(this.dest!);
 
-        this.remoteSources.push({ source, delay, gain: invertGain });
+          this.remoteSources.push({ source, delay, gain: invertGain });
+          connectedSources++;
+        } catch (sourceErr) {
+          console.warn('[EchoFilter] Could not connect remote source:', sourceErr);
+        }
       });
+
+      if (connectedSources === 0) {
+        this.dispose();
+        return loopbackTrack;
+      }
 
       this.processedTrack = this.dest.stream.getAudioTracks()[0] ?? null;
       return this.processedTrack ?? loopbackTrack;
@@ -111,10 +123,10 @@ export class EchoFilter {
     try { this.loopbackSource?.disconnect(); } catch { /* */ }
     this.loopbackSource = null;
 
-    try { this.dest?.disconnect(); } catch { /* */ }
+    // MediaStreamAudioDestinationNode does not require disconnect in Web Audio API
     this.dest = null;
 
-    if (this.ctx) {
+    if (this.ctx && this.ctx.state !== 'closed') {
       this.ctx.close().catch(() => { /* */ });
       this.ctx = null;
     }
