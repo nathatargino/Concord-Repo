@@ -7,52 +7,18 @@ import { EchoFilter } from '../utils/echoFilter';
 type EmitFn = (event: string, ...args: unknown[]) => void;
 type GetRemoteStreamsFn = () => Map<string, MediaStream>;
 
-/** Helper function to request display media with multi-level fallbacks */
+/** Helper function to request display media (opens picker once without modal loops) */
 async function captureDisplayMedia(): Promise<MediaStream> {
-  // Option 1: Ideal constraints with system audio included
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        frameRate: { ideal: 30, max: 60 },
-      },
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-      systemAudio: 'include',
-      selfBrowserSurface: 'include',
-      surfaceSwitching: 'include',
-      monitorTypeSurfaces: 'include',
-    } as any);
-    return stream;
-  } catch (err: any) {
-    if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-      throw err;
-    }
-    console.warn('[ScreenShare] Advanced audio constraints failed, trying standard audio:', err);
-  }
-
-  // Option 2: Standard video + audio boolean
-  try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        frameRate: { ideal: 30, max: 60 },
-      },
-      audio: true,
-    });
-    return stream;
-  } catch (err: any) {
-    if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-      throw err;
-    }
-    console.warn('[ScreenShare] Standard audio capture failed, falling back to video only:', err);
-  }
-
-  // Option 3: Video only fallback
   return await navigator.mediaDevices.getDisplayMedia({
-    video: true,
-  });
+    video: {
+      frameRate: { ideal: 30, max: 60 },
+    },
+    audio: true,
+    systemAudio: 'include',
+    selfBrowserSurface: 'include',
+    surfaceSwitching: 'include',
+    monitorTypeSurfaces: 'include',
+  } as any);
 }
 
 export function useScreenShare(
@@ -162,9 +128,15 @@ export function useScreenShare(
       }
     } catch (err: unknown) {
       // NotAllowedError / AbortError = usuário cancelou o picker → silencioso
-      if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-        toast.error('Erro ao compartilhar tela');
-        console.error('[ScreenShare] startScreenShare error:', err);
+      if (err instanceof Error) {
+        if (err.name === 'NotReadableError') {
+          toast.error('O Windows bloqueou a captura de som do sistema. Compartilhe pela "Guia do Opera" ou desative som espacial/modo exclusivo no Windows.', { duration: 6000 });
+        } else if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+          toast.error('Erro ao compartilhar tela');
+        }
+        if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+          console.error('[ScreenShare] startScreenShare error:', err);
+        }
       }
     } finally {
       isRequestingRef.current = false; // Sempre libera a trava
