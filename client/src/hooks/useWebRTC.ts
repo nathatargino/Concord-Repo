@@ -380,8 +380,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     peersRef.current.forEach((peer) => {
       try {
         if (videoTrack) {
-          if (peer.screenSender) {
-            peer.screenSender.replaceTrack(videoTrack).catch(() => {});
+          const videoSender = peer.screenSender || peer.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
+          if (videoSender) {
+            videoSender.replaceTrack(videoTrack).catch(() => {});
+            peer.screenSender = videoSender;
           } else {
             peer.screenSender = peer.pc.addTrack(videoTrack, stream);
           }

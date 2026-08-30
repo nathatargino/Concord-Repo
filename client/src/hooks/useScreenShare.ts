@@ -63,6 +63,7 @@ export function useScreenShare(
 ) {
   const streamRef = useRef<MediaStream | null>(null);
   const echoFilterRef = useRef<EchoFilter | null>(null);
+  const isRequestingRef = useRef<boolean>(false); // Trava contra cliques duplos / chamadas concorrentes
 
   /** Dispose any active echo filter */
   const disposeEchoFilter = useCallback(() => {
@@ -112,6 +113,7 @@ export function useScreenShare(
   }, [getRemoteAudioStreams, disposeEchoFilter]);
 
   const stopScreenShare = useCallback(() => {
+    isRequestingRef.current = false;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     disposeEchoFilter();
@@ -124,6 +126,11 @@ export function useScreenShare(
   }, [emit, removeScreenShareTrack, disposeEchoFilter]);
 
   const startScreenShare = useCallback(async () => {
+    if (isRequestingRef.current || useAppStore.getState().amSharing) {
+      return; // Ignora cliques repetidos / concorrentes
+    }
+    isRequestingRef.current = true;
+
     try {
       const stream = await captureDisplayMedia();
       streamRef.current = stream;
@@ -136,25 +143,33 @@ export function useScreenShare(
       useAppStore.getState().setAmSharing(true);
       playScreenShareStartSound();
 
-      // Listen for user stopping via browser UI
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        stopScreenShare();
-      });
+      // Listen for user stopping via browser UI (e.g. Chrome's "Stop sharing" floating bar)
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          stopScreenShare();
+        };
+      }
 
       const hasAudio = stream.getAudioTracks().length > 0;
       toast.success(hasAudio
         ? '🖥️ Compartilhamento de tela com áudio iniciado!'
         : '🖥️ Compartilhamento de tela iniciado!');
     } catch (err: unknown) {
-      // NotAllowedError / AbortError = user cancelled the picker → silent
+      // NotAllowedError / AbortError = usuário cancelou o picker → silencioso
       if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
         toast.error('Erro ao compartilhar tela');
         console.error('[ScreenShare] startScreenShare error:', err);
       }
+    } finally {
+      isRequestingRef.current = false; // Sempre libera a trava
     }
   }, [emit, addScreenShareTrack, stopScreenShare, filterLoopbackEcho]);
 
   const changeScreenShare = useCallback(async () => {
+    if (isRequestingRef.current) return;
+    isRequestingRef.current = true;
+
     try {
       const stream = await captureDisplayMedia();
 
@@ -167,9 +182,12 @@ export function useScreenShare(
       addScreenShareTrack(processed);
 
       // Listen for user stopping via browser UI
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        stopScreenShare();
-      });
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          stopScreenShare();
+        };
+      }
 
       toast.success('🖥️ Transmissão de tela alterada!');
     } catch (err: unknown) {
@@ -177,6 +195,8 @@ export function useScreenShare(
         toast.error('Erro ao trocar tela');
         console.error('[ScreenShare] changeScreenShare error:', err);
       }
+    } finally {
+      isRequestingRef.current = false;
     }
   }, [addScreenShareTrack, stopScreenShare, filterLoopbackEcho]);
 
