@@ -194,8 +194,9 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
         )}
       </div>
 
-      {/* Hidden YT player host */}
-      <div id="yt-host" style={{ position: 'absolute', top: '0', left: '0', width: '200px', height: '200px', opacity: 0.01, pointerEvents: 'none', zIndex: -999 }} />
+      {/* Hidden YT player host — kept fully rendered off-screen (not opacity/display:none,
+          which some browsers treat as "not visible" and refuse to autoplay with sound). */}
+      <div id="yt-host" style={{ position: 'fixed', left: '-10000px', top: '0', width: '320px', height: '180px', pointerEvents: 'none' }} />
     </div>
   );
 };

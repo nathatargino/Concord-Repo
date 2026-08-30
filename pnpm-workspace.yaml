@@ -2,5 +2,5 @@ packages:
   - 'server'
   - 'client'
 allowBuilds:
-  electron-winstaller: set this to true or false
+  electron-winstaller: false
   esbuild: true

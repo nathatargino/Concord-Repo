@@ -78,16 +78,27 @@ export function useYouTube(
         height: '200',
         width: '200',
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
-        playerVars: { 
+        playerVars: {
           autoplay: 0, // Do not autoplay the placeholder
-          controls: 0, 
+          controls: 0,
           modestbranding: 1,
           enablejsapi: 1,
+          playsinline: 1, // iOS/Safari: keep audio inline instead of forcing fullscreen
           ...(ytOrigin ? { origin: ytOrigin } : {})
         },
         events: {
           onReady: (event: any) => {
              console.log('[YT] onReady fired! player=', !!event.target);
+             // Grant the cross-origin YouTube iframe permission to autoplay
+             // with sound once the tab has a user gesture (web only).
+             try {
+               const iframe = playerRef.current?.getIframe?.();
+               if (iframe && !/autoplay/.test(iframe.getAttribute('allow') || '')) {
+                 iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+               }
+             } catch {
+               // ignore
+             }
              const { ytVol, callMuted } = useAudioStore.getState();
              const targetVol = callMuted ? 0 : ytVol;
              // Force-unmute at the Electron audio pipeline level immediately on ready
@@ -226,5 +237,16 @@ export function useYouTube(
     }
   }, [ensurePlayer]);
 
-  return { playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, unlock };
+  /**
+   * Build the hidden player ahead of time so that the first user gesture can
+   * call `playVideo()` synchronously (within the browser's activation window).
+   * Without this, `unlock()` awaits the network load of the IFrame API and the
+   * user-activation token expires before playback is attempted, so the
+   * autoplay-with-sound exception is never granted on the web.
+   */
+  const prewarm = useCallback(() => {
+    ensurePlayer().catch(() => {});
+  }, [ensurePlayer]);
+
+  return { playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, unlock, prewarm };
 }
