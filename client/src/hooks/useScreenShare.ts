@@ -152,9 +152,14 @@ export function useScreenShare(
       }
 
       const hasAudio = stream.getAudioTracks().length > 0;
-      toast.success(hasAudio
-        ? '🖥️ Compartilhamento de tela com áudio iniciado!'
-        : '🖥️ Compartilhamento de tela iniciado!');
+      if (hasAudio) {
+        toast.success('🖥️ Compartilhando tela com áudio!');
+      } else {
+        toast('🖥️ Compartilhando sem áudio. (Dica: selecione "Tela inteira" ou "Guia" para transmitir som)', {
+          icon: '💡',
+          duration: 4500,
+        });
+      }
     } catch (err: unknown) {
       // NotAllowedError / AbortError = usuário cancelou o picker → silencioso
       if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {

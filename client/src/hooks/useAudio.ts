@@ -196,31 +196,42 @@ export function useAudio() {
       const targetVol = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
 
       audioEl.srcObject = stream;
-      audioEl.volume = Math.min(1, targetVol);
-      audioEl.muted = false;
+      audioEl.volume = Math.min(1, Math.max(0, targetVol));
+      audioEl.muted = (callMuted || isLocalMuted || targetVol === 0);
+      
       audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
 
-      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
-      if (activeCtx.state === 'suspended') {
-        activeCtx.resume().catch(() => {});
-      }
-
-      let gainNode = screenAudioGains.get(userId);
-      if (!gainNode) {
-        try {
-          const source = activeCtx.createMediaStreamSource(stream);
-          gainNode = activeCtx.createGain();
-          source.connect(gainNode);
-          gainNode.connect(activeCtx.destination);
-          screenAudioGains.set(userId, gainNode);
-          audioEl.muted = true; // Web Audio API handles playback with amplification up to 200%
-        } catch (e) {
-          audioEl.muted = false;
+      // Optional GainNode for boost (> 100% volume)
+      if (targetVol > 1) {
+        const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+        if (activeCtx.state === 'suspended') {
+          activeCtx.resume().catch(() => {});
         }
-      }
-
-      if (gainNode) {
-        gainNode.gain.value = targetVol;
+        let gainNode = screenAudioGains.get(userId);
+        if (!gainNode) {
+          try {
+            const source = activeCtx.createMediaStreamSource(stream);
+            gainNode = activeCtx.createGain();
+            source.connect(gainNode);
+            gainNode.connect(activeCtx.destination);
+            screenAudioGains.set(userId, gainNode);
+            audioEl.muted = true; // Web Audio API handles playback with boost
+          } catch (e) {
+            audioEl.muted = false;
+          }
+        }
+        if (gainNode) {
+          gainNode.gain.value = targetVol;
+        }
+      } else {
+        // Direct HTML5 audio playback for maximum compatibility & zero silent-stream bugs
+        const gainNode = screenAudioGains.get(userId);
+        if (gainNode) {
+          try { gainNode.disconnect(); } catch {}
+          screenAudioGains.delete(userId);
+        }
+        audioEl.muted = (callMuted || isLocalMuted || targetVol === 0);
+        audioEl.volume = Math.min(1, Math.max(0, targetVol));
       }
     } catch (err) {
       console.warn('[useAudio] attachRemoteScreenAudio failed', err);

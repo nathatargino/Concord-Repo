@@ -104,6 +104,8 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // Remote tracks
       pc.ontrack = ({ track, streams }) => {
+        const stream = streams[0] || new MediaStream([track]);
+
         if (track.kind === 'audio') {
           const hasVideoInStream = (streams[0]?.getVideoTracks().length ?? 0) > 0;
           const isSecondAudio = peerData.micTrack && peerData.micTrack !== track;
@@ -112,43 +114,57 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
           if (isScreenAudio) {
             let screenAudioEl = peerData.screenAudioEl;
             if (!screenAudioEl) {
-              screenAudioEl = document.createElement('audio');
-              screenAudioEl.id = `remote-screen-audio-${peerId}`;
-              screenAudioEl.autoplay = true;
+              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
+              if (!screenAudioEl) {
+                screenAudioEl = document.createElement('audio');
+                screenAudioEl.id = `remote-screen-audio-${peerId}`;
+                screenAudioEl.autoplay = true;
+                (screenAudioEl as any).playsInline = true;
 
-              document.getElementById('remote-audios')?.appendChild(screenAudioEl);
+                const container = document.getElementById('remote-audios') || document.body;
+                container.appendChild(screenAudioEl);
+              }
               peerData.screenAudioEl = screenAudioEl;
             }
-            const stream = streams[0] || new MediaStream([track]);
+
+            screenAudioEl.srcObject = stream;
+            screenAudioEl.play().catch((err) => {
+              console.warn('[WebRTC] Remote screen audio autoplay blocked:', err);
+            });
+
             if (attachRemoteScreenAudio) {
               attachRemoteScreenAudio(screenAudioEl, stream, peerId);
-            } else {
-              screenAudioEl.srcObject = stream;
             }
           } else {
             peerData.micTrack = track;
             let audioEl = peerData.audioEl;
             if (!audioEl) {
-              audioEl = document.createElement('audio');
-              audioEl.id = `remote-audio-${peerId}`;
-              audioEl.autoplay = true;
+              audioEl = (document.getElementById(`remote-audio-${peerId}`) as HTMLAudioElement) || null;
+              if (!audioEl) {
+                audioEl = document.createElement('audio');
+                audioEl.id = `remote-audio-${peerId}`;
+                audioEl.autoplay = true;
+                (audioEl as any).playsInline = true;
 
-              document.getElementById('remote-audios')?.appendChild(audioEl);
+                const container = document.getElementById('remote-audios') || document.body;
+                container.appendChild(audioEl);
+              }
               peerData.audioEl = audioEl;
             }
-            const stream = streams[0] || new MediaStream([track]);
-            // Always route through GainNode so the volume slider works.
+
+            audioEl.srcObject = stream;
+            audioEl.play().catch((err) => {
+              console.warn('[WebRTC] Remote mic audio autoplay blocked:', err);
+            });
+
             if (attachRemoteStream) {
               attachRemoteStream(audioEl, stream, peerId);
-            } else {
-              audioEl.srcObject = stream;
             }
           }
         }
 
         if (track.kind === 'video') {
           // This is a screen share stream
-          const stream = streams[0] || new MediaStream([track]);
           remoteScreenStreamsRef.current.set(peerId, stream);
           setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
 
@@ -157,17 +173,26 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
           if (screenAudioTrack) {
             let screenAudioEl = peerData.screenAudioEl;
             if (!screenAudioEl) {
-              screenAudioEl = document.createElement('audio');
-              screenAudioEl.id = `remote-screen-audio-${peerId}`;
-              screenAudioEl.autoplay = true;
+              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
+              if (!screenAudioEl) {
+                screenAudioEl = document.createElement('audio');
+                screenAudioEl.id = `remote-screen-audio-${peerId}`;
+                screenAudioEl.autoplay = true;
+                (screenAudioEl as any).playsInline = true;
 
-              document.getElementById('remote-audios')?.appendChild(screenAudioEl);
+                const container = document.getElementById('remote-audios') || document.body;
+                container.appendChild(screenAudioEl);
+              }
               peerData.screenAudioEl = screenAudioEl;
             }
+
+            screenAudioEl.srcObject = stream;
+            screenAudioEl.play().catch((err) => {
+              console.warn('[WebRTC] Screen audio autoplay blocked:', err);
+            });
+
             if (attachRemoteScreenAudio) {
               attachRemoteScreenAudio(screenAudioEl, stream, peerId);
-            } else {
-              screenAudioEl.srcObject = stream;
             }
           }
 
@@ -377,15 +402,18 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
 
-    peersRef.current.forEach((peer) => {
+    peersRef.current.forEach(async (peer, peerId) => {
+      let needsRenegotiation = false;
+
       try {
         if (videoTrack) {
           const videoSender = peer.screenSender || peer.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
           if (videoSender) {
-            videoSender.replaceTrack(videoTrack).catch(() => {});
+            await videoSender.replaceTrack(videoTrack);
             peer.screenSender = videoSender;
           } else {
             peer.screenSender = peer.pc.addTrack(videoTrack, stream);
+            needsRenegotiation = true;
           }
         }
       } catch (err) {
@@ -394,33 +422,46 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       try {
         if (audioTrack) {
-          if (peer.screenAudioSender) {
-            peer.screenAudioSender.replaceTrack(audioTrack).catch(() => {});
+          const audioSender = peer.screenAudioSender;
+          if (audioSender) {
+            await audioSender.replaceTrack(audioTrack);
           } else {
-            // Add audio to the SAME stream as video so the receiver
-            // can detect it as screen audio (stream has video tracks)
             peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
+            needsRenegotiation = true;
           }
         } else if (peer.screenAudioSender) {
-          peer.screenAudioSender.replaceTrack(null).catch(() => {});
+          await peer.screenAudioSender.replaceTrack(null);
         }
       } catch (err) {
         console.warn('[WebRTC] Error adding screen audio track:', err);
       }
+
+      // Se novas tracks foram adicionadas e a conexão estiver estável, renegocia a oferta imediatamente
+      if (needsRenegotiation && peer.pc.signalingState === 'stable' && !peer.makingOffer) {
+        try {
+          peer.makingOffer = true;
+          await peer.pc.setLocalDescription();
+          emit('send_offer', peerId, peer.pc.localDescription!);
+        } catch (err) {
+          console.error('[WebRTC] Renegotiation offer error:', err);
+        } finally {
+          peer.makingOffer = false;
+        }
+      }
     });
-  }, []);
+  }, [emit]);
 
   const removeScreenShareTrack = useCallback(() => {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
     screenStreamRef.current = null;
 
-    peersRef.current.forEach((peer) => {
+    peersRef.current.forEach(async (peer) => {
       try {
         if (peer.screenSender) {
-          peer.screenSender.replaceTrack(null).catch(() => {});
+          await peer.screenSender.replaceTrack(null);
         }
         if (peer.screenAudioSender) {
-          peer.screenAudioSender.replaceTrack(null).catch(() => {});
+          await peer.screenAudioSender.replaceTrack(null);
         }
       } catch (err) {
         console.warn('[WebRTC] Error removing screen track:', err);
