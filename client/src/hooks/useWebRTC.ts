@@ -218,6 +218,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
           track.onended = () => {
             remoteScreenStreamsRef.current.delete(peerId);
             setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+            if (peerData.screenAudioEl) {
+              peerData.screenAudioEl.pause();
+              peerData.screenAudioEl.srcObject = null;
+            }
             if (useAppStore.getState().screenShareUserId === peerId) {
               useAppStore.getState().setScreenShare(null, null);
             }

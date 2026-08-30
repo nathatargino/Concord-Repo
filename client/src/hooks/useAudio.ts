@@ -192,17 +192,23 @@ export function useAudio() {
   const attachRemoteScreenAudio = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
       const { screenShareVol, callMuted, localMutedUsers } = useAudioStore.getState();
+      const currentWatchingId = useAppStore.getState().screenShareUserId;
+      const isWatching = currentWatchingId === userId;
       const isLocalMuted = localMutedUsers.includes(userId);
-      const targetVol = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+      const targetVol = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
 
       audioEl.srcObject = stream;
       audioEl.volume = Math.min(1, Math.max(0, targetVol));
-      audioEl.muted = (callMuted || isLocalMuted || targetVol === 0);
+      audioEl.muted = (callMuted || isLocalMuted || !isWatching || targetVol === 0);
       
-      audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
+      if (isWatching && targetVol > 0) {
+        audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
+      } else {
+        audioEl.pause();
+      }
 
       // Optional GainNode for boost (> 100% volume)
-      if (targetVol > 1) {
+      if (targetVol > 1 && isWatching) {
         const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
         if (activeCtx.state === 'suspended') {
           activeCtx.resume().catch(() => {});
@@ -230,7 +236,7 @@ export function useAudio() {
           try { gainNode.disconnect(); } catch {}
           screenAudioGains.delete(userId);
         }
-        audioEl.muted = (callMuted || isLocalMuted || targetVol === 0);
+        audioEl.muted = (callMuted || isLocalMuted || !isWatching || targetVol === 0);
         audioEl.volume = Math.min(1, Math.max(0, targetVol));
       }
     } catch (err) {
@@ -247,6 +253,8 @@ export function useAudio() {
 
   const applyRemoteSettings = useCallback(() => {
     const { remoteVol, screenShareVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
+    const currentWatchingId = useAppStore.getState().screenShareUserId;
+
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
       const userId = audio.id.replace('remote-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
@@ -264,20 +272,28 @@ export function useAudio() {
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((audio) => {
       const userId = audio.id.replace('remote-screen-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
-      const targetVol = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+      const isWatching = currentWatchingId === userId;
+      const targetVol = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
 
       const gainNode = screenAudioGains.get(userId);
       if (gainNode) {
         gainNode.gain.value = targetVol;
       } else {
-        audio.volume = Math.min(1, targetVol);
-        audio.muted = callMuted || isLocalMuted;
+        audio.volume = Math.min(1, Math.max(0, targetVol));
+        audio.muted = callMuted || isLocalMuted || !isWatching || targetVol === 0;
+      }
+
+      if (!isWatching || targetVol === 0) {
+        audio.pause();
+      } else if (audio.paused && targetVol > 0) {
+        audio.play().catch(() => {});
       }
     });
 
     screenAudioGains.forEach((gainNode, userId) => {
       const isLocalMuted = localMutedUsers.includes(userId);
-      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (screenShareVol / 100);
+      const isWatching = currentWatchingId === userId;
+      gainNode.gain.value = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
     });
   }, []);
 

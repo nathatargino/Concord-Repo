@@ -17,7 +17,7 @@ export const ScreenSharePanel: React.FC<Props> = ({
   onStartWatching,
   onStopWatching
 }) => {
-  const { screenShareUserId, screenShareUserName, amSharing } = useAppStore();
+  const { screenShareUserId, screenShareUserName, myId } = useAppStore();
   const { screenShareVol, setScreenShareVol } = useAudioStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,13 +33,13 @@ export const ScreenSharePanel: React.FC<Props> = ({
 
   // Notificar entrada/saída como espectador
   useEffect(() => {
-    if (screenShareUserId && !amSharing) {
+    if (screenShareUserId && screenShareUserId !== myId) {
       onStartWatchingRef.current?.(screenShareUserId);
       return () => {
         onStopWatchingRef.current?.(screenShareUserId);
       };
     }
-  }, [screenShareUserId, amSharing]);
+  }, [screenShareUserId, myId]);
 
   // Bind screenStream to the video element whenever stream changes
   useEffect(() => {
@@ -88,8 +88,8 @@ export const ScreenSharePanel: React.FC<Props> = ({
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // If not watching someone or if I am the one sharing, do not render floating viewer panel
-  if (!screenShareUserId || amSharing) return null;
+  // If not watching someone or if trying to watch myself, do not render floating viewer panel
+  if (!screenShareUserId || screenShareUserId === myId) return null;
 
   // Calculate default position (top right with 16px margin)
   const defaultPosition = { x: typeof window !== 'undefined' ? window.innerWidth - 496 : 0, y: 16 };

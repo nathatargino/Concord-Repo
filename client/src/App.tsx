@@ -106,15 +106,25 @@ export default function App() {
     }
   }, [navigate]);
 
-  // Sync audio volumes when store changes
+  // Sync audio volumes and screen share audio when stores change
   useEffect(() => {
-    const unsub = useAudioStore.subscribe(() => {
+    const unsubAudio = useAudioStore.subscribe(() => {
       audio.applyMicSettings();
       audio.applyRemoteSettings();
       audio.applyNoiseSuppressionSettings();
       yt.applyYTVolume();
     });
-    return unsub;
+
+    const unsubApp = useAppStore.subscribe((state, prevState) => {
+      if (state.screenShareUserId !== prevState.screenShareUserId) {
+        audio.applyRemoteSettings();
+      }
+    });
+
+    return () => {
+      unsubAudio();
+      unsubApp();
+    };
   }, [audio, yt]);
 
   // ─── WEBRTC SYSTEM ───────────────────────────────────────────────
