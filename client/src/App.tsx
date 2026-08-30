@@ -42,10 +42,19 @@ export default function App() {
     }, [])
   );
 
-  // Auto-unlock audio on any user interaction anywhere on screen
+  // Auto-unlock audio on any user interaction anywhere on screen.
+  // On the web, the browser's autoplay policy keeps freshly-created <audio>
+  // elements (remote mics, screen-share audio) and the YouTube player paused
+  // until the tab has seen a user gesture — so on the first gesture we both
+  // unlock the YT player and (re)start any remote audio that got blocked.
   useEffect(() => {
     const handleGlobalInteraction = () => {
       yt.unlock();
+      document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-"]').forEach((el) => {
+        if (el.paused && el.srcObject) {
+          el.play().catch(() => {});
+        }
+      });
     };
     window.addEventListener('pointerdown', handleGlobalInteraction);
     window.addEventListener('click', handleGlobalInteraction);
@@ -55,6 +64,13 @@ export default function App() {
       window.removeEventListener('click', handleGlobalInteraction);
       window.removeEventListener('keydown', handleGlobalInteraction);
     };
+  }, [yt]);
+
+  // Build the hidden YouTube player eagerly (once #yt-host is mounted) so the
+  // first click can start playback within the browser's user-activation window.
+  useEffect(() => {
+    const t = setTimeout(() => yt.prewarm(), 800);
+    return () => clearTimeout(t);
   }, [yt]);
 
   // ─── DEEP LINKING (Electron) ─────────────────────────────────────
@@ -144,6 +160,9 @@ export default function App() {
     onScreenViewerJoined: (viewer) => {
       playChimeSound();
       toast(`👁️ ${viewer.name} começou a assistir sua transmissão!`, { icon: '📺' });
+    },
+    onScreenShareStopped: (userId) => {
+      rtc.clearRemoteScreen(userId);
     },
     onRoomError: (msg) => {
       console.warn('[Room] Error:', msg);

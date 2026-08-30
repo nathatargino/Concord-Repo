@@ -115,6 +115,7 @@ export interface SocketCallbacks {
   onKickedFromVoice?: () => void;
   onKickedFromRoom?: () => void;
   onScreenViewerJoined?: (viewer: { id: string; name: string }) => void;
+  onScreenShareStopped?: (userId: string) => void;
 }
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
@@ -311,8 +312,9 @@ export function useSocket(callbacks: SocketCallbacks) {
       toast.success(`${userName} começou a compartilhar tela`);
     });
 
-    socket.on('user_stopped_screen_share', () => {
+    socket.on('user_stopped_screen_share', (userId: string) => {
       playScreenShareStopSound();
+      callbacksRef.current.onScreenShareStopped?.(userId);
       if (useAppStore.getState().screenShareUserId) {
         store.setScreenShare(null, null);
       }

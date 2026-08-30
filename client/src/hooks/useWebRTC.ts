@@ -15,6 +15,10 @@ interface PeerConnection {
   ignoreOffer: boolean;
   screenSender?: RTCRtpSender;
   screenAudioSender?: RTCRtpSender;
+  /** Set when a renegotiation was requested while the connection was not stable. */
+  renegotiateQueued?: boolean;
+  /** Queue-aware offer trigger (perfect-negotiation). */
+  makeOffer?: () => Promise<void>;
 }
 
 type AttachRemoteFn = (audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => void;
@@ -86,19 +90,33 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         }
       };
 
-      // Negotiation needed
-      pc.onnegotiationneeded = async () => {
+      // Queue-aware (re)negotiation. If the connection isn't stable yet
+      // (e.g. a screen track was added mid-handshake), remember that an offer
+      // is owed and fire it once we return to `stable` — otherwise the new
+      // track would never reach the remote peer.
+      const negotiate = async () => {
         try {
-          if (pc.signalingState !== 'stable') {
+          if (peerData.makingOffer || pc.signalingState !== 'stable') {
+            peerData.renegotiateQueued = true;
             return;
           }
           peerData.makingOffer = true;
           await pc.setLocalDescription();
           emit('send_offer', peerId, pc.localDescription!);
         } catch (err) {
-          console.error('[WebRTC] negotiationneeded error', err);
+          console.error('[WebRTC] negotiate error', err);
         } finally {
           peerData.makingOffer = false;
+        }
+      };
+      peerData.makeOffer = negotiate;
+
+      pc.onnegotiationneeded = negotiate;
+
+      pc.onsignalingstatechange = () => {
+        if (pc.signalingState === 'stable' && peerData.renegotiateQueued) {
+          peerData.renegotiateQueued = false;
+          negotiate();
         }
       };
 
@@ -402,8 +420,8 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const videoTrack = stream.getVideoTracks()[0];
     const audioTrack = stream.getAudioTracks()[0];
 
-    peersRef.current.forEach(async (peer, peerId) => {
-      let needsRenegotiation = false;
+    peersRef.current.forEach(async (peer) => {
+      let addedTrack = false;
 
       try {
         if (videoTrack) {
@@ -413,7 +431,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             peer.screenSender = videoSender;
           } else {
             peer.screenSender = peer.pc.addTrack(videoTrack, stream);
-            needsRenegotiation = true;
+            addedTrack = true;
           }
         }
       } catch (err) {
@@ -427,7 +445,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             await audioSender.replaceTrack(audioTrack);
           } else {
             peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
-            needsRenegotiation = true;
+            addedTrack = true;
           }
         } else if (peer.screenAudioSender) {
           await peer.screenAudioSender.replaceTrack(null);
@@ -436,20 +454,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         console.warn('[WebRTC] Error adding screen audio track:', err);
       }
 
-      // Se novas tracks foram adicionadas e a conexão estiver estável, renegocia a oferta imediatamente
-      if (needsRenegotiation && peer.pc.signalingState === 'stable' && !peer.makingOffer) {
-        try {
-          peer.makingOffer = true;
-          await peer.pc.setLocalDescription();
-          emit('send_offer', peerId, peer.pc.localDescription!);
-        } catch (err) {
-          console.error('[WebRTC] Renegotiation offer error:', err);
-        } finally {
-          peer.makingOffer = false;
-        }
+      // New transceivers require an SDP round-trip. Route through the
+      // queue-aware negotiator so the offer is still sent even if the
+      // connection is mid-handshake right now.
+      if (addedTrack) {
+        await peer.makeOffer?.();
       }
     });
-  }, [emit]);
+  }, []);
 
   const removeScreenShareTrack = useCallback(() => {
     screenStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -467,6 +479,29 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         console.warn('[WebRTC] Error removing screen track:', err);
       }
     });
+  }, []);
+
+  // Viewer-side teardown when a broadcaster stops sharing. The broadcaster
+  // stops via `replaceTrack(null)`, which fires `mute` (not `ended`) on the
+  // receiver, so `track.onended` never runs and the last frame would stay
+  // frozen. Driven explicitly by the `user_stopped_screen_share` signal.
+  const clearRemoteScreen = useCallback((userId: string) => {
+    remoteScreenStreamsRef.current.delete(userId);
+    setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+
+    const peer = peersRef.current.get(userId);
+    if (peer?.screenAudioEl) {
+      try {
+        peer.screenAudioEl.pause();
+        peer.screenAudioEl.srcObject = null;
+      } catch {
+        // ignore
+      }
+    }
+
+    if (useAppStore.getState().screenShareUserId === userId) {
+      useAppStore.getState().setScreenShare(null, null);
+    }
   }, []);
 
   // Collect remote voice MediaStreams so the echo filter can subtract them
@@ -487,6 +522,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     leaveVoice,
     addScreenShareTrack,
     removeScreenShareTrack,
+    clearRemoteScreen,
     remoteScreenStreams,
     getRemoteAudioStreams,
     onExistingVoiceUsers,
