@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './LoginModal.module.css';
 import { supabase } from '../lib/supabase';
+import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
 interface Props {
