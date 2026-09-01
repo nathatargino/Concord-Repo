@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import styles from './LoginModal.module.css';
+import lobbyStyles from '../pages/LobbyPage.module.css';
 import { supabase } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'anonymous'>('anonymous');
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -210,7 +211,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
   return (
     <div className={`${styles.overlay} ${visible ? styles.visible : ''}`}>
       <div className="auth-container">
-        <div className="auth-card">
+        <div className={mode === 'anonymous' ? lobbyStyles.card : "auth-card"}>
           {mode === 'login' ? (
             /* HTML 1: TELA DE LOGIN */
             <>
@@ -282,6 +283,10 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
                   </svg>
                   Entrar com Google
                 </button>
+
+                <button type="button" className="botao-secundario" style={{ marginTop: '10px' }} onClick={() => { setError(''); setMode('anonymous'); }}>
+                  Entrar como Anônimo
+                </button>
               </form>
 
               <p className="auth-rodape">
@@ -297,7 +302,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
                 </span>
               </p>
             </>
-          ) : (
+          ) : mode === 'register' ? (
             /* HTML 2: TELA DE CRIAR CONTA (CADASTRO) */
             <>
               <div className="auth-cabecalho">
@@ -378,6 +383,92 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
                 >
                   Entrar
                 </span>
+              </p>
+            </>
+          ) : (
+            /* HTML 3: TELA DE LOGIN ANÔNIMO */
+            <>
+              <div className={lobbyStyles.logoArea} style={{ marginBottom: '25px', marginTop: '10px' }}>
+                <div style={{
+                  width: '64px', height: '64px', margin: '0 auto 12px',
+                  borderRadius: '16px', background: 'linear-gradient(135deg, #7C3AED, #06B6D4)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px'
+                }}>
+                  🎵
+                </div>
+                <h1 className={lobbyStyles.logoText} style={{ fontSize: '28px' }}>Concord</h1>
+                <p className={lobbyStyles.tagline}>Música e voz em tempo real</p>
+              </div>
+
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                setError('');
+                if (!username.trim()) {
+                  setError('Por favor, informe um apelido.');
+                  return;
+                }
+                const cleanUsername = username.trim();
+                localStorage.setItem('concord_username', cleanUsername);
+                toast.success(`Bem-vindo, ${cleanUsername}!`);
+                onLogin(cleanUsername);
+              }}>
+                <div className={lobbyStyles.formGroup} style={{ marginBottom: '20px' }}>
+                  <label className={lobbyStyles.inputLabel} style={{ marginBottom: '6px' }}>Como você quer ser chamado?</label>
+                  <div className={lobbyStyles.codeInputWrapper}>
+                    <input
+                      className={lobbyStyles.codeInput}
+                      type="text"
+                      id="anon-usuario"
+                      placeholder="Digite seu apelido..."
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                      autoFocus
+                      style={{ textAlign: 'left', padding: '14px 20px' }}
+                    />
+                  </div>
+                </div>
+
+                {error && <div className={lobbyStyles.errorBox} style={{ marginBottom: '16px' }}>{error}</div>}
+
+                <button type="submit" className={lobbyStyles.actionBtn} style={{ width: '100%', padding: '16px' }}>
+                  Entrar no Concord →
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setError(''); setMode('login'); }}
+                  style={{
+                    width: '100%',
+                    marginTop: '12px',
+                    padding: '14px',
+                    backgroundColor: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    color: '#fff',
+                    borderRadius: '14px',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                    e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                  }}
+                >
+                  Logar com conta
+                </button>
+              </form>
+
+              <p className={lobbyStyles.footer} style={{ marginTop: '25px' }}>
+                Sem cadastro • Sem senha • Apenas uma conversa
               </p>
             </>
           )}
