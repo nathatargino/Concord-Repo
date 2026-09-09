@@ -2,7 +2,7 @@
   "name": "client",
   "productName": "Concord",
   "private": true,
-  "version": "1.0.39",
+  "version": "1.0.40",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "lint": "oxlint",
     "electron:dev": "cross-env ELECTRON=true vite",
     "electron:build": "tsc -p tsconfig.electron.json && cross-env ELECTRON=true vite build && electron-builder",
+    "electron:ci": "tsc -p tsconfig.electron.json && cross-env ELECTRON=true vite build && electron-builder --publish never",
     "electron:start": "pnpm run electron:build && start release\\win-unpacked\\Concord.exe",
     "preview": "vite preview"
   },

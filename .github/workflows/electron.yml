@@ -29,19 +29,33 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      - name: Build Electron App (without publishing)
-        run: pnpm --filter client run electron:build -- --publish never
+      - name: Build Electron App (no publish)
+        run: pnpm --filter client run electron:ci
 
-      - name: Create single GitHub Release with all assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: List release artifacts
         shell: bash
         run: |
+          echo "=== client/release contents ==="
+          find client/release -maxdepth 1 -type f | sort
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           TAG=${{ github.ref_name }}
+          EXE=$(find client/release -maxdepth 1 -name "*.exe" | head -1)
+          BLOCKMAP=$(find client/release -maxdepth 1 -name "*.exe.blockmap" | head -1)
+          LATESTYML=$(find client/release -maxdepth 1 -name "latest.yml" | head -1)
+
+          echo "EXE: $EXE"
+          echo "BLOCKMAP: $BLOCKMAP"
+          echo "LATEST.YML: $LATESTYML"
+
           gh release create "$TAG" \
             --title "$TAG" \
-            --notes "$TAG" \
+            --notes "Release $TAG" \
             --draft=false \
-            client/release/Concord-Setup.exe \
-            client/release/Concord-Setup.exe.blockmap \
-            client/release/latest.yml
+            "$EXE" \
+            ${BLOCKMAP:+"$BLOCKMAP"} \
+            ${LATESTYML:+"$LATESTYML"}
