@@ -684,6 +684,13 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
               onClick={(e) => {
                 if (viewingImage.startsWith('data:')) {
                   e.preventDefault();
+                  
+                  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                  if (isElectron && (window as any).electron?.openBase64InBrowser) {
+                      (window as any).electron.openBase64InBrowser(viewingImage);
+                      return;
+                  }
+
                   fetch(viewingImage)
                     .then(res => res.blob())
                     .then(blob => {

@@ -11,6 +11,7 @@ declare global {
             copyToClipboard?: (text: string) => void;
             forceUnmute?: () => void;
             onDeepLink?: (callback: (url: string) => void) => () => void;
+            openBase64InBrowser?: (data: string) => void;
         }
     }
 }
@@ -35,5 +36,6 @@ contextBridge.exposeInMainWorld('electron', {
         return () => {
             ipcRenderer.removeListener('deep-link', subscription);
         };
-    }
+    },
+    openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data)
 });

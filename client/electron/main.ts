@@ -356,3 +356,20 @@ ipcMain.on('window-close', () => {
     if (mainWindow) mainWindow.close();
 });
 
+ipcMain.on('open-base64-in-browser', (event, base64Data) => {
+    try {
+        const tempPath = path.join(os.tmpdir(), `concord-image-${Date.now()}.html`);
+        const html = `<!DOCTYPE html>
+<html>
+<head><title>Visualizador de Imagem - Concord</title></head>
+<body style="margin: 0; background: #0e0e18; display: flex; justify-content: center; align-items: center; height: 100vh;">
+  <img src="${base64Data}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+</body>
+</html>`;
+        fs.writeFileSync(tempPath, html, 'utf-8');
+        shell.openPath(tempPath);
+    } catch (e) {
+        console.error('Failed to open base64 image in browser', e);
+    }
+});
+
