@@ -373,3 +373,43 @@ ipcMain.on('open-base64-in-browser', (event, base64Data) => {
     }
 });
 
+// ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
+// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
+// because we use a separate folder (not the app install dir or userData)
+
+function getPrefsPath(): string {
+    // Use a stable path in the user's AppData that is NOT cleaned by the uninstaller
+    const appDataDir = path.join(os.homedir(), 'AppData', 'Roaming', 'ConcordUserData');
+    try {
+        if (!fs.existsSync(appDataDir)) {
+            fs.mkdirSync(appDataDir, { recursive: true });
+        }
+    } catch {}
+    return path.join(appDataDir, 'prefs.json');
+}
+
+ipcMain.on('save-preferences', (_event, prefs: Record<string, string>) => {
+    try {
+        const prefsPath = getPrefsPath();
+        // Merge with existing prefs so we never lose other saved keys
+        let existing: Record<string, string> = {};
+        if (fs.existsSync(prefsPath)) {
+            existing = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+        }
+        fs.writeFileSync(prefsPath, JSON.stringify({ ...existing, ...prefs }, null, 2), 'utf-8');
+    } catch (e) {
+        console.error('Failed to save preferences:', e);
+    }
+});
+
+ipcMain.handle('load-preferences', () => {
+    try {
+        const prefsPath = getPrefsPath();
+        if (fs.existsSync(prefsPath)) {
+            return JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+        }
+    } catch (e) {
+        console.error('Failed to load preferences:', e);
+    }
+    return {};
+});

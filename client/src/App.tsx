@@ -204,8 +204,24 @@ export default function App() {
     const tryJoin = async () => {
       let persistentId = localStorage.getItem('concord_pid');
       if (!persistentId) {
+        // Try loading from Electron prefs first (survives reinstalls)
+        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+        if (isElectron && (window as any).electron?.loadPreferences) {
+          const prefs = await (window as any).electron.loadPreferences().catch(() => ({}));
+          if (prefs?.concord_pid) {
+            persistentId = prefs.concord_pid;
+            localStorage.setItem('concord_pid', persistentId!);
+          }
+        }
+      }
+      if (!persistentId) {
         persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
         localStorage.setItem('concord_pid', persistentId);
+        // Save to Electron prefs so this ID is kept even after reinstall
+        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+        if (isElectron && (window as any).electron?.savePreferences) {
+          (window as any).electron.savePreferences({ concord_pid: persistentId });
+        }
       }
       
       const searchParams = new URLSearchParams(window.location.search);

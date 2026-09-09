@@ -35,12 +35,28 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
     const savedEmail = localStorage.getItem('concord_saved_email');
     if (savedEmail) setEmail(savedEmail);
 
-    const savedUsername = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
-    if (savedUsername) setUsername(savedUsername);
-
-    // Sync account name and avatar from active Supabase session if logged in
     const syncSession = async () => {
       try {
+        // 1. No Electron, tentar carregar prefs persistentes do arquivo (sobrevive a reinstalações)
+        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+        if (isElectron && (window as any).electron?.loadPreferences) {
+          const prefs = await (window as any).electron.loadPreferences();
+          if (prefs?.concord_username) {
+            // Sincroniza também no localStorage para o resto do app
+            localStorage.setItem('concord_username', prefs.concord_username);
+            if (prefs.concord_pid) localStorage.setItem('concord_pid', prefs.concord_pid);
+            if (prefs.concord_avatar_url) localStorage.setItem('concord_avatar_url', prefs.concord_avatar_url);
+            // Auto-login direto — sem mostrar modal
+            onLogin(prefs.concord_username);
+            return;
+          }
+        }
+
+        // 2. Tentar localStorage (web ou Electron sem arquivo ainda)
+        const savedUsername = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+        if (savedUsername) setUsername(savedUsername);
+
+        // 3. Sync account name and avatar from active Supabase session if logged in
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           if (user.email) setEmail(user.email);
@@ -59,6 +75,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
           const name = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
           if (name) {
             setUsername(name);
+            savePrefsToElectron({ concord_username: name });
             onLogin(name);
           }
         }
@@ -69,6 +86,19 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
 
     syncSession();
   }, [onLogin]);
+
+  // Helper: salva preferências no arquivo persistente do Electron (e no localStorage)
+  function savePrefsToElectron(prefs: Record<string, string>) {
+    // Sempre salva no localStorage como fallback
+    for (const [key, value] of Object.entries(prefs)) {
+      localStorage.setItem(key, value);
+    }
+    // No Electron, também salva no arquivo que sobrevive a reinstalações
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    if (isElectron && (window as any).electron?.savePreferences) {
+      (window as any).electron.savePreferences(prefs);
+    }
+  }
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +144,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
           }
 
           const displayName = profile?.username || data.user.user_metadata?.username || username || data.user.email?.split('@')[0] || 'Usuário';
-          localStorage.setItem('concord_username', displayName);
+          savePrefsToElectron({ concord_username: displayName });
           toast.success(`Bem-vindo de volta, ${displayName}!`);
           onLogin(displayName);
           return;
@@ -123,7 +153,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
 
       // Fallback para login direto com apelido ou email
       const fallbackName = username.trim() || email.split('@')[0] || 'Usuário';
-      localStorage.setItem('concord_username', fallbackName);
+      savePrefsToElectron({ concord_username: fallbackName });
       onLogin(fallbackName);
     } catch (err: any) {
       console.error('Login error:', err);
@@ -173,7 +203,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
         });
       }
 
-      localStorage.setItem('concord_username', cleanUsername);
+      savePrefsToElectron({ concord_username: cleanUsername });
       toast.success('Conta criada com sucesso! Conectando...');
       onLogin(cleanUsername);
     } catch (err: any) {

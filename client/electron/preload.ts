@@ -12,6 +12,8 @@ declare global {
             forceUnmute?: () => void;
             onDeepLink?: (callback: (url: string) => void) => () => void;
             openBase64InBrowser?: (data: string) => void;
+            savePreferences?: (prefs: Record<string, string>) => void;
+            loadPreferences?: () => Promise<Record<string, string>>;
         }
     }
 }
@@ -37,5 +39,7 @@ contextBridge.exposeInMainWorld('electron', {
             ipcRenderer.removeListener('deep-link', subscription);
         };
     },
-    openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data)
+    openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data),
+    savePreferences: (prefs: Record<string, string>) => ipcRenderer.send('save-preferences', prefs),
+    loadPreferences: () => ipcRenderer.invoke('load-preferences'),
 });
