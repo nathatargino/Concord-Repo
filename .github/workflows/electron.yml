@@ -29,23 +29,19 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      - name: Delete existing draft releases for this tag
+      - name: Build Electron App (without publishing)
+        run: pnpm --filter client run electron:build -- --publish never
+
+      - name: Create single GitHub Release with all assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
         shell: bash
         run: |
-          RELEASES=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases" | \
-            jq -r ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id")
-          for ID in $RELEASES; do
-            echo "Deleting draft release $ID"
-            curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$REPO/releases/$ID"
-          done
-
-      - name: Build and Publish Electron App
-        run: pnpm --filter client run electron:build -- --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG=${{ github.ref_name }}
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "$TAG" \
+            --draft=false \
+            client/release/Concord-Setup.exe \
+            client/release/Concord-Setup.exe.blockmap \
+            client/release/latest.yml
