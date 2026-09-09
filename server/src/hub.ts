@@ -387,10 +387,44 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       broadcastUserList(io, room);
       console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
 
-      // Send existing message history to newly joined user (servers only)
-      if (room.isServer && room.messageHistory.length > 0) {
-        for (const msg of room.messageHistory) {
-          socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+      // Send message history to newly joined user (servers only)
+      if (room.isServer) {
+        if (room.messageHistory.length > 0) {
+          // Use cached in-memory history (already loaded by a previous joiner this session)
+          for (const msg of room.messageHistory) {
+            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+          }
+        } else if (supabaseClient) {
+          // First join this session — load history from Supabase
+          try {
+            const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+            const roomIdForQuery = isValidUUID(room.id) ? room.id : null;
+            if (roomIdForQuery) {
+              const { data, error } = await supabaseClient
+                .from('messages')
+                .select('sender_name, content, created_at, msg_type, file_url, file_name, channel_id')
+                .eq('room_id', roomIdForQuery)
+                .order('created_at', { ascending: true })
+                .limit(300);
+
+              if (!error && data && data.length > 0) {
+                room.messageHistory = data.map((m: any) => ({
+                  userName: m.sender_name,
+                  message: m.content,
+                  timestamp: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }),
+                  type: m.msg_type || 'text',
+                  url: m.file_url || undefined,
+                  filename: m.file_name || undefined,
+                  channelId: m.channel_id || undefined,
+                }));
+                for (const msg of room.messageHistory) {
+                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+                }
+              }
+            }
+          } catch (dbErr) {
+            console.warn('[Hub] Error loading message history from Supabase:', dbErr);
+          }
         }
       }
     });
@@ -588,7 +622,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── CHAT MESSAGE ──────────────────────────────────────────────
-    socket.on('send_message', (message: string, type?, url?, filename?, channelId?) => {
+    socket.on('send_message', async (message: string, type?, url?, filename?, channelId?) => {
       if (!user.name) return;
       const room = getCurrentRoom();
       if (!room) return;
@@ -600,12 +634,31 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         timeZone: 'America/Sao_Paulo'
       });
 
-      // Persist message in history for server rooms (up to 500 messages)
+      // Persist message in history for server rooms (up to 500 in-memory)
       if (room.isServer) {
         if (room.messageHistory.length >= 500) {
           room.messageHistory.shift();
         }
         room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId });
+
+        // Save to Supabase asynchronously (fire-and-forget)
+        if (supabaseClient) {
+          const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          const roomIdForDb = isValidUUID(room.id) ? room.id : null;
+          if (roomIdForDb) {
+            supabaseClient.from('messages').insert({
+              room_id: roomIdForDb,
+              sender_name: user.name,
+              content: safe,
+              msg_type: type || 'text',
+              file_url: url || null,
+              file_name: filename || null,
+              channel_id: channelId || null,
+            }).then(({ error }: { error: any }) => {
+              if (error) console.warn('[Hub] Failed to save message to Supabase:', error.message);
+            });
+          }
+        }
       }
 
       io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId);
