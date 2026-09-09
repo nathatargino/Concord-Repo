@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
-    
+
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v3
@@ -20,7 +20,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-          
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
@@ -28,6 +28,22 @@ jobs:
 
       - name: Install Dependencies
         run: pnpm install
+
+      - name: Delete existing draft releases for this tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          RELEASES=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases" | \
+            jq -r ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id")
+          for ID in $RELEASES; do
+            echo "Deleting draft release $ID"
+            curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/$ID"
+          done
 
       - name: Build and Publish Electron App
         run: pnpm --filter client run electron:build -- --publish always
