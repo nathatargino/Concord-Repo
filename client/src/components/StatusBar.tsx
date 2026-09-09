@@ -75,24 +75,20 @@ export const StatusBar: React.FC = () => {
 
   const handleCopyCode = useCallback(() => {
     if (!room) return;
-    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-    const baseUrl = isElectron
-      ? 'https://concord-olive.vercel.app'
-      : window.location.origin;
-    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
+    const code = room.code;
     try {
       if ((window as any).electron?.copyToClipboard) {
-        (window as any).electron.copyToClipboard(inviteMessage);
-        toast.success('Código de convite copiado!');
+        (window as any).electron.copyToClipboard(code);
+        toast.success('Código copiado!');
       } else {
-        navigator.clipboard.writeText(inviteMessage).then(() => {
-          toast.success('Código de convite copiado!');
+        navigator.clipboard.writeText(code).then(() => {
+          toast.success('Código copiado!');
         });
       }
     } catch (err) {
       console.warn('Clipboard write failed:', err);
     }
-  }, [room, isServer]);
+  }, [room]);
 
   const handleLeaveRoom = useCallback(() => {
     useAppStore.getState().setRoom(null);

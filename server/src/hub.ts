@@ -18,6 +18,16 @@ type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEv
 const ROOM_DURATION_MS = 14 * 60 * 60 * 1000; // 14 hours
 const ROOM_CODE_LENGTH = 6;
 
+export interface StoredMessage {
+  userName: string;
+  message: string;
+  timestamp: string;
+  type?: string;
+  url?: string;
+  filename?: string;
+  channelId?: string;
+}
+
 export interface RoomState {
   id: string;
   code: string;
@@ -38,6 +48,7 @@ export interface RoomState {
   currentMusicToken: number | null;
   currentMusicVideoId: string | null;
   currentMusicStartTime: number | null;
+  messageHistory: StoredMessage[];
 }
 
 const rooms = new Map<string, RoomState>();
@@ -92,6 +103,7 @@ export function createRoom(
     currentMusicToken: null,
     currentMusicVideoId: null,
     currentMusicStartTime: null,
+    messageHistory: [],
   };
   rooms.set(id, room);
   codeToRoomId.set(code, id);
@@ -374,6 +386,13 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       socket.emit('room_joined', toRoomInfo(room));
       broadcastUserList(io, room);
       console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
+
+      // Send existing message history to newly joined user (servers only)
+      if (room.isServer && room.messageHistory.length > 0) {
+        for (const msg of room.messageHistory) {
+          socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+        }
+      }
     });
 
     // ─── SET USERNAME & AVATAR ─────────────────────────────────────
@@ -580,6 +599,15 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         minute: '2-digit',
         timeZone: 'America/Sao_Paulo'
       });
+
+      // Persist message in history for server rooms (up to 500 messages)
+      if (room.isServer) {
+        if (room.messageHistory.length >= 500) {
+          room.messageHistory.shift();
+        }
+        room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId });
+      }
+
       io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId);
     });
 
