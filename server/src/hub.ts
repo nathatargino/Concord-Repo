@@ -264,6 +264,12 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           cleanIdOrCode.toUpperCase().startsWith('SRV-') || 
           (fallbackCode && fallbackCode.toUpperCase().startsWith('SRV-'))
         );
+        
+        if (!isServer) {
+          socket.emit('room_error', 'Sala não encontrada ou expirada.');
+          return;
+        }
+
         const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
         room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
       }

@@ -128,8 +128,8 @@ export const LobbyPage: React.FC = () => {
         if (res.ok) serverRoom = await res.json();
       } catch {}
 
-      if (supabaseRoom || serverRoom || trimmed.length >= 4) {
-        const roomId = serverRoom?.id || supabaseRoom?.id || crypto.randomUUID();
+      if (supabaseRoom || serverRoom) {
+        const roomId = serverRoom?.id || supabaseRoom?.id;
         const roomCode = serverRoom?.code || supabaseRoom?.code || trimmed;
         const isServerParam = supabaseRoom?.is_server || serverRoom?.isServer ? '&server=1' : '';
         if (supabaseRoom?.is_server || serverRoom?.isServer) {

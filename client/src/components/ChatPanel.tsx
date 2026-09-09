@@ -61,6 +61,8 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   const [isDragging, setIsDragging] = useState(false);
   const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [imageZoom, setImageZoom] = useState<number>(1);
 
   const onEmojiClick = (emojiData: any) => {
     setInput(prev => prev + emojiData.emoji);
@@ -473,14 +475,18 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
                     ) : msg.type === 'image' && msg.url ? (
                       <>
                         <div className={styles.imageContainer}>
-                          <a href={msg.url} target="_blank" rel="noopener noreferrer">
-                            <img 
-                              src={msg.url} 
-                              alt={msg.filename || 'Imagem'} 
-                              className={styles.messageImage} 
-                              onLoad={() => scrollToBottom(false)}
-                            />
-                          </a>
+                          <img 
+                            src={msg.url} 
+                            alt={msg.filename || 'Imagem'} 
+                            className={styles.messageImage} 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              setViewingImage(msg.url!);
+                              setImageZoom(1);
+                            }}
+                            style={{ cursor: 'pointer' }}
+                            onLoad={() => scrollToBottom(false)}
+                          />
                         </div>
                         {msg.message && msg.message !== '📷 Imagem' && (
                           <p
@@ -666,6 +672,46 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
           )}
         </button>
       </div>
+
+      {viewingImage && (
+        <div className={styles.imageViewerOverlay} onClick={() => setViewingImage(null)}>
+          <div className={styles.imageViewerControls} onClick={(e) => e.stopPropagation()}>
+            <a 
+              href={viewingImage} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className={styles.imageViewerLink}
+              onClick={(e) => {
+                if (viewingImage.startsWith('data:')) {
+                  e.preventDefault();
+                  fetch(viewingImage)
+                    .then(res => res.blob())
+                    .then(blob => {
+                      const blobUrl = URL.createObjectURL(blob);
+                      window.open(blobUrl, '_blank');
+                    })
+                    .catch(() => {
+                      window.open(viewingImage, '_blank');
+                    });
+                }
+              }}
+            >
+              Abrir Original
+            </a>
+            <button className={styles.imageViewerClose} onClick={() => setViewingImage(null)}>×</button>
+          </div>
+          <img
+            src={viewingImage}
+            className={`${styles.imageViewerImage} ${imageZoom > 1 ? styles.zoomed : ''}`}
+            style={{ transform: `scale(${imageZoom})` }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setImageZoom(z => z === 1 ? 2 : 1);
+            }}
+            alt="Ampliada"
+          />
+        </div>
+      )}
     </div>
   );
 };
