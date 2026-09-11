@@ -1350,7 +1350,6 @@
   height: 100% !important;
   pointer-events: none !important;
   border: none !important;
-  transform: scale(1.1); /* Hides YouTube logo at the edges */
 }
 
 .ytHostSeeking {
