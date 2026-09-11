@@ -4,6 +4,7 @@ declare global {
     interface Window {
         electron: {
             getAppVersion: () => Promise<string>;
+            checkForUpdates: () => void;
             onUpdateMessage: (callback: (message: string) => void) => () => void;
             minimize: () => void;
             maximize: () => void;
@@ -28,6 +29,7 @@ declare global {
 
 contextBridge.exposeInMainWorld('electron', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    checkForUpdates: () => ipcRenderer.send('check-for-updates'),
     onUpdateMessage: (callback: (message: string) => void) => {
         const subscription = (_event: any, message: string) => callback(message);
         ipcRenderer.on('update-message', subscription);

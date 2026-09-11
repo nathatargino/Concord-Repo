@@ -92,10 +92,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     activeChannelId,
     currentVideoId,
     currentTrackTitle,
-    isPlaying,
-    musicStartTime,
-    setVisualizerActive,
-    isBuffering
+    isBuffering,
+    isPiPActive
   } = useAppStore();
 
   const { ytVol, setYtVol } = useAudioStore();
@@ -1035,10 +1033,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
                     {/* Global YT Host - always stays in main window */}
-                    <div style={{ display: useAppStore.getState().isPiPActive ? 'none' : 'block', width: '100%', height: '100%' }}>
+                    <div style={{ display: isPiPActive ? 'none' : 'block', width: '100%', height: '100%' }}>
                       <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
                     </div>
-                    {useAppStore.getState().isPiPActive && currentVideoId && (
+                    {isPiPActive && currentVideoId && (
                       <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                          <div className={styles.videoEmptyIcon}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg></div>
                          <p className={styles.videoEmptyTitle}>Reproduzindo no PiP</p>

@@ -410,6 +410,14 @@ ipcMain.on('close-pip-window', () => {
     }
 });
 
+ipcMain.on('check-for-updates', () => {
+    if (!isDev) {
+        autoUpdater.checkForUpdates();
+    } else {
+        if (mainWindow) mainWindow.webContents.send('update-message', 'Atualizações desabilitadas no modo de desenvolvimento.');
+    }
+});
+
 ipcMain.on('pip-action', (event, action, payload) => {
     // Forward action from PiP window to Main window
     if (mainWindow && !mainWindow.isDestroyed()) {

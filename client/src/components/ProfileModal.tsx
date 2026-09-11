@@ -18,6 +18,8 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,6 +97,19 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       }
     };
     fetchProfile();
+
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    if (isElectron && (window as any).electron) {
+      (window as any).electron.getAppVersion().then((version: string) => {
+        setAppVersion(version);
+      });
+      const unsubscribe = (window as any).electron.onUpdateMessage((msg: string) => {
+        setUpdateMessage(msg);
+      });
+      return () => {
+        if (unsubscribe) unsubscribe();
+      };
+    }
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -239,6 +254,41 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             {saving ? 'Salvando...' : 'Salvar Alterações'}
           </button>
         </form>
+
+        {appVersion && (
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            <h3 style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sistema</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '14px', color: '#fff', fontWeight: 600 }}>Concord Desktop</div>
+                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>Versão {appVersion}</div>
+                {updateMessage && (
+                  <div style={{ fontSize: '12px', color: '#3B82F6', marginTop: '4px' }}>{updateMessage}</div>
+                )}
+              </div>
+              <button 
+                onClick={(e) => {
+                  e.preventDefault();
+                  (window as any).electron?.checkForUpdates();
+                }}
+                style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'background 0.2s'
+                }}
+                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+              >
+                Verificar Atualizações
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
