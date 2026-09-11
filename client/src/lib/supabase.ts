@@ -487,7 +487,20 @@ export async function getMyServers(): Promise<SavedServer[]> {
     }
 
     // Retorna do localStorage, mas atualiza os metadados (nome/logo) buscando do Supabase
-    const raw = localStorage.getItem(MY_SERVERS_KEY);
+    let raw = localStorage.getItem(MY_SERVERS_KEY);
+    
+    // Fallback para as preferências do Electron (Desktop)
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    if ((!raw || raw === '[]') && isElectron && (window as any).electron?.loadPreferences) {
+       try {
+         const prefs = await (window as any).electron.loadPreferences();
+         if (prefs && prefs[MY_SERVERS_KEY]) {
+           raw = prefs[MY_SERVERS_KEY];
+           localStorage.setItem(MY_SERVERS_KEY, raw || '[]');
+         }
+       } catch (e) {}
+    }
+
     let localList: SavedServer[] = raw ? JSON.parse(raw) : [];
     localList = localList.filter(s => s.code && s.code.trim().length > 0);
     
