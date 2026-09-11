@@ -93,7 +93,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     currentVideoId,
     currentTrackTitle,
     isBuffering,
-    isPiPActive
+    isPiPActive,
+    isPlaying,
+    musicStartTime,
+    setVisualizerActive
   } = useAppStore();
 
   const { ytVol, setYtVol } = useAudioStore();
