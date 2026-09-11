@@ -159,6 +159,10 @@ export default function App() {
     onResumeYouTube: () => {
       if (useAppStore.getState().inVoice) yt.resumeYouTube();
     },
+    onMusicSeek: (time) => {
+      if (useAppStore.getState().inVoice) yt.seekTo(time);
+      store.setMusicStartTime(Date.now() - (time * 1000));
+    },
     onRoomJoined: (roomInfo) => {
       store.setRoom(roomInfo);
       if (roomInfo.isServer) {
@@ -508,6 +512,12 @@ export default function App() {
             onMusicAction={(action) => {
               socket.emit('music_action', action);
             }}
+            onMusicSeek={(time) => {
+              socket.emit('music_seek', time);
+              yt.seekTo(time);
+            }}
+            getYtCurrentTime={yt.getCurrentTime}
+            getYtDuration={yt.getDuration}
           />
         </div>
 

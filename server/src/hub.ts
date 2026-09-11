@@ -287,15 +287,20 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
             for (const candidate of candidates) {
               const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate);
-              const { data } = await supabaseClient
+              
+              // Tenta buscar sem a coluna is_server primeiro para não quebrar em bancos desatualizados
+              const { data, error } = await supabaseClient
                 .from('rooms')
-                .select('id, code, name, icon_url, is_server, created_by')
+                .select('id, code, name, icon_url, created_by')
                 .or(isUUID ? `id.eq.${candidate},code.ilike.${candidate}` : `code.ilike.${candidate}`)
-                .eq('is_server', true)
                 .maybeSingle();
 
+              if (error) {
+                console.warn('[Hub] Supabase fetch room error:', error.message);
+              }
+
               if (data) {
-                dbRoom = data;
+                dbRoom = { ...data, is_server: true }; // Assumimos que se achou no DB é um servidor para retrocompatibilidade
                 break;
               }
             }
@@ -489,7 +494,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (room.messageHistory.length > 0) {
           // Use cached in-memory history (already loaded by a previous joiner this session)
           for (const msg of room.messageHistory) {
-            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId);
           }
         } else if (supabaseClient) {
           // First join this session — load history from Supabase
@@ -515,7 +520,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                   channelId: m.channel_id || undefined,
                 }));
                 for (const msg of room.messageHistory) {
-                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type, msg.url, msg.filename, msg.channelId);
+                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId);
                 }
               }
             }
@@ -823,6 +828,13 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         broadcastQueueUpdate(io, room);
         io.to(room.id).emit('toast_notification', `${user.name} limpou a fila de música`, 'info');
       }
+    });
+
+    // ─── MUSIC SEEK ────────────────────────────────────────────────
+    socket.on('music_seek', (time: number) => {
+      const room = getCurrentRoom();
+      if (!room) return;
+      io.to(room.id).emit('music_seek', time);
     });
 
     // ─── REMOVE FROM QUEUE ─────────────────────────────────────────

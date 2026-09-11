@@ -75,6 +75,7 @@ interface ClientToServerEvents {
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
   request_music: (url: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
+  music_seek: (time: number) => void;
   remove_from_queue: (token: number) => void;
   reorder_queue: (oldIndex: number, newIndex: number) => void;
   music_ended: (token: number) => void;
@@ -110,6 +111,7 @@ export interface SocketCallbacks {
   onStopYouTube: (token: number) => void;
   onPauseYouTube: () => void;
   onResumeYouTube: () => void;
+  onMusicSeek: (time: number) => void;
   onRoomJoined?: (room: RoomInfo) => void;
   onRoomError?: (msg: string) => void;
   onKickedFromVoice?: () => void;
@@ -279,6 +281,10 @@ export function useSocket(callbacks: SocketCallbacks) {
     socket.on('music_resume', () => {
       store.setIsPlaying(true);
       callbacksRef.current.onResumeYouTube();
+    });
+
+    socket.on('music_seek' as any, (time: number) => {
+      callbacksRef.current.onMusicSeek?.(time);
     });
 
     socket.on('existing_voice_users', (userIds) => {

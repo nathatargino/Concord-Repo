@@ -74,6 +74,7 @@ export interface ClientToServerEvents {
   start_screen_share: () => void;
   stop_screen_share: () => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
+  music_seek: (time: number) => void;
   remove_from_queue: (token: number) => void;
   reorder_queue: (oldIndex: number, newIndex: number) => void;
   update_media_state: (micMuted: boolean, callMuted: boolean) => void;
@@ -108,6 +109,7 @@ export interface ServerToClientEvents {
   stop_youtube: (token: number) => void;
   music_pause: () => void;
   music_resume: () => void;
+  music_seek: (time: number) => void;
   existing_voice_users: (userIds: string[]) => void;
   user_joined_voice: (userId: string) => void;
   user_left_voice: (userId: string) => void;

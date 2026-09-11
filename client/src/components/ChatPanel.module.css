@@ -712,25 +712,13 @@
   overflow: hidden;
 }
 
-/* ── Iframe Wrapper ── */
-.videoIframeWrapper {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Iframe container with glow */
-.videoIframeContainer {
+/* ── Video Slot Wrapper & Custom Overlay Controls ── */
+.videoSlotWrapper {
   flex: 1;
   min-height: 0;
   position: relative;
   border-radius: 16px;
   overflow: hidden;
-  /* Fix para iframe não vazar pelas bordas arredondadas em alguns navegadores */
-  transform: translateZ(0);
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
   background: #000;
   box-shadow:
     0 0 0 1px rgba(124, 58, 237, 0.3),
@@ -738,12 +726,158 @@
     0 0 80px rgba(124, 58, 237, 0.15);
 }
 
-.videoIframe {
+.videoSlot {
   width: 100%;
   height: 100%;
-  border: none;
-  display: block;
   border-radius: 16px;
+  background: transparent;
+}
+
+.customVideoOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 10, 20, 0.8) 0%,
+    rgba(0, 0, 0, 0) 35%,
+    rgba(0, 0, 0, 0) 65%,
+    rgba(10, 10, 20, 0.9) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: auto;
+}
+
+.videoSlotWrapper:hover .customVideoOverlay,
+.customVideoOverlay:hover,
+.customVideoOverlayVisible {
+  opacity: 1;
+}
+
+.videoOverlayTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.videoOverlayTitle {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 85%;
+}
+
+.centerPlayBtn {
+  align-self: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(124, 58, 237, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 24px rgba(124, 58, 237, 0.6);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+}
+
+.centerPlayBtn:hover {
+  transform: scale(1.12);
+  background: rgba(139, 92, 246, 1);
+}
+
+.centerPlayBtn:active {
+  transform: scale(0.95);
+}
+
+.videoOverlayBottom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(14, 14, 26, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.timeText {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.seekContainer {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 24px;
+  cursor: pointer;
+}
+
+.seekBar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 5;
+  margin: 0;
+}
+
+.seekTrack {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+  pointer-events: none;
+}
+
+.seekFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7C3AED, #A78BFA);
+  border-radius: 3px;
+  transition: width 0.05s linear;
+}
+
+.overlayControlBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s, transform 0.2s;
+  border-radius: 6px;
+}
+
+.overlayControlBtn:hover {
+  color: white;
+  transform: scale(1.1);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* ── Empty state ── */
@@ -1128,4 +1262,73 @@
   background: rgba(239, 68, 68, 0.15);
   border-color: rgba(239, 68, 68, 0.5);
   box-shadow: 0 4px 16px rgba(239, 68, 68, 0.2);
+}
+
+.ytHostContainer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.ytHostContainer iframe {
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  border: none !important;
+}
+
+.hiddenSlot {
+  position: absolute !important;
+  left: -10000px !important;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.ytHostSeeking {
+  opacity: 0 !important;
+}
+
+.volumeContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 10px;
+}
+
+.volumeContainer svg {
+  color: white;
+  opacity: 0.8;
+}
+
+.volumeSlider {
+  width: 70px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.volumeSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
 }

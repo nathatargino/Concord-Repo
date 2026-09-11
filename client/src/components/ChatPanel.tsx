@@ -1,5 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
@@ -52,21 +54,22 @@ function parseLinks(text: string): string {
   });
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = (error) => reject(error);
-    reader.readAsDataURL(file);
-  });
+function formatTime(secs: number): string {
+  if (!secs || isNaN(secs) || secs < 0) return '00:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-interface Props {
-  onSendMessage: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
+interface ChatPanelProps {
+  onSendMessage?: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
   onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
+  onMusicSeek?: (time: number) => void;
+  getYtCurrentTime?: () => number;
+  getYtDuration?: () => number;
 }
 
-export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => {
+export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration }: ChatPanelProps) {
   const { 
     messages, 
     setMessages,
@@ -74,8 +77,18 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     room, 
     isServer, 
     channels, 
-    activeChannelId 
+    activeChannelId,
+    currentVideoId,
+    currentTrackTitle,
+    isPlaying,
+    musicStartTime,
+    musicQueue,
+    setVisualizerActive,
+    pipWindow,
+    setPipWindow
   } = useAppStore();
+
+  const { ytVol, setYtVol } = useAudioStore();
 
   const [input, setInput] = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
@@ -89,8 +102,6 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
-
-  const { currentVideoId, currentTrackTitle, isPlaying } = useAppStore();
 
   // Auto-fechar o player quando o vídeo parar de tocar
   useEffect(() => {
@@ -111,6 +122,109 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   const [cmdFilter, setCmdFilter] = useState<typeof SLASH_COMMANDS>([]);
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const cmdMenuRef = useRef<HTMLDivElement>(null);
+
+  // Custom Video Player Single-Player Teleport & Controls
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const seekLockRef = useRef<number>(0);
+  const [isSeekingLocked, setIsSeekingLocked] = useState(false);
+  
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(0);
+  const [isDraggingSeek, setIsDraggingSeek] = useState<boolean>(false);
+  const [seekValue, setSeekValue] = useState<number>(0);
+
+  // Notify store when ChatPanel mounts/unmounts
+  useEffect(() => {
+    setVisualizerActive(true);
+    return () => setVisualizerActive(false);
+  }, [setVisualizerActive]);
+
+
+
+  // Track video current time & duration for custom control bar
+  useEffect(() => {
+    if (!showVideoPlayer || !currentVideoId) return;
+
+    const timer = setInterval(() => {
+      if (Date.now() < seekLockRef.current) return;
+
+      if (getYtDuration) {
+        const d = getYtDuration();
+        if (d > 0) setDuration(d);
+      }
+
+      if (!isDraggingSeek) {
+        if (getYtCurrentTime) {
+          const c = getYtCurrentTime();
+          if (c > 0) {
+            setCurrentTime(c);
+            return;
+          }
+        }
+        if (musicStartTime && isPlaying) {
+          const elapsed = Math.max(0, (Date.now() - musicStartTime) / 1000);
+          setCurrentTime(elapsed);
+        }
+      }
+    }, 250);
+
+    return () => clearInterval(timer);
+  }, [showVideoPlayer, currentVideoId, isPlaying, musicStartTime, isDraggingSeek, getYtCurrentTime, getYtDuration]);
+
+  const activeTrackTitle = currentTrackTitle || 'Vídeo do YouTube';
+
+  const toggleFullscreen = () => {
+    const container = videoContainerRef.current;
+    if (!container) return;
+    if (!document.fullscreenElement) {
+      container.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  };
+
+  const togglePiP = async () => {
+    if (!('documentPictureInPicture' in window)) return;
+    try {
+      if (pipWindow) {
+        pipWindow.close();
+        return;
+      }
+      const pip = await (window as any).documentPictureInPicture.requestWindow({
+        width: 320,
+        height: 180
+      });
+      
+      Array.from(document.styleSheets).forEach(styleSheet => {
+        try {
+          if (styleSheet.href) {
+            const link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = styleSheet.href;
+            pip.document.head.appendChild(link);
+          } else {
+            const style = document.createElement('style');
+            style.textContent = Array.from(styleSheet.cssRules).map(r => r.cssText).join('');
+            pip.document.head.appendChild(style);
+          }
+        } catch (e) {}
+      });
+      
+      pip.document.body.style.margin = '0';
+      pip.document.body.style.padding = '0';
+      pip.document.body.style.background = '#000';
+      pip.document.body.style.overflow = 'hidden';
+      
+      pip.addEventListener('pagehide', () => {
+        setPipWindow(null);
+      });
+      
+      setPipWindow(pip);
+    } catch (e) {
+      console.error('PiP failed', e);
+    }
+  };
+
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -170,11 +284,6 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   // Barra de Pesquisa de Mensagens
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-
-  // YouTube embed URL (muted, visual only — audio comes from the hidden #yt-host player)
-  const ytEmbedUrl = currentVideoId
-    ? `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=0`
-    : null;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -362,7 +471,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
           saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
         }
 
-        onSendMessage(msgText, msgType, fileUrl, fileName, currentChannel);
+        onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel);
 
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
@@ -378,7 +487,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         saveMessageToSupabase(room.id, myName, trimmed, currentChannel, 'text');
       }
 
-      onSendMessage(trimmed, 'text', undefined, undefined, currentChannel);
+      onSendMessage?.(trimmed, 'text', undefined, undefined, currentChannel);
     }
 
     setInput('');
@@ -442,7 +551,7 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
       saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
     }
 
-    onSendMessage('GIF', 'giphy', gifUrl, undefined, currentChannel);
+    onSendMessage?.('GIF', 'giphy', gifUrl, undefined, currentChannel);
     setShowGiphy(false);
   };
 
@@ -875,20 +984,121 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
             <div className={styles.videoPlayerContainer}>
 
               {/* Player area */}
-              {currentVideoId ? (
-                <div className={styles.videoIframeWrapper}>
-                  <div className={styles.videoIframeContainer}>
-                    <iframe
-                      key={currentVideoId}
-                      src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&rel=0&modestbranding=1&color=white&iv_load_policy=3&playsinline=1`}
-                      className={styles.videoIframe}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      title={currentTrackTitle || 'Video Player'}
-                    />
+              {(() => {
+                const videoPlayerContent = (
+                  <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
+                    {/* Global YT Host */}
+                    <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked) ? styles.ytHostSeeking : ''}`} />
+
+                    {/* Custom Overlay Controls */}
+                    {currentVideoId && (
+                      <div className={styles.customVideoOverlay}>
+                        <div className={styles.videoOverlayTop}>
+                          <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
+                        </div>
+
+                        <button 
+                          className={styles.centerPlayBtn}
+                          onClick={() => onMusicAction?.(isPlaying ? 'pause' : 'play')}
+                          title={isPlaying ? 'Pausar' : 'Reproduzir'}
+                        >
+                          {isPlaying ? (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                          ) : (
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                          )}
+                        </button>
+
+                        <div className={styles.videoOverlayBottom}>
+                          <span className={styles.timeText}>{formatTime(isDraggingSeek ? seekValue : currentTime)}</span>
+                          
+                          <div className={styles.seekContainer}>
+                            <input
+                              type="range"
+                              min={0}
+                              max={duration || 100}
+                              step={0.1}
+                              value={isDraggingSeek ? seekValue : currentTime}
+                              className={styles.seekBar}
+                              onMouseDown={() => {
+                                setIsDraggingSeek(true);
+                                setSeekValue(currentTime);
+                              }}
+                              onTouchStart={() => {
+                                setIsDraggingSeek(true);
+                                setSeekValue(currentTime);
+                              }}
+                              onChange={(e) => setSeekValue(parseFloat(e.target.value))}
+                              onMouseUp={(e) => {
+                                setIsDraggingSeek(false);
+                                const targetTime = parseFloat((e.target as HTMLInputElement).value);
+                                seekLockRef.current = Date.now() + 1000;
+                                setIsSeekingLocked(true);
+                                setTimeout(() => setIsSeekingLocked(false), 1000);
+                                onMusicSeek?.(targetTime);
+                              }}
+                              onTouchEnd={(e) => {
+                                setIsDraggingSeek(false);
+                                const targetTime = parseFloat((e.target as HTMLInputElement).value);
+                                seekLockRef.current = Date.now() + 1000;
+                                setIsSeekingLocked(true);
+                                setTimeout(() => setIsSeekingLocked(false), 1000);
+                                onMusicSeek?.(targetTime);
+                              }}
+                            />
+                            <div className={styles.seekTrack}>
+                              <div 
+                                className={styles.seekFill} 
+                                style={{ width: `${Math.min(100, (((isDraggingSeek ? seekValue : currentTime) / (duration || 1)) * 100))}%` }} 
+                              />
+                            </div>
+                          </div>
+
+                          <span className={styles.timeText}>{formatTime(duration)}</span>
+
+                          <div className={styles.volumeContainer}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                            </svg>
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={ytVol}
+                              onChange={(e) => setYtVol(parseInt(e.target.value))}
+                              className={styles.volumeSlider}
+                              title="Volume"
+                            />
+                          </div>
+
+                          {'documentPictureInPicture' in window && (
+                            <button
+                              className={styles.overlayControlBtn}
+                              onClick={togglePiP}
+                              title={pipWindow ? "Fechar PiP" : "Picture-in-Picture"}
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="12" y="14" width="7" height="5" rx="1" ry="1"/></svg>
+                            </button>
+                          )}
+
+                          <button
+                            className={styles.overlayControlBtn}
+                            onClick={toggleFullscreen}
+                            title="Tela Cheia"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ) : (
+                );
+
+                return pipWindow ? createPortal(videoPlayerContent, pipWindow.document.body) : videoPlayerContent;
+              })()}
+              
+              {!currentVideoId && (
                 <div className={styles.videoEmptyState}>
                   <div className={styles.videoEmptyIcon}>
                     <IconNoVideo />

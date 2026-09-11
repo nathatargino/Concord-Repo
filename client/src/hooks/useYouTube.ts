@@ -1,5 +1,5 @@
 /// <reference types="youtube" />
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useMemo } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 
@@ -56,13 +56,15 @@ export function useYouTube(
 
       if (playerRef.current) return resolve(playerRef.current);
 
-      const container = document.getElementById('yt-host');
+      const { pipWindow } = useAppStore.getState();
+      const doc = pipWindow ? pipWindow.document : document;
+      const container = doc.getElementById('yt-host');
       if (!container) {
-        console.error('[YT] #yt-host not found in DOM!');
+        console.error('[YT] #yt-host not found in DOM! pipWindow=', !!pipWindow);
         return;
       }
 
-      const div = document.createElement('div');
+      const div = doc.createElement('div');
       div.id = 'yt-player-inner';
       container.appendChild(div);
 
@@ -74,16 +76,20 @@ export function useYouTube(
 
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
 
-      playerRef.current = new window.YT.Player('yt-player-inner', {
+      playerRef.current = new window.YT.Player(div, {
         height: '200',
         width: '200',
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: {
-          autoplay: 0, // Do not autoplay the placeholder
+          autoplay: 0,
           controls: 0,
           modestbranding: 1,
+          rel: 0,
+          showinfo: 0,
+          iv_load_policy: 3,
+          disablekb: 1,
           enablejsapi: 1,
-          playsinline: 1, // iOS/Safari: keep audio inline instead of forcing fullscreen
+          playsinline: 1,
           ...(ytOrigin ? { origin: ytOrigin } : {})
         },
         events: {
@@ -178,6 +184,7 @@ export function useYouTube(
       if (targetVol > 0) player.unMute();
       
       useAppStore.getState().setCurrentVideoId(videoId);
+      useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
     },
     [ensurePlayer]
@@ -206,11 +213,24 @@ export function useYouTube(
     const targetVol = callMuted ? 0 : ytVol;
     playerRef.current.setVolume(targetVol);
     
+    // The global player always provides the audio. The local Plyr instance is always muted.
     if (targetVol > 0) {
       playerRef.current.unMute();
     } else {
       playerRef.current.mute();
     }
+  }, []);
+
+  const seekTo = useCallback((seconds: number) => {
+    playerRef.current?.seekTo(seconds, true);
+  }, []);
+
+  const getCurrentTime = useCallback(() => {
+    return playerRef.current?.getCurrentTime?.() || 0;
+  }, []);
+
+  const getDuration = useCallback(() => {
+    return playerRef.current?.getDuration?.() || 0;
   }, []);
 
   const unlock = useCallback(async () => {
@@ -220,7 +240,6 @@ export function useYouTube(
     if (!useAppStore.getState().isPlaying) {
       try {
         const player = await ensurePlayer();
-        // Wait for player to be fully ready with API methods
         if (typeof player.mute !== 'function') return;
         
         player.mute();
@@ -229,7 +248,9 @@ export function useYouTube(
           if (useAppStore.getState().isPlaying) return;
           if (typeof player.stopVideo === 'function') player.stopVideo();
           const targetVol = useAudioStore.getState().callMuted ? 0 : useAudioStore.getState().ytVol;
-          if (targetVol > 0 && typeof player.unMute === 'function') player.unMute();
+          if (targetVol > 0 && typeof player.unMute === 'function') {
+            player.unMute();
+          }
         }, 500);
       } catch {
         // ignore
@@ -237,16 +258,12 @@ export function useYouTube(
     }
   }, [ensurePlayer]);
 
-  /**
-   * Build the hidden player ahead of time so that the first user gesture can
-   * call `playVideo()` synchronously (within the browser's activation window).
-   * Without this, `unlock()` awaits the network load of the IFrame API and the
-   * user-activation token expires before playback is attempted, so the
-   * autoplay-with-sound exception is never granted on the web.
-   */
   const prewarm = useCallback(() => {
     ensurePlayer().catch(() => {});
   }, [ensurePlayer]);
 
-  return { playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, unlock, prewarm };
+  return useMemo(() => ({ 
+    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration 
+  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration]);
 }
+

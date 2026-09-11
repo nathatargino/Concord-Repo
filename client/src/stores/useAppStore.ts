@@ -60,8 +60,14 @@ interface AppState {
   setCurrentVideoId: (id: string | null) => void;
   currentTrackTitle: string | null;
   setCurrentTrackTitle: (title: string | null) => void;
+  musicStartTime: number | null;
+  setMusicStartTime: (time: number | null) => void;
   isPlaying: boolean;
   setIsPlaying: (v: boolean) => void;
+  visualizerActive: boolean;
+  setVisualizerActive: (v: boolean) => void;
+  pipWindow: Window | null;
+  setPipWindow: (w: Window | null) => void;
 
   // Screen share
   screenShareUserId: string | null;
@@ -155,9 +161,15 @@ export const useAppStore = create<AppState>((set) => ({
   currentVideoId: null,
   setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
   currentTrackTitle: null,
-  setCurrentTrackTitle: (currentTrackTitle) => set({ currentTrackTitle }),
+  setCurrentTrackTitle: (title) => set({ currentTrackTitle: title }),
+  musicStartTime: null,
+  setMusicStartTime: (time) => set({ musicStartTime: time }),
   isPlaying: false,
   setIsPlaying: (isPlaying) => set({ isPlaying }),
+  visualizerActive: false,
+  setVisualizerActive: (visualizerActive) => set({ visualizerActive }),
+  pipWindow: null,
+  setPipWindow: (pipWindow) => set({ pipWindow }),
 
   // Screen share
   screenShareUserId: null,
@@ -187,6 +199,7 @@ export const useAppStore = create<AppState>((set) => ({
       currentVideoId: null,
       currentTrackTitle: null,
       isPlaying: false,
+      visualizerActive: false,
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,
