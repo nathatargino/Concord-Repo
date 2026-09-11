@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
-import { createPortal } from 'react-dom';
+
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import type { ChatMessage } from '../types';
@@ -96,8 +96,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     musicStartTime,
     setVisualizerActive,
     isBuffering,
-    pipWindow,
-    setPipWindow
+    isMiniPlayer,
+    toggleMiniPlayer
   } = useAppStore();
 
   const { ytVol, setYtVol } = useAudioStore();
@@ -196,62 +196,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   };
 
   const togglePiP = async () => {
-    if (!('documentPictureInPicture' in window)) {
-      alert('Seu navegador não suporta Picture-in-Picture. Recomendamos usar o Google Chrome mais recente.');
-      return;
-    }
-    try {
-      if (pipWindow) {
-        pipWindow.close();
-        return;
-      }
-      const pip = await (window as any).documentPictureInPicture.requestWindow({
-        width: 360,
-        height: 120
-      });
-
-      // Copy styles into the PiP window
-      Array.from(document.styleSheets).forEach(styleSheet => {
-        try {
-          if (styleSheet.href) {
-            const link = pip.document.createElement('link');
-            link.rel = 'stylesheet';
-            link.href = styleSheet.href;
-            pip.document.head.appendChild(link);
-          } else {
-            const style = pip.document.createElement('style');
-            style.textContent = Array.from(styleSheet.cssRules).map(r => r.cssText).join('');
-            pip.document.head.appendChild(style);
-          }
-        } catch (e) {}
-      });
-
-      // Base styles for the PiP window body
-      const baseStyle = pip.document.createElement('style');
-      baseStyle.textContent = `
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
-        body { background: #0d0d1a; overflow: hidden; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; padding: 10px 14px; }
-        .pip-title { color: #e2e8f0; font-size: 12px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-        .pip-controls { display: flex; gap: 8px; align-items: center; }
-        .pip-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background 0.15s; }
-        .pip-btn:hover { background: rgba(255,255,255,0.15); }
-        .pip-btn.accent { background: rgba(124,58,237,0.4); border-color: rgba(124,58,237,0.5); }
-        .pip-btn.accent:hover { background: rgba(124,58,237,0.6); }
-        .pip-seek { display: flex; align-items: center; gap: 6px; width: 100%; }
-        .pip-seek input[type=range] { flex: 1; accent-color: #7c3aed; height: 3px; cursor: pointer; }
-        .pip-time { color: rgba(255,255,255,0.5); font-size: 10px; }
-      `;
-      pip.document.head.appendChild(baseStyle);
-      pip.document.body.style.margin = '0';
-      pip.document.body.style.padding = '0';
-
-      pip.addEventListener('pagehide', () => {
-        setPipWindow(null);
-      });
-
-      setPipWindow(pip);
-    } catch (e) {
-      console.error('PiP failed', e);
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    if (isElectron) {
+      toggleMiniPlayer(!isMiniPlayer);
     }
   };
 
@@ -1128,15 +1075,25 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             />
                           </div>
 
-                          {'documentPictureInPicture' in window && (
-                            <button
-                              className={styles.overlayControlBtn}
-                              onClick={togglePiP}
-                              title={pipWindow ? "Fechar PiP" : "Picture-in-Picture"}
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="12" y="14" width="7" height="5" rx="1" ry="1"/></svg>
-                            </button>
-                          )}
+                          {(() => {
+                            const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                            return (
+                              <div className={styles.pipButtonWrapper}>
+                                <button
+                                  className={`${styles.overlayControlBtn} ${isMiniPlayer ? styles.btnActive : ''}`}
+                                  onClick={togglePiP}
+                                  title={isElectron ? (isMiniPlayer ? "Fechar PiP" : "Picture-in-Picture") : undefined}
+                                >
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="12" y="14" width="7" height="5" rx="1" ry="1"/></svg>
+                                </button>
+                                {!isElectron && (
+                                  <div className={styles.pipWebTooltip}>
+                                    Disponível apenas para <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">Desktop</a>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           <button
                             className={styles.overlayControlBtn}
@@ -1151,35 +1108,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </div>
                 );
 
-                const pipControlPanel = pipWindow ? (
-                  <div style={{
-                    display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    justifyContent: 'center', gap: '8px', width: '100%', padding: '8px 12px'
-                  }}>
-                    <p className="pip-title">{activeTrackTitle || 'Nenhuma música'}</p>
-                    <div className="pip-controls">
-                      <button className="pip-btn" onClick={() => onMusicAction?.('play')}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play
-                      </button>
-                      <button className="pip-btn accent" onClick={() => onMusicAction?.(isPlaying ? 'pause' : 'play')}>
-                        {isPlaying
-                          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                          : <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
-                        {isPlaying ? 'Pausar' : 'Continuar'}
-                      </button>
-                      <button className="pip-btn" onClick={() => onMusicAction?.('skip')}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2"/></svg> Skip
-                      </button>
-                    </div>
-                  </div>
-                ) : null;
-
-                return (
-                  <>
-                    {videoPlayerContent}
-                    {pipWindow && createPortal(pipControlPanel, pipWindow.document.body)}
-                  </>
-                );
+                return videoPlayerContent;
               })()}
               
               {!currentVideoId && (

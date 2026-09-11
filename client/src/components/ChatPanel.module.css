@@ -1407,3 +1407,46 @@
   color: var(--accent-bright) !important;
   background: rgba(124, 58, 237, 0.2) !important;
 }
+
+.pipButtonWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.pipWebTooltip {
+  visibility: hidden;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background-color: rgba(15, 15, 20, 0.95);
+  color: #fff;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.2s, visibility 0.2s;
+  pointer-events: none;
+}
+
+.pipButtonWrapper:hover .pipWebTooltip {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto; /* Allow clicking the link */
+}
+
+.pipWebTooltip a {
+  color: #7C3AED;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.pipWebTooltip a:hover {
+  text-decoration: underline;
+}

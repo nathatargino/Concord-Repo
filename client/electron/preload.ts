@@ -14,6 +14,7 @@ declare global {
             openBase64InBrowser?: (data: string) => void;
             savePreferences?: (prefs: Record<string, string>) => void;
             loadPreferences?: () => Promise<Record<string, string>>;
+            toggleMiniPlayer?: (isMini: boolean) => void;
         }
     }
 }
@@ -42,4 +43,5 @@ contextBridge.exposeInMainWorld('electron', {
     openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data),
     savePreferences: (prefs: Record<string, string>) => ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => ipcRenderer.invoke('load-preferences'),
+    toggleMiniPlayer: (isMini: boolean) => ipcRenderer.send('toggle-mini-player', isMini),
 });

@@ -28,6 +28,7 @@ export default function App() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const store = useAppStore();
+  const isMiniPlayer = useAppStore(s => s.isMiniPlayer);
   const [showLogin, setShowLogin] = useState(true);
   const [loginError, setLoginError] = useState('');
   const rawMicStreamRef = useRef<MediaStream | null>(null);
@@ -470,38 +471,40 @@ export default function App() {
 
 
   return (
-    <div className={styles.appContainer}>
+    <div className={`${styles.appContainer} ${isMiniPlayer ? styles.miniPlayerMode : ''}`}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
 
-      {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
+      {!isMiniPlayer && showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
-      <Sidebar 
-        onScreenShareClick={(id) => {
-          const u = store.users.find(x => x.id === id);
-          store.setScreenShare(id, u?.name);
-        }}
-        onJoinVoice={handleJoinVoice}
-        onLeaveVoice={handleLeaveVoice}
-        onStartScreenShare={screenShare.startScreenShare}
-        onStopScreenShare={screenShare.stopScreenShare}
-        onCreateChannel={(name) => socket.emit('create_channel', name)}
-        onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
-        onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
-        onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
-        onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
-        onUpdateProfile={(name, avatarUrl) => {
-          socket.emit('set_username', name, avatarUrl);
-          socket.emit('update_avatar', avatarUrl);
-        }}
-        onAdminAction={(action, targetId) => {
-          if (action === 'mute') socket.emit('admin_mute_user', targetId);
-          else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
-          else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
-          else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
-          else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
-          else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
-        }}
-      />
+      {!isMiniPlayer && (
+        <Sidebar 
+          onScreenShareClick={(id) => {
+            const u = store.users.find(x => x.id === id);
+            store.setScreenShare(id, u?.name);
+          }}
+          onJoinVoice={handleJoinVoice}
+          onLeaveVoice={handleLeaveVoice}
+          onStartScreenShare={screenShare.startScreenShare}
+          onStopScreenShare={screenShare.stopScreenShare}
+          onCreateChannel={(name) => socket.emit('create_channel', name)}
+          onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
+          onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
+          onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
+          onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
+          onUpdateProfile={(name, avatarUrl) => {
+            socket.emit('set_username', name, avatarUrl);
+            socket.emit('update_avatar', avatarUrl);
+          }}
+          onAdminAction={(action, targetId) => {
+            if (action === 'mute') socket.emit('admin_mute_user', targetId);
+            else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
+            else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
+            else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
+            else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
+            else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
+          }}
+        />
+      )}
 
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
@@ -522,7 +525,7 @@ export default function App() {
           />
         </div>
 
-        <div className={styles.sidePanels}>
+        <div className={styles.sidePanels} style={{ display: isMiniPlayer ? 'none' : 'flex' }}>
           <MusicPanel
             onRequestMusic={(url) => socket.emit('request_music', url)}
             onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
@@ -537,18 +540,22 @@ export default function App() {
         </div>
       </main>
 
-      <ScreenSharePanel 
-        onClose={() => store.setScreenShare(null)} 
-        screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
-        onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
-        onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
-      />
+      {!isMiniPlayer && (
+        <ScreenSharePanel 
+          onClose={() => store.setScreenShare(null)} 
+          screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
+          onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
+          onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
+        />
+      )}
       
-      <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
-        <StatusBar />
-      </div>
+      {!isMiniPlayer && (
+        <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
+          <StatusBar />
+        </div>
+      )}
 
-      <AccountModals />
+      {!isMiniPlayer && <AccountModals />}
     </div>
   );
 }

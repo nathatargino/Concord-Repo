@@ -38,6 +38,7 @@ app.userAgentFallback = app.userAgentFallback
 
 let mainWindow: BrowserWindowType | null = null;
 let localServerPort = 0;
+let previousBounds: Electron.Rectangle | null = null;
 
 function startLocalServer(): Promise<number> {
     return new Promise((resolve) => {
@@ -354,6 +355,35 @@ ipcMain.on('force-unmute', () => {
 
 ipcMain.on('window-close', () => {
     if (mainWindow) mainWindow.close();
+});
+
+ipcMain.on('toggle-mini-player', (event, isMini: boolean) => {
+    if (!mainWindow) return;
+    
+    if (isMini) {
+        // Save current bounds to restore later
+        previousBounds = mainWindow.getBounds();
+        
+        // Resize and make it always on top
+        mainWindow.setMinimumSize(320, 180);
+        mainWindow.setSize(400, 300);
+        mainWindow.setAlwaysOnTop(true, 'floating');
+        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        // Optionally move to bottom right corner
+        const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+        mainWindow.setPosition(width - 420, height - 320);
+    } else {
+        // Restore bounds
+        if (previousBounds) {
+            mainWindow.setBounds(previousBounds);
+            previousBounds = null;
+        } else {
+            mainWindow.setMinimumSize(800, 600);
+            mainWindow.setSize(1200, 800);
+        }
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.setVisibleOnAllWorkspaces(false);
+    }
 });
 
 ipcMain.on('open-base64-in-browser', (event, base64Data) => {

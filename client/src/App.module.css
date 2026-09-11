@@ -11,6 +11,21 @@
   /* Space for StatusBar */
 }
 
+.miniPlayerMode {
+  padding: 0;
+}
+
+.miniPlayerMode .mainContent {
+  padding: 0;
+  gap: 0;
+}
+
+.miniPlayerMode .chatSection {
+  border-radius: 0;
+  border: none;
+  min-width: unset;
+}
+
 .mainContent {
   flex: 1;
   display: flex;
