@@ -439,6 +439,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
                 }
                 const cleanUsername = username.trim();
                 localStorage.setItem('concord_username', cleanUsername);
+                savePrefsToElectron({ concord_username: cleanUsername });
                 toast.success(`Bem-vindo, ${cleanUsername}!`);
                 onLogin(cleanUsername);
               }}>

@@ -55,7 +55,8 @@ export interface ClientToServerEvents {
     type?: 'text' | 'image' | 'giphy' | 'file',
     url?: string,
     filename?: string,
-    channelId?: string
+    channelId?: string,
+    avatarUrl?: string | null
   ) => void;
   create_channel: (channelName: string) => void;
   edit_channel: (channelId: string, newName: string) => void;
@@ -95,7 +96,8 @@ export interface ServerToClientEvents {
     type?: 'text' | 'image' | 'giphy' | 'file',
     url?: string,
     filename?: string,
-    channelId?: string
+    channelId?: string,
+    avatarUrl?: string | null
   ) => void;
   channel_created: (channel: ServerChannel) => void;
   channel_updated: (channel: ServerChannel) => void;

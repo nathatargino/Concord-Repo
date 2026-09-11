@@ -1,13 +1,14 @@
-import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
-import EmojiPicker from 'emoji-picker-react';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
+
+const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
 // SVG Icons para o player de vídeo
 const IconVideo = () => (
@@ -71,7 +72,7 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 interface ChatPanelProps {
-  onSendMessage?: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
+  onSendMessage?: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string, avatarUrl?: string | null) => void;
   onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   onMusicSeek?: (time: number) => void;
   getYtCurrentTime?: () => number;
@@ -83,6 +84,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     messages, 
     setMessages,
     myName, 
+    myAvatarUrl,
     room, 
     isServer, 
     channels, 
@@ -479,7 +481,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
         }
 
-        onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel);
+        onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel, myAvatarUrl);
 
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
@@ -495,7 +497,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         saveMessageToSupabase(room.id, myName, trimmed, currentChannel, 'text');
       }
 
-      onSendMessage?.(trimmed, 'text', undefined, undefined, currentChannel);
+      onSendMessage?.(trimmed, 'text', undefined, undefined, currentChannel, myAvatarUrl);
     }
 
     setInput('');
@@ -559,7 +561,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
     }
 
-    onSendMessage?.('GIF', 'giphy', gifUrl, undefined, currentChannel);
+    onSendMessage?.('GIF', 'giphy', gifUrl, undefined, currentChannel, myAvatarUrl);
     setShowGiphy(false);
   };
 
@@ -699,12 +701,24 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     <span>{msg.message}</span>
                   </div>
                 ) : (
-                  <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
+                  <>
                     {!isMe && (
-                      <span className={styles.senderName}>{msg.userName}</span>
+                      <div className={styles.avatarWrapper}>
+                        {msg.avatarUrl ? (
+                          <img src={msg.avatarUrl} alt="Avatar" className={styles.avatarImage} />
+                        ) : (
+                          <div className={styles.avatarFallback}>
+                            {msg.userName.substring(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
                     )}
+                    <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
+                      {!isMe && (
+                        <span className={styles.senderName}>{msg.userName}</span>
+                      )}
 
-                    {/* Conteúdo da mensagem */}
+                      {/* Conteúdo da mensagem */}
                     {msg.type === 'giphy' && msg.url ? (
                       <div className={styles.gifContainer}>
                         <img 
@@ -769,6 +783,18 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
                     <span className={styles.timestamp}>{msg.timestamp}</span>
                   </div>
+                  {isMe && (
+                    <div className={styles.avatarWrapper}>
+                      {myAvatarUrl ? (
+                        <img src={myAvatarUrl} alt="Avatar" className={styles.avatarImage} />
+                      ) : (
+                        <div className={styles.avatarFallback}>
+                          {myName.substring(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </>
                 )}
               </div>
             );
@@ -878,7 +904,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
         {showEmojiPicker && (
           <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
-            <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
+            <Suspense fallback={<div style={{padding: '16px', color: '#aaa'}}>Carregando...</div>}>
+              <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
+            </Suspense>
           </div>
         )}
 

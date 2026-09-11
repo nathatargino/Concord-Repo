@@ -16,7 +16,8 @@ interface ServerToClientEvents {
     type?: 'text' | 'image' | 'giphy' | 'file',
     url?: string,
     filename?: string,
-    channelId?: string
+    channelId?: string,
+    avatarUrl?: string | null
   ) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
@@ -66,7 +67,8 @@ interface ClientToServerEvents {
     type?: 'text' | 'image' | 'giphy' | 'file',
     url?: string,
     filename?: string,
-    channelId?: string
+    channelId?: string,
+    avatarUrl?: string | null
   ) => void;
   create_channel: (channelName: string) => void;
   edit_channel: (channelId: string, newName: string) => void;
@@ -211,7 +213,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setUsers(users);
     });
 
-    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId) => {
+    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl) => {
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         userName,
@@ -221,6 +223,7 @@ export function useSocket(callbacks: SocketCallbacks) {
         url,
         filename,
         channelId: channelId || 'ch-geral',
+        avatarUrl: avatarUrl || null,
       };
       store.addMessage(newMsg);
     });

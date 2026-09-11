@@ -388,15 +388,16 @@ function getPrefsPath(): string {
     return path.join(appDataDir, 'prefs.json');
 }
 
-ipcMain.on('save-preferences', (_event, prefs: Record<string, string>) => {
+ipcMain.on('save-preferences', async (_event, prefs: Record<string, string>) => {
     try {
         const prefsPath = getPrefsPath();
         // Merge with existing prefs so we never lose other saved keys
         let existing: Record<string, string> = {};
         if (fs.existsSync(prefsPath)) {
-            existing = JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+            const raw = await fs.promises.readFile(prefsPath, 'utf-8');
+            existing = JSON.parse(raw);
         }
-        fs.writeFileSync(prefsPath, JSON.stringify({ ...existing, ...prefs }, null, 2), 'utf-8');
+        await fs.promises.writeFile(prefsPath, JSON.stringify({ ...existing, ...prefs }, null, 2), 'utf-8');
     } catch (e) {
         console.error('Failed to save preferences:', e);
     }

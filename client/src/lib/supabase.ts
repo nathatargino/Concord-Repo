@@ -408,9 +408,18 @@ export function saveMyServer(server: Partial<SavedServer> & { id: string }): voi
       });
     }
 
-    localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(list.slice(0, 50)));
+    const stringified = JSON.stringify(list.slice(0, 50));
+    localStorage.setItem(MY_SERVERS_KEY, stringified);
+    savePrefsToElectron({ [MY_SERVERS_KEY]: stringified });
   } catch (err) {
     console.warn('Erro ao salvar servidor local:', err);
+  }
+}
+
+export async function savePrefsToElectron(prefs: Record<string, string>) {
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+  if (isElectron && (window as any).electron?.savePreferences) {
+    (window as any).electron.savePreferences(prefs);
   }
 }
 
@@ -441,6 +450,7 @@ export async function getMyServers(): Promise<SavedServer[]> {
           if (allUserServerIds.length === 0) {
             // Usuário autenticado não possui nenhum servidor -> limpa lista local
             localStorage.setItem(MY_SERVERS_KEY, JSON.stringify([]));
+            savePrefsToElectron({ [MY_SERVERS_KEY]: JSON.stringify([]) });
             return [];
           }
 
@@ -468,6 +478,7 @@ export async function getMyServers(): Promise<SavedServer[]> {
           });
 
           localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(syncedList));
+          savePrefsToElectron({ [MY_SERVERS_KEY]: JSON.stringify(syncedList) });
           return syncedList;
         }
       } catch (syncErr) {
@@ -502,6 +513,7 @@ export async function getMyServers(): Promise<SavedServer[]> {
             return localServer;
           });
           localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(localList));
+          savePrefsToElectron({ [MY_SERVERS_KEY]: JSON.stringify(localList) });
         }
       } catch (err) {
         console.warn('Erro ao atualizar metadados locais:', err);
@@ -521,6 +533,7 @@ export function removeMyServer(serverId: string): void {
     let list: SavedServer[] = JSON.parse(raw);
     list = list.filter(s => s.id !== serverId);
     localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(list));
+    savePrefsToElectron({ [MY_SERVERS_KEY]: JSON.stringify(list) });
   } catch (err) {
     console.warn('Erro ao remover servidor salvo:', err);
   }

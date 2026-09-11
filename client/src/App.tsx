@@ -506,8 +506,8 @@ export default function App() {
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
           <ChatPanel 
-            onSendMessage={(msg, type, url, filename, channelId) => {
-              socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId);
+            onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
+              socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
             }}
             onMusicAction={(action) => {
               socket.emit('music_action', action);

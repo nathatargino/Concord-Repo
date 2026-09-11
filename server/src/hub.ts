@@ -26,6 +26,7 @@ export interface StoredMessage {
   url?: string;
   filename?: string;
   channelId?: string;
+  avatarUrl?: string | null;
 }
 
 export interface RoomState {
@@ -724,7 +725,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── CHAT MESSAGE ──────────────────────────────────────────────
-    socket.on('send_message', async (message: string, type?, url?, filename?, channelId?) => {
+    socket.on('send_message', async (message: string, type?, url?, filename?, channelId?, avatarUrl?) => {
       if (!user.name) return;
       const room = getCurrentRoom();
       if (!room) return;
@@ -741,7 +742,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (room.messageHistory.length >= 500) {
           room.messageHistory.shift();
         }
-        room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId });
+        room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId, avatarUrl });
 
         // Save to Supabase asynchronously (fire-and-forget)
         if (supabaseClient) {
@@ -756,6 +757,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
               file_url: url || null,
               file_name: filename || null,
               channel_id: channelId || null,
+              avatar_url: avatarUrl || null,
             }).then(({ error }: { error: any }) => {
               if (error) console.warn('[Hub] Failed to save message to Supabase:', error.message);
             });
@@ -763,7 +765,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
 
-      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId);
+      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId, avatarUrl);
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────

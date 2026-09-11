@@ -1332,3 +1332,54 @@
 .volumeSlider::-webkit-slider-thumb:hover {
   transform: scale(1.2);
 }
+
+/* ─── YouTube Player Hidden Container ─── */
+.ytHostContainer {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0.001;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.ytHostSeeking {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ─── Chat Avatars ─── */
+.avatarWrapper {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  margin: 0 6px;
+}
+
+.avatarImage {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+}
+
+.avatarFallback {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3B82F6, #8B5CF6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+  user-select: none;
+}
