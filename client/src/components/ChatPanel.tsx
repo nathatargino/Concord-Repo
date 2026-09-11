@@ -80,7 +80,7 @@ interface ChatPanelProps {
   onSetCC?: (enabled: boolean) => void;
 }
 
-export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration, onSetCC }: ChatPanelProps) {
+export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration }: ChatPanelProps) {
   const { 
     messages, 
     setMessages,
@@ -114,7 +114,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
-  const [ccEnabled, setCcEnabled] = useState(false);
 
   // Auto-fechar o player quando o vídeo parar de tocar
   useEffect(() => {
@@ -198,7 +197,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   const togglePiP = async () => {
     if (!('documentPictureInPicture' in window)) {
-      alert('Seu navegador não suporta a API de Picture-in-Picture usada (documentPictureInPicture). Recomendamos usar o Google Chrome mais recente para este recurso.');
+      alert('Seu navegador não suporta Picture-in-Picture. Recomendamos usar o Google Chrome mais recente.');
       return;
     }
     try {
@@ -207,34 +206,49 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         return;
       }
       const pip = await (window as any).documentPictureInPicture.requestWindow({
-        width: 320,
-        height: 180
+        width: 360,
+        height: 120
       });
-      
+
+      // Copy styles into the PiP window
       Array.from(document.styleSheets).forEach(styleSheet => {
         try {
           if (styleSheet.href) {
-            const link = document.createElement('link');
+            const link = pip.document.createElement('link');
             link.rel = 'stylesheet';
             link.href = styleSheet.href;
             pip.document.head.appendChild(link);
           } else {
-            const style = document.createElement('style');
+            const style = pip.document.createElement('style');
             style.textContent = Array.from(styleSheet.cssRules).map(r => r.cssText).join('');
             pip.document.head.appendChild(style);
           }
         } catch (e) {}
       });
-      
+
+      // Base styles for the PiP window body
+      const baseStyle = pip.document.createElement('style');
+      baseStyle.textContent = `
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background: #0d0d1a; overflow: hidden; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; padding: 10px 14px; }
+        .pip-title { color: #e2e8f0; font-size: 12px; font-weight: 600; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .pip-controls { display: flex; gap: 8px; align-items: center; }
+        .pip-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); color: white; border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: background 0.15s; }
+        .pip-btn:hover { background: rgba(255,255,255,0.15); }
+        .pip-btn.accent { background: rgba(124,58,237,0.4); border-color: rgba(124,58,237,0.5); }
+        .pip-btn.accent:hover { background: rgba(124,58,237,0.6); }
+        .pip-seek { display: flex; align-items: center; gap: 6px; width: 100%; }
+        .pip-seek input[type=range] { flex: 1; accent-color: #7c3aed; height: 3px; cursor: pointer; }
+        .pip-time { color: rgba(255,255,255,0.5); font-size: 10px; }
+      `;
+      pip.document.head.appendChild(baseStyle);
       pip.document.body.style.margin = '0';
       pip.document.body.style.padding = '0';
-      pip.document.body.style.background = '#000';
-      pip.document.body.style.overflow = 'hidden';
-      
+
       pip.addEventListener('pagehide', () => {
         setPipWindow(null);
       });
-      
+
       setPipWindow(pip);
     } catch (e) {
       console.error('PiP failed', e);
@@ -1029,8 +1043,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               {(() => {
                 const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
-                    {/* Global YT Host */}
-                    <div id="yt-host" className={`${pipWindow ? styles.ytHostPiP : styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
+                    {/* Global YT Host - always stays in main window */}
+                    <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
 
                     {/* Custom Overlay Controls */}
                     {currentVideoId && (
@@ -1114,22 +1128,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             />
                           </div>
 
-                          <button
-                            className={`${styles.overlayControlBtn} ${ccEnabled ? styles.btnActive : ''}`}
-                            onClick={() => {
-                              const next = !ccEnabled;
-                              setCcEnabled(next);
-                              onSetCC?.(next);
-                            }}
-                            title={ccEnabled ? "Desativar Legendas (CC)" : "Ativar Legendas (CC)"}
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect x="3" y="5" width="18" height="14" rx="2" ry="2"></rect>
-                              <path d="M9 14H7a2 2 0 0 1-2-2v-0a2 2 0 0 1 2-2h2"></path>
-                              <path d="M17 14h-2a2 2 0 0 1-2-2v-0a2 2 0 0 1 2-2h2"></path>
-                            </svg>
-                          </button>
-
                           {'documentPictureInPicture' in window && (
                             <button
                               className={styles.overlayControlBtn}
@@ -1153,20 +1151,24 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </div>
                 );
 
-                const pipPlaceholder = pipWindow ? (
-                  <div className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#09090b', borderRadius: '16px', border: '1px solid #27272a', position: 'relative' }}>
-                    <div style={{ textAlign: 'center', color: '#a1a1aa' }}>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }}>
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                        <rect x="12" y="14" width="7" height="5" rx="1" ry="1"/>
-                      </svg>
-                      <p style={{ margin: 0, fontSize: '14px', fontWeight: 500 }}>Reproduzindo em Picture-in-Picture</p>
-                      <p style={{ margin: '4px 0 0', fontSize: '12px', opacity: 0.7 }}>O vídeo está sendo exibido em uma janela flutuante.</p>
-                      <button 
-                        onClick={togglePiP}
-                        style={{ marginTop: '16px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
-                      >
-                        Retornar Vídeo
+                const pipControlPanel = pipWindow ? (
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center',
+                    justifyContent: 'center', gap: '8px', width: '100%', padding: '8px 12px'
+                  }}>
+                    <p className="pip-title">{activeTrackTitle || 'Nenhuma música'}</p>
+                    <div className="pip-controls">
+                      <button className="pip-btn" onClick={() => onMusicAction?.('play')}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg> Play
+                      </button>
+                      <button className="pip-btn accent" onClick={() => onMusicAction?.(isPlaying ? 'pause' : 'play')}>
+                        {isPlaying
+                          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                          : <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>}
+                        {isPlaying ? 'Pausar' : 'Continuar'}
+                      </button>
+                      <button className="pip-btn" onClick={() => onMusicAction?.('skip')}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2"/></svg> Skip
                       </button>
                     </div>
                   </div>
@@ -1174,8 +1176,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
                 return (
                   <>
-                    {pipPlaceholder}
-                    {pipWindow ? createPortal(videoPlayerContent, pipWindow.document.body) : videoPlayerContent}
+                    {videoPlayerContent}
+                    {pipWindow && createPortal(pipControlPanel, pipWindow.document.body)}
                   </>
                 );
               })()}
