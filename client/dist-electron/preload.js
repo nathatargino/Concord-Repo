@@ -21,5 +21,9 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
         return () => {
             electron_1.ipcRenderer.removeListener('deep-link', subscription);
         };
-    }
+    },
+    openBase64InBrowser: (data) => electron_1.ipcRenderer.send('open-base64-in-browser', data),
+    savePreferences: (prefs) => electron_1.ipcRenderer.send('save-preferences', prefs),
+    loadPreferences: () => electron_1.ipcRenderer.invoke('load-preferences'),
+    toggleMiniPlayer: (isMini) => electron_1.ipcRenderer.send('toggle-mini-player', isMini),
 });

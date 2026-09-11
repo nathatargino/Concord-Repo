@@ -64,6 +64,7 @@ electron_1.app.userAgentFallback = electron_1.app.userAgentFallback
     .replace(/concord\/\S+\s*/g, '');
 let mainWindow = null;
 let localServerPort = 0;
+let previousBounds = null;
 function startLocalServer() {
     return new Promise((resolve) => {
         const server = http.createServer((req, res) => {
@@ -251,13 +252,21 @@ electron_1.app.whenReady().then(() => {
         }
     });
     // Handle screen share requests natively
+    // Pass audio: 'loopback' so the system audio is captured alongside the screen video.
+    // Without this, getDisplayMedia({ audio: true }) from the renderer gets no audio track.
     electron_1.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-        electron_1.desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-            callback({ video: sources[0] });
+        electron_1.desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+            if (!sources.length) {
+                console.error('No desktop sources found');
+                // @ts-ignore – Electron types don't allow null but it's the documented way to reject
+                callback({ video: null, audio: null });
+                return;
+            }
+            callback({ video: sources[0], audio: 'loopback' });
         }).catch((err) => {
             console.error('Error getting desktop sources:', err);
             // @ts-ignore
-            callback({ video: null });
+            callback({ video: null, audio: null });
         });
     });
     const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -344,4 +353,91 @@ electron_1.ipcMain.on('force-unmute', () => {
 electron_1.ipcMain.on('window-close', () => {
     if (mainWindow)
         mainWindow.close();
+});
+electron_1.ipcMain.on('toggle-mini-player', (event, isMini) => {
+    if (!mainWindow)
+        return;
+    if (isMini) {
+        // Save current bounds to restore later
+        previousBounds = mainWindow.getBounds();
+        // Resize and make it always on top
+        mainWindow.setMinimumSize(320, 180);
+        mainWindow.setSize(400, 300);
+        mainWindow.setAlwaysOnTop(true, 'floating');
+        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+        // Optionally move to bottom right corner
+        const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+        mainWindow.setPosition(width - 420, height - 320);
+    }
+    else {
+        // Restore bounds
+        if (previousBounds) {
+            mainWindow.setBounds(previousBounds);
+            previousBounds = null;
+        }
+        else {
+            mainWindow.setMinimumSize(800, 600);
+            mainWindow.setSize(1200, 800);
+        }
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.setVisibleOnAllWorkspaces(false);
+    }
+});
+electron_1.ipcMain.on('open-base64-in-browser', (event, base64Data) => {
+    try {
+        const tempPath = path.join(os.tmpdir(), `concord-image-${Date.now()}.html`);
+        const html = `<!DOCTYPE html>
+<html>
+<head><title>Visualizador de Imagem - Concord</title></head>
+<body style="margin: 0; background: #0e0e18; display: flex; justify-content: center; align-items: center; height: 100vh;">
+  <img src="${base64Data}" style="max-width: 100%; max-height: 100%; object-fit: contain;" />
+</body>
+</html>`;
+        fs.writeFileSync(tempPath, html, 'utf-8');
+        electron_1.shell.openPath(tempPath);
+    }
+    catch (e) {
+        console.error('Failed to open base64 image in browser', e);
+    }
+});
+// ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
+// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
+// because we use a separate folder (not the app install dir or userData)
+function getPrefsPath() {
+    // Use a stable path in the user's AppData that is NOT cleaned by the uninstaller
+    const appDataDir = path.join(os.homedir(), 'AppData', 'Roaming', 'ConcordUserData');
+    try {
+        if (!fs.existsSync(appDataDir)) {
+            fs.mkdirSync(appDataDir, { recursive: true });
+        }
+    }
+    catch { }
+    return path.join(appDataDir, 'prefs.json');
+}
+electron_1.ipcMain.on('save-preferences', async (_event, prefs) => {
+    try {
+        const prefsPath = getPrefsPath();
+        // Merge with existing prefs so we never lose other saved keys
+        let existing = {};
+        if (fs.existsSync(prefsPath)) {
+            const raw = await fs.promises.readFile(prefsPath, 'utf-8');
+            existing = JSON.parse(raw);
+        }
+        await fs.promises.writeFile(prefsPath, JSON.stringify({ ...existing, ...prefs }, null, 2), 'utf-8');
+    }
+    catch (e) {
+        console.error('Failed to save preferences:', e);
+    }
+});
+electron_1.ipcMain.handle('load-preferences', () => {
+    try {
+        const prefsPath = getPrefsPath();
+        if (fs.existsSync(prefsPath)) {
+            return JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
+        }
+    }
+    catch (e) {
+        console.error('Failed to load preferences:', e);
+    }
+    return {};
 });
