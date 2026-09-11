@@ -70,8 +70,8 @@ interface AppState {
   setIsBuffering: (v: boolean) => void;
   pipWindow: Window | null;
   setPipWindow: (w: Window | null) => void;
-  isMiniPlayer: boolean;
-  toggleMiniPlayer: (isMini: boolean) => void;
+  isPiPActive: boolean;
+  setPiPActive: (v: boolean) => void;
 
   // Screen share
   screenShareUserId: string | null;
@@ -176,14 +176,8 @@ export const useAppStore = create<AppState>((set) => ({
   setIsBuffering: (v) => set({ isBuffering: v }),
   pipWindow: null,
   setPipWindow: (pipWindow) => set({ pipWindow }),
-  isMiniPlayer: false,
-  toggleMiniPlayer: (isMini) => {
-    set({ isMiniPlayer: isMini });
-    const electron = (window as any).electron;
-    if (electron?.toggleMiniPlayer) {
-      electron.toggleMiniPlayer(isMini);
-    }
-  },
+  isPiPActive: false,
+  setPiPActive: (isPiPActive) => set({ isPiPActive }),
 
   // Screen share
   screenShareUserId: null,

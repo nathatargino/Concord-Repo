@@ -15,6 +15,13 @@ declare global {
             savePreferences?: (prefs: Record<string, string>) => void;
             loadPreferences?: () => Promise<Record<string, string>>;
             toggleMiniPlayer?: (isMini: boolean) => void;
+            openPipWindow?: (initialState: any) => void;
+            closePipWindow?: () => void;
+            sendPipAction?: (action: string, payload?: any) => void;
+            sendPipSync?: (state: any) => void;
+            onPipAction?: (callback: (action: string, payload?: any) => void) => () => void;
+            onPipSync?: (callback: (state: any) => void) => () => void;
+            onPipClosed?: (callback: () => void) => () => void;
         }
     }
 }
@@ -44,4 +51,23 @@ contextBridge.exposeInMainWorld('electron', {
     savePreferences: (prefs: Record<string, string>) => ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => ipcRenderer.invoke('load-preferences'),
     toggleMiniPlayer: (isMini: boolean) => ipcRenderer.send('toggle-mini-player', isMini),
+    openPipWindow: (initialState: any) => ipcRenderer.send('open-pip-window', initialState),
+    closePipWindow: () => ipcRenderer.send('close-pip-window'),
+    sendPipAction: (action: string, payload?: any) => ipcRenderer.send('pip-action', action, payload),
+    sendPipSync: (state: any) => ipcRenderer.send('pip-sync', state),
+    onPipAction: (callback: (action: string, payload?: any) => void) => {
+        const subscription = (_event: any, action: string, payload?: any) => callback(action, payload);
+        ipcRenderer.on('pip-action', subscription);
+        return () => ipcRenderer.removeListener('pip-action', subscription);
+    },
+    onPipSync: (callback: (state: any) => void) => {
+        const subscription = (_event: any, state: any) => callback(state);
+        ipcRenderer.on('pip-sync', subscription);
+        return () => ipcRenderer.removeListener('pip-sync', subscription);
+    },
+    onPipClosed: (callback: () => void) => {
+        const subscription = () => callback();
+        ipcRenderer.on('pip-closed', subscription);
+        return () => ipcRenderer.removeListener('pip-closed', subscription);
+    }
 });

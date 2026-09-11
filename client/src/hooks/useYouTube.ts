@@ -182,7 +182,8 @@ export function useYouTube(
                 }
                 
                 const { ytVol, callMuted } = useAudioStore.getState();
-                const targetVol = callMuted ? 0 : ytVol;
+                const { isPiPActive } = useAppStore.getState();
+                const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
                 if (targetVol > 0) {
                   playerRef.current?.unMute();
                   playerRef.current?.setVolume(targetVol);
@@ -222,7 +223,8 @@ export function useYouTube(
       player.loadVideoById(videoId, Math.floor(startSeconds));
 
       const { ytVol, callMuted } = useAudioStore.getState();
-      const targetVol = callMuted ? 0 : ytVol;
+      const { isPiPActive } = useAppStore.getState();
+      const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
       player.setVolume(targetVol);
       if (targetVol > 0) player.unMute();
       
@@ -253,7 +255,8 @@ export function useYouTube(
   const applyYTVolume = useCallback(() => {
     if (!playerRef.current) return;
     const { ytVol, callMuted } = useAudioStore.getState();
-    const targetVol = callMuted ? 0 : ytVol;
+    const { isPiPActive } = useAppStore.getState();
+    const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
     playerRef.current.setVolume(targetVol);
     
     // The global player always provides the audio. The local Plyr instance is always muted.

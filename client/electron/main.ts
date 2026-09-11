@@ -225,6 +225,8 @@ app.on('open-url', (event, url) => {
 });
 
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
+let pipWindow: BrowserWindow | null = null;
+
 app.whenReady().then(() => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
     
@@ -357,32 +359,68 @@ ipcMain.on('window-close', () => {
     if (mainWindow) mainWindow.close();
 });
 
-ipcMain.on('toggle-mini-player', (event, isMini: boolean) => {
-    if (!mainWindow) return;
-    
-    if (isMini) {
-        // Save current bounds to restore later
-        previousBounds = mainWindow.getBounds();
-        
-        // Resize and make it always on top
-        mainWindow.setMinimumSize(320, 180);
-        mainWindow.setSize(400, 300);
-        mainWindow.setAlwaysOnTop(true, 'floating');
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-        // Optionally move to bottom right corner
-        const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
-        mainWindow.setPosition(width - 420, height - 320);
-    } else {
-        // Restore bounds
-        if (previousBounds) {
-            mainWindow.setBounds(previousBounds);
-            previousBounds = null;
-        } else {
-            mainWindow.setMinimumSize(800, 600);
-            mainWindow.setSize(1200, 800);
+ipcMain.on('open-pip-window', (event, initialState) => {
+    if (pipWindow) {
+        pipWindow.focus();
+        return;
+    }
+
+    const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+
+    pipWindow = new BrowserWindow({
+        width: 320,
+        height: 180,
+        x: width - 340,
+        y: height - 200,
+        alwaysOnTop: true,
+        frame: false,
+        transparent: true,
+        resizable: true,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: path.join(__dirname, 'preload.js')
         }
-        mainWindow.setAlwaysOnTop(false);
-        mainWindow.setVisibleOnAllWorkspaces(false);
+    });
+
+    pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+
+    // Ensure it uses a hash route to render just the PiP
+    if (process.env.VITE_DEV_SERVER_URL) {
+        pipWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/pip`);
+    } else {
+        pipWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: '/pip' });
+    }
+
+    pipWindow.webContents.on('did-finish-load', () => {
+        pipWindow?.webContents.send('pip-sync', initialState);
+    });
+
+    pipWindow.on('closed', () => {
+        pipWindow = null;
+        if (mainWindow) {
+            mainWindow.webContents.send('pip-closed');
+        }
+    });
+});
+
+ipcMain.on('close-pip-window', () => {
+    if (pipWindow) {
+        pipWindow.close();
+    }
+});
+
+ipcMain.on('pip-action', (event, action, payload) => {
+    // Forward action from PiP window to Main window
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('pip-action', action, payload);
+    }
+});
+
+ipcMain.on('pip-sync', (event, state) => {
+    // Forward sync state from Main window to PiP window
+    if (pipWindow && !pipWindow.isDestroyed()) {
+        pipWindow.webContents.send('pip-sync', state);
     }
 });
 

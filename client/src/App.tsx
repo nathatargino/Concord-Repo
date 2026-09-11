@@ -14,6 +14,7 @@ import type { UserInfo } from './types';
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
 import { ChatPanel } from './components/ChatPanel';
+import { PiPPlayer } from './components/PiPPlayer';
 
 import { MusicPanel } from './components/MusicPanel';
 import { AudioControls } from './components/AudioControls';
@@ -28,7 +29,7 @@ export default function App() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
   const store = useAppStore();
-  const isMiniPlayer = useAppStore(s => s.isMiniPlayer);
+  const isPiPActive = useAppStore(s => s.isPiPActive);
   const [showLogin, setShowLogin] = useState(true);
   const [loginError, setLoginError] = useState('');
   const rawMicStreamRef = useRef<MediaStream | null>(null);
@@ -53,7 +54,7 @@ export default function App() {
       yt.unlock();
       document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-"]').forEach((el) => {
         if (el.paused && el.srcObject) {
-          el.play().catch(() => {});
+          el.play().catch(() => { });
         }
       });
     };
@@ -128,6 +129,11 @@ export default function App() {
     };
   }, [audio, yt]);
 
+  // Sync YT mute when PiP toggles
+  useEffect(() => {
+    yt.applyYTVolume();
+  }, [isPiPActive, yt]);
+
   // ─── WEBRTC SYSTEM ───────────────────────────────────────────────
   const rtc = useWebRTC(
     (event, ...args) => socket.emit(event as any, ...args),
@@ -135,7 +141,7 @@ export default function App() {
     audio.attachRemoteScreenAudio
   );
 
-  let handleLeaveVoice = () => {};
+  let handleLeaveVoice = () => { };
 
   // ─── SOCKET CONNECTION ───────────────────────────────────────────
   const socket = useSocket({
@@ -228,15 +234,15 @@ export default function App() {
           (window as any).electron.savePreferences({ concord_pid: persistentId });
         }
       }
-      
+
       const searchParams = new URLSearchParams(window.location.search);
-      const hashParams = window.location.hash.includes('?') 
+      const hashParams = window.location.hash.includes('?')
         ? new URLSearchParams(window.location.hash.substring(window.location.hash.indexOf('?')))
         : new URLSearchParams();
 
       const codeParam = searchParams.get('code') || hashParams.get('code') || (roomId.startsWith('SRV-') ? roomId : '');
       const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.startsWith('SRV-') || roomId.startsWith('SRV-');
-      
+
       // Consultar metadados reais do Supabase para obter ID canônico, nome, logo e autor
       const dbRoom = await findRoomInSupabase(roomId || codeParam);
       const targetRoomId = dbRoom?.id || roomId;
@@ -309,7 +315,7 @@ export default function App() {
 
     const timer = setTimeout(tryJoin, 100);
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
   // ─── LOGIN E NOME DE USUÁRIO ───────────────────────────────────────
@@ -378,10 +384,10 @@ export default function App() {
     const lowerMyName = store.myName.trim().toLowerCase();
 
     const isDuplicate = store.users.some(
-      (u: UserInfo) => 
-        u.id !== currentSocketId && 
+      (u: UserInfo) =>
+        u.id !== currentSocketId &&
         (!myPersistentId || u.persistentId !== myPersistentId) &&
-        u.name && 
+        u.name &&
         u.name.trim().toLowerCase() === lowerMyName
     );
 
@@ -413,10 +419,10 @@ export default function App() {
     const myPersistentId = localStorage.getItem('concord_pid');
     const lowerMyName = store.myName.trim().toLowerCase();
     const isDuplicate = store.users.some(
-      (u: UserInfo) => 
-        u.id !== currentSocketId && 
+      (u: UserInfo) =>
+        u.id !== currentSocketId &&
         (!myPersistentId || u.persistentId !== myPersistentId) &&
-        u.name && 
+        u.name &&
         u.name.trim().toLowerCase() === lowerMyName
     );
 
@@ -461,7 +467,7 @@ export default function App() {
     // NÃO para o player — assim ele retoma quando o usuário voltar à call.
     yt.pauseYouTube();
     stopSpeaking(store.myId);
-    
+
     // Ensure the raw microphone stream is also stopped
     if (rawMicStreamRef.current) {
       rawMicStreamRef.current.getTracks().forEach((t: MediaStreamTrack) => t.stop());
@@ -471,13 +477,19 @@ export default function App() {
 
   const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
+  const isPipRoute = window.location.hash.startsWith('#/pip');
+
+  if (isPipRoute) {
+    return <PiPPlayer />;
+  }
+
   return (
-    <div className={`${styles.appContainer} ${isMiniPlayer ? styles.miniPlayerMode : ''}`}>
+    <div className={`${styles.appContainer}`}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
 
-      {(!isElectron && !isMiniPlayer) && (
+      {(!isElectron && !isPiPActive) && (
         <div className={styles.webTopBar}>
-          <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/nathatargino/Concord-Repo/releases/download/v1.0.46/Concord-Setup.exe" target="_blank" rel="noopener noreferrer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'text-bottom' }}>
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
@@ -488,41 +500,39 @@ export default function App() {
         </div>
       )}
 
-      {!isMiniPlayer && showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
+      {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
-      {!isMiniPlayer && (
-        <Sidebar 
-          onScreenShareClick={(id) => {
-            const u = store.users.find(x => x.id === id);
-            store.setScreenShare(id, u?.name);
-          }}
-          onJoinVoice={handleJoinVoice}
-          onLeaveVoice={handleLeaveVoice}
-          onStartScreenShare={screenShare.startScreenShare}
-          onStopScreenShare={screenShare.stopScreenShare}
-          onCreateChannel={(name) => socket.emit('create_channel', name)}
-          onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
-          onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
-          onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
-          onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
-          onUpdateProfile={(name, avatarUrl) => {
-            socket.emit('set_username', name, avatarUrl);
-            socket.emit('update_avatar', avatarUrl);
-          }}
-          onAdminAction={(action, targetId) => {
-            if (action === 'mute') socket.emit('admin_mute_user', targetId);
-            else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
-            else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
-            else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
-            else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
-            else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
-          }}
-        />
-      )}
+      <Sidebar
+        onScreenShareClick={(id) => {
+          const u = store.users.find(x => x.id === id);
+          store.setScreenShare(id, u?.name);
+        }}
+        onJoinVoice={handleJoinVoice}
+        onLeaveVoice={handleLeaveVoice}
+        onStartScreenShare={screenShare.startScreenShare}
+        onStopScreenShare={screenShare.stopScreenShare}
+        onCreateChannel={(name) => socket.emit('create_channel', name)}
+        onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
+        onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
+        onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
+        onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
+        onUpdateProfile={(name, avatarUrl) => {
+          socket.emit('set_username', name, avatarUrl);
+          socket.emit('update_avatar', avatarUrl);
+        }}
+        onAdminAction={(action, targetId) => {
+          if (action === 'mute') socket.emit('admin_mute_user', targetId);
+          else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
+          else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
+          else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
+          else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
+          else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
+        }}
+      />
 
       <main className={styles.mainContent}>
         <div className={styles.chatSection}>
-          <ChatPanel 
+          <ChatPanel
             onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
               socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
             }}
@@ -555,14 +565,14 @@ export default function App() {
       </main>
 
       {!isMiniPlayer && (
-        <ScreenSharePanel 
-          onClose={() => store.setScreenShare(null)} 
+        <ScreenSharePanel
+          onClose={() => store.setScreenShare(null)}
           screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
           onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
           onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
         />
       )}
-      
+
       {!isMiniPlayer && (
         <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
           <StatusBar />

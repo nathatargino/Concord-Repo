@@ -198,9 +198,56 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   const togglePiP = async () => {
     const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
     if (isElectron) {
-      toggleMiniPlayer(!isMiniPlayer);
+      const electron = (window as any).electron;
+      const store = useAppStore.getState();
+      if (store.isPiPActive) {
+        if (electron?.closePipWindow) electron.closePipWindow();
+      } else {
+        store.setPiPActive(true);
+        if (electron?.openPipWindow) {
+          electron.openPipWindow({
+            videoId: currentVideoId,
+            isPlaying,
+            currentTime: isDraggingSeek ? seekValue : currentTime,
+            duration,
+            title: activeTrackTitle
+          });
+        }
+      }
     }
   };
+
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (electron && electron.onPipAction) {
+      const unsubAction = electron.onPipAction((action: string, payload: any) => {
+        if (action === 'play') onMusicAction?.('play');
+        else if (action === 'pause') onMusicAction?.('pause');
+        else if (action === 'skip') onMusicAction?.('skip');
+        else if (action === 'seek') onMusicSeek?.(payload);
+      });
+      const unsubClosed = electron.onPipClosed(() => {
+         useAppStore.getState().setPiPActive(false);
+      });
+      return () => {
+         unsubAction();
+         unsubClosed();
+      };
+    }
+  }, [onMusicAction, onMusicSeek]);
+
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (electron && electron.sendPipSync && useAppStore.getState().isPiPActive) {
+      electron.sendPipSync({
+        videoId: currentVideoId,
+        isPlaying,
+        currentTime: isDraggingSeek ? seekValue : currentTime,
+        duration,
+        title: activeTrackTitle
+      });
+    }
+  }, [currentVideoId, isPlaying, currentTime, isDraggingSeek, seekValue, duration, activeTrackTitle]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -990,7 +1037,15 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
                     {/* Global YT Host - always stays in main window */}
-                    <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
+                    <div style={{ display: useAppStore.getState().isPiPActive ? 'none' : 'block', width: '100%', height: '100%' }}>
+                      <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
+                    </div>
+                    {useAppStore.getState().isPiPActive && currentVideoId && (
+                      <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                         <div className={styles.videoEmptyIcon}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg></div>
+                         <p className={styles.videoEmptyTitle}>Reproduzindo no PiP</p>
+                      </div>
+                    )}
 
                     {/* Custom Overlay Controls */}
                     {currentVideoId && (
@@ -1079,9 +1134,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             return (
                               <div className={styles.pipButtonWrapper}>
                                 <button
-                                  className={`${styles.overlayControlBtn} ${isMiniPlayer ? styles.btnActive : ''}`}
+                                  className={`${styles.overlayControlBtn} ${useAppStore.getState().isPiPActive ? styles.btnActive : ''}`}
                                   onClick={togglePiP}
-                                  title={isElectron ? (isMiniPlayer ? "Fechar PiP" : "Picture-in-Picture") : undefined}
+                                  title={isElectron ? (useAppStore.getState().isPiPActive ? "Fechar PiP" : "Picture-in-Picture") : undefined}
                                   style={!isElectron ? { cursor: 'not-allowed' } : undefined}
                                 >
                                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>

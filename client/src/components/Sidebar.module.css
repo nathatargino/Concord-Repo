@@ -217,7 +217,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: 12px;
   background: transparent;
   border: 1px solid transparent;
   color: rgba(255, 255, 255, 0.65);
@@ -312,7 +312,7 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 12px;
   cursor: default;
   transition: background 0.15s;
   border: 1px solid transparent;

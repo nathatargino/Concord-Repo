@@ -26,4 +26,23 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     savePreferences: (prefs) => electron_1.ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => electron_1.ipcRenderer.invoke('load-preferences'),
     toggleMiniPlayer: (isMini) => electron_1.ipcRenderer.send('toggle-mini-player', isMini),
+    openPipWindow: (initialState) => electron_1.ipcRenderer.send('open-pip-window', initialState),
+    closePipWindow: () => electron_1.ipcRenderer.send('close-pip-window'),
+    sendPipAction: (action, payload) => electron_1.ipcRenderer.send('pip-action', action, payload),
+    sendPipSync: (state) => electron_1.ipcRenderer.send('pip-sync', state),
+    onPipAction: (callback) => {
+        const subscription = (_event, action, payload) => callback(action, payload);
+        electron_1.ipcRenderer.on('pip-action', subscription);
+        return () => electron_1.ipcRenderer.removeListener('pip-action', subscription);
+    },
+    onPipSync: (callback) => {
+        const subscription = (_event, state) => callback(state);
+        electron_1.ipcRenderer.on('pip-sync', subscription);
+        return () => electron_1.ipcRenderer.removeListener('pip-sync', subscription);
+    },
+    onPipClosed: (callback) => {
+        const subscription = () => callback();
+        electron_1.ipcRenderer.on('pip-closed', subscription);
+        return () => electron_1.ipcRenderer.removeListener('pip-closed', subscription);
+    }
 });
