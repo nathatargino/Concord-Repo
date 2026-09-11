@@ -95,9 +95,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     isPlaying,
     musicStartTime,
     setVisualizerActive,
-    isBuffering,
-    isMiniPlayer,
-    toggleMiniPlayer
+    isBuffering
   } = useAppStore();
 
   const { ytVol, setYtVol } = useAudioStore();

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from './ChatPanel.module.css';
 
 export const PiPPlayer = () => {
@@ -144,10 +144,10 @@ export const PiPPlayer = () => {
                     setIsDraggingSeek(true);
                     setSeekValue(currentTime);
                   }}
-                  onChange={(e) => setSeekValue(parseFloat(e.target.value))}
+                  onChange={(e) => setSeekValue(parseFloat((e.target as HTMLInputElement).value))}
                   onMouseUp={(e) => {
                     setIsDraggingSeek(false);
-                    const targetTime = parseFloat(e.target.value);
+                    const targetTime = parseFloat((e.target as HTMLInputElement).value);
                     sendAction('seek', targetTime);
                   }}
                 />

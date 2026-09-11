@@ -549,7 +549,7 @@ export default function App() {
           />
         </div>
 
-        <div className={styles.sidePanels} style={{ display: isMiniPlayer ? 'none' : 'flex' }}>
+        <div className={styles.sidePanels} style={{ display: 'flex' }}>
           <MusicPanel
             onRequestMusic={(url) => socket.emit('request_music', url)}
             onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
@@ -564,22 +564,18 @@ export default function App() {
         </div>
       </main>
 
-      {!isMiniPlayer && (
-        <ScreenSharePanel
-          onClose={() => store.setScreenShare(null)}
-          screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
-          onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
-          onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
-        />
-      )}
+      <ScreenSharePanel
+        onClose={() => store.setScreenShare(null)}
+        screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
+        onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
+        onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
+      />
 
-      {!isMiniPlayer && (
-        <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
-          <StatusBar />
-        </div>
-      )}
+      <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
+        <StatusBar />
+      </div>
 
-      {!isMiniPlayer && <AccountModals />}
+      <AccountModals />
     </div>
   );
 }
