@@ -1436,6 +1436,17 @@
   pointer-events: none;
 }
 
+/* Invisible bridge to prevent hover loss when moving mouse from button to tooltip */
+.pipWebTooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 8px;
+  background: transparent;
+}
+
 .pipButtonWrapper:hover .pipWebTooltip {
   visibility: visible;
   opacity: 1;
