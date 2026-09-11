@@ -39,6 +39,27 @@ function loadYTApi(): Promise<void> {
   });
 }
 
+function loadYTApiForWindow(win: Window, doc: Document): Promise<any> {
+  return new Promise((resolve) => {
+    const target = win as any;
+    if (target.YT && target.YT.Player) {
+      return resolve(target.YT);
+    }
+    
+    target.onYouTubeIframeAPIReady = () => {
+      console.log('[YT PiP] onYouTubeIframeAPIReady fired!');
+      resolve(target.YT);
+    };
+
+    const tag = doc.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    tag.onerror = (e) => {
+      console.error('[YT PiP] Failed to load iframe_api script:', e);
+    };
+    doc.head.appendChild(tag);
+  });
+}
+
 export function useYouTube(
   onMusicEnded: (token: number) => void
 ) {
@@ -52,13 +73,17 @@ export function useYouTube(
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
       console.log('[YT] ensurePlayer called');
-      await loadYTApi();
+      const { pipWindow } = useAppStore.getState();
+      const doc = pipWindow ? pipWindow.document : document;
+      
+      const YTAPI = pipWindow 
+        ? await loadYTApiForWindow(pipWindow, pipWindow.document)
+        : (await loadYTApi(), window.YT);
+
       console.log('[YT] API ready, playerRef.current =', !!playerRef.current);
 
       if (playerRef.current) return resolve(playerRef.current);
 
-      const { pipWindow } = useAppStore.getState();
-      const doc = pipWindow ? pipWindow.document : document;
       const container = doc.getElementById('yt-host');
       if (!container) {
         console.error('[YT] #yt-host not found in DOM! pipWindow=', !!pipWindow);
@@ -74,12 +99,11 @@ export function useYouTube(
       const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
 
       // Always pass the current window's origin to YouTube so it knows where to send postMessages.
-      // In Electron, this will be http://127.0.0.1:PORT or http://localhost:PORT
       const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
 
-      playerRef.current = new window.YT.Player(div, {
+      playerRef.current = new YTAPI.Player(div, {
         height: '200',
         width: '200',
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
