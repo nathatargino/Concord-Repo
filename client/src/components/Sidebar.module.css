@@ -2,10 +2,13 @@
   width: 260px;
   min-width: 260px;
   background: var(--bg-elevated);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  margin: 16px 0 16px 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
 .header {
