@@ -518,6 +518,7 @@ export default function App() {
             }}
             getYtCurrentTime={yt.getCurrentTime}
             getYtDuration={yt.getDuration}
+            onSetCC={yt.setCC}
           />
         </div>
 

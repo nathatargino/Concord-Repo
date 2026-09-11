@@ -77,9 +77,10 @@ interface ChatPanelProps {
   onMusicSeek?: (time: number) => void;
   getYtCurrentTime?: () => number;
   getYtDuration?: () => number;
+  onSetCC?: (enabled: boolean) => void;
 }
 
-export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration }: ChatPanelProps) {
+export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration, onSetCC }: ChatPanelProps) {
   const { 
     messages, 
     setMessages,
@@ -112,6 +113,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const [ccEnabled, setCcEnabled] = useState(false);
 
   // Auto-fechar o player quando o vídeo parar de tocar
   useEffect(() => {
@@ -194,7 +196,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   };
 
   const togglePiP = async () => {
-    if (!('documentPictureInPicture' in window)) return;
+    if (!('documentPictureInPicture' in window)) {
+      alert('Seu navegador não suporta a API de Picture-in-Picture usada (documentPictureInPicture). Recomendamos usar o Google Chrome mais recente para este recurso.');
+      return;
+    }
     try {
       if (pipWindow) {
         pipWindow.close();
@@ -1024,7 +1029,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
                     {/* Global YT Host */}
-                    <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked) ? styles.ytHostSeeking : ''}`} />
+                    <div id="yt-host" className={`${pipWindow ? styles.ytHostPiP : styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked) ? styles.ytHostSeeking : ''}`} />
 
                     {/* Custom Overlay Controls */}
                     {currentVideoId && (
@@ -1107,6 +1112,22 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               title="Volume"
                             />
                           </div>
+
+                          <button
+                            className={`${styles.overlayControlBtn} ${ccEnabled ? styles.btnActive : ''}`}
+                            onClick={() => {
+                              const next = !ccEnabled;
+                              setCcEnabled(next);
+                              onSetCC?.(next);
+                            }}
+                            title={ccEnabled ? "Desativar Legendas (CC)" : "Ativar Legendas (CC)"}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="5" width="18" height="14" rx="2" ry="2"></rect>
+                              <path d="M9 14H7a2 2 0 0 1-2-2v-0a2 2 0 0 1 2-2h2"></path>
+                              <path d="M17 14h-2a2 2 0 0 1-2-2v-0a2 2 0 0 1 2-2h2"></path>
+                            </svg>
+                          </button>
 
                           {'documentPictureInPicture' in window && (
                             <button

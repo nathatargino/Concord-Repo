@@ -1383,3 +1383,20 @@
   flex-shrink: 0;
   user-select: none;
 }
+
+/* ─── PiP Host & Overlay Active State ─── */
+.ytHostPiP {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 1;
+  pointer-events: none; /* Let overlay catch clicks */
+  z-index: 1;
+}
+
+.btnActive {
+  color: var(--accent-bright) !important;
+  background: rgba(124, 58, 237, 0.2) !important;
+}

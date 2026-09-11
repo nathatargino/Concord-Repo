@@ -93,6 +93,7 @@ export function useYouTube(
           disablekb: 1,
           enablejsapi: 1,
           playsinline: 1,
+          cc_load_policy: 0 as any, // Cast to any to bypass strict ClosedCaptionsLoadPolicy type
           ...(ytOrigin ? { origin: ytOrigin } : {})
         },
         events: {
@@ -108,6 +109,14 @@ export function useYouTube(
              } catch {
                // ignore
              }
+             // Force CC off immediately
+             try {
+               const p = playerRef.current as any;
+               if (p?.unloadModule) {
+                 p.unloadModule('captions');
+                 p.unloadModule('cc');
+               }
+             } catch {}
              const { ytVol, callMuted } = useAudioStore.getState();
              const targetVol = callMuted ? 0 : ytVol;
              // Force-unmute at the Electron audio pipeline level immediately on ready
@@ -265,6 +274,22 @@ export function useYouTube(
     ensurePlayer().catch(() => {});
   }, [ensurePlayer]);
 
+  const setCC = useCallback((enabled: boolean) => {
+    if (!playerRef.current) return;
+    try {
+      const p = playerRef.current as any;
+      if (enabled) {
+        p.loadModule?.('captions');
+        p.loadModule?.('cc');
+      } else {
+        p.unloadModule?.('captions');
+        p.unloadModule?.('cc');
+      }
+    } catch (e) {
+      console.warn('[YT] Failed to toggle CC:', e);
+    }
+  }, []);
+
   useEffect(() => {
     // When pipWindow changes, re-init the player after React has portaled the #yt-host div
     const timer = setTimeout(() => {
@@ -279,7 +304,7 @@ export function useYouTube(
   }, [pipWindow, playYouTube]);
 
   return useMemo(() => ({ 
-    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration 
-  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration]);
+    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC
+  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC]);
 }
 

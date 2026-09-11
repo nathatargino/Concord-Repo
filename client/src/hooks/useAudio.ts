@@ -390,15 +390,31 @@ export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?:
 
   const data = new Uint8Array(analyser.frequencyBinCount);
 
+  let smoothedVol = 0;
+  let isSpeaking = false;
+  let lastSpeakTime = 0;
+
   function tick() {
     analyser.getByteTimeDomainData(data);
     let sum = 0;
     for (const v of data) sum += Math.abs(v - 128);
     const avg = sum / data.length;
 
+    // Exponential Moving Average to smooth out peaks
+    smoothedVol = smoothedVol * 0.7 + avg * 0.3;
+
+    // Determine if speaking with a threshold of 5 (more sensitive)
+    if (smoothedVol > 5) {
+      isSpeaking = true;
+      lastSpeakTime = Date.now();
+    } else if (isSpeaking && Date.now() - lastSpeakTime > 300) {
+      // Hold time of 300ms prevents flickering
+      isSpeaking = false;
+    }
+
     const el = document.getElementById(`user-${userId}`);
     if (el) {
-      if (avg > 8) el.classList.add('speaking-glow');
+      if (isSpeaking) el.classList.add('speaking-glow');
       else el.classList.remove('speaking-glow');
     }
 
