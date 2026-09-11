@@ -81,14 +81,14 @@ interface ChatPanelProps {
 }
 
 export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration }: ChatPanelProps) {
-  const { 
-    messages, 
+  const {
+    messages,
     setMessages,
-    myName, 
+    myName,
     myAvatarUrl,
-    room, 
-    isServer, 
-    channels, 
+    room,
+    isServer,
+    channels,
     activeChannelId,
     currentVideoId,
     currentTrackTitle,
@@ -124,8 +124,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Slash command autocomplete ──
   const SLASH_COMMANDS = [
-    { cmd: '/skip',  label: 'skip',  icon: '⏭️', description: 'Pula para a próxima música da fila' },
-    { cmd: '/play',  label: 'play',  icon: '▶️', description: 'Retoma a música pausada' },
+    { cmd: '/skip', label: 'skip', icon: '⏭️', description: 'Pula para a próxima música da fila' },
+    { cmd: '/play', label: 'play', icon: '▶️', description: 'Retoma a música pausada' },
     { cmd: '/pause', label: 'pause', icon: '⏸️', description: 'Pausa a música atual' },
     { cmd: '/clear', label: 'clear', icon: '🗑️', description: 'Limpa toda a fila de músicas' },
   ];
@@ -139,7 +139,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const seekLockRef = useRef<number>(0);
   const [isSeekingLocked, setIsSeekingLocked] = useState(false);
-  
+
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
   const [isDraggingSeek, setIsDraggingSeek] = useState<boolean>(false);
@@ -189,9 +189,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     const container = videoContainerRef.current;
     if (!container) return;
     if (!document.fullscreenElement) {
-      container.requestFullscreen().catch(() => {});
+      container.requestFullscreen().catch(() => { });
     } else {
-      document.exitFullscreen().catch(() => {});
+      document.exitFullscreen().catch(() => { });
     }
   };
 
@@ -523,7 +523,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   const handleSelectGif = (gif: any) => {
     const gifUrl = gif.images.fixed_height.url;
     const currentChannel = activeChannelId || 'ch-geral';
-    
+
     if (room?.id) {
       saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
     }
@@ -540,7 +540,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   };
 
   return (
-    <div 
+    <div
       className={`${styles.chatPanel} ${isDragging ? styles.dragging : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -586,8 +586,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                       {displayedMessages.length} {displayedMessages.length === 1 ? 'resultado' : 'resultados'}
                     </span>
                   )}
-                  <button 
-                    className={styles.closeSearchBtn} 
+                  <button
+                    className={styles.closeSearchBtn}
                     onClick={() => { setShowSearch(false); setSearchQuery(''); }}
                     title="Fechar pesquisa"
                   >
@@ -595,8 +595,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </button>
                 </div>
               ) : (
-                <button 
-                  className={styles.searchToggleBtn} 
+                <button
+                  className={styles.searchToggleBtn}
                   onClick={() => setShowSearch(true)}
                   title="Pesquisar mensagens neste chat"
                 >
@@ -627,358 +627,357 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           {/* ══ FACE FRENTE: Chat normal ══ */}
           <div className={styles.flipCardFront}>
 
-      {isDragging && (
-        <div className={styles.dragOverlay}>
-          <div className={styles.dragMessage}>
-            <span className={styles.dragIcon}>📁</span>
-            <span>Solte o arquivo aqui para enviar</span>
-          </div>
-        </div>
-      )}
-
-      {/* Message list */}
-      <div ref={messageListRef} className={styles.messageList}>
-        {displayedMessages.length === 0 ? (
-          <div className={styles.emptyMessages}>
-            {searchQuery ? (
-              <p>Nenhuma mensagem encontrada para &quot;{searchQuery}&quot;</p>
-            ) : (
-              <>
-                <div className={styles.emptyIcon}>👋</div>
-                <p>
-                  {isServer
-                    ? `Bem-vindo ao #${activeChannel.name}! Seja o primeiro a falar!`
-                    : 'Nenhuma mensagem ainda. Diga oi!'}
-                </p>
-              </>
+            {isDragging && (
+              <div className={styles.dragOverlay}>
+                <div className={styles.dragMessage}>
+                  <span className={styles.dragIcon}>📁</span>
+                  <span>Solte o arquivo aqui para enviar</span>
+                </div>
+              </div>
             )}
-          </div>
-        ) : (
-          displayedMessages.map((msg) => {
-            const isMe = msg.userName === myName;
-            return (
-              <div
-                key={msg.id}
-                className={`${styles.messageWrapper} ${
-                  msg.isSystem ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
-                }`}
-              >
-                {msg.isSystem ? (
-                  <div className={styles.systemMessage}>
-                    <span>{msg.message}</span>
-                  </div>
-                ) : (
-                  <>
-                    {!isMe && (
-                      <div className={styles.avatarWrapper}>
-                        {msg.avatarUrl ? (
-                          <img src={msg.avatarUrl} alt="Avatar" className={styles.avatarImage} />
-                        ) : (
-                          <div className={styles.avatarFallback}>
-                            {msg.userName.substring(0, 2).toUpperCase()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
-                      {!isMe && (
-                        <span className={styles.senderName}>{msg.userName}</span>
-                      )}
 
-                      {/* Conteúdo da mensagem */}
-                    {msg.type === 'giphy' && msg.url ? (
-                      <div className={styles.gifContainer}>
-                        <img 
-                          src={msg.url} 
-                          alt="GIF" 
-                          className={styles.messageGif} 
-                          onLoad={() => scrollToBottom(false)}
-                        />
-                      </div>
-                    ) : msg.type === 'image' && msg.url ? (
-                      <>
-                        <div className={styles.imageContainer}>
-                          <img 
-                            src={msg.url} 
-                            alt={msg.filename || 'Imagem'} 
-                            className={styles.messageImage} 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              setViewingImage(msg.url!);
-                              setImageZoom(1);
-                            }}
-                            style={{ cursor: 'pointer' }}
-                            onLoad={() => scrollToBottom(false)}
-                          />
+            {/* Message list */}
+            <div ref={messageListRef} className={styles.messageList}>
+              {displayedMessages.length === 0 ? (
+                <div className={styles.emptyMessages}>
+                  {searchQuery ? (
+                    <p>Nenhuma mensagem encontrada para &quot;{searchQuery}&quot;</p>
+                  ) : (
+                    <>
+                      <div className={styles.emptyIcon}>👋</div>
+                      <p>
+                        {isServer
+                          ? `Bem-vindo ao #${activeChannel.name}! Seja o primeiro a falar!`
+                          : 'Nenhuma mensagem ainda. Diga oi!'}
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : (
+                displayedMessages.map((msg) => {
+                  const isMe = msg.userName === myName;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`${styles.messageWrapper} ${msg.isSystem ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
+                        }`}
+                    >
+                      {msg.isSystem ? (
+                        <div className={styles.systemMessage}>
+                          <span>{msg.message}</span>
                         </div>
-                        {msg.message && msg.message !== '📷 Imagem' && (
-                          <p
-                            className={styles.messageText}
-                            style={{ marginTop: '8px' }}
-                            dangerouslySetInnerHTML={{
-                              __html: parseLinks(escapeHtml(msg.message)),
-                            }}
-                          />
-                        )}
-                      </>
-                    ) : msg.type === 'file' && msg.url ? (
-                      <>
-                        <div className={styles.fileContainer}>
-                          <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
-                            <span className={styles.fileIcon}>📎</span>
-                            <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
-                          </a>
-                        </div>
-                        {msg.message && msg.message !== '📄 ' + msg.filename && (
-                          <p
-                            className={styles.messageText}
-                            style={{ marginTop: '8px' }}
-                            dangerouslySetInnerHTML={{
-                              __html: parseLinks(escapeHtml(msg.message)),
-                            }}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <p
-                        className={styles.messageText}
-                        dangerouslySetInnerHTML={{
-                          __html: parseLinks(escapeHtml(msg.message)),
-                        }}
-                      />
-                    )}
-
-                    <span className={styles.timestamp}>{msg.timestamp}</span>
-                  </div>
-                  {isMe && (
-                    <div className={styles.avatarWrapper}>
-                      {myAvatarUrl ? (
-                        <img src={myAvatarUrl} alt="Avatar" className={styles.avatarImage} />
                       ) : (
-                        <div className={styles.avatarFallback}>
-                          {myName.substring(0, 2).toUpperCase()}
-                        </div>
+                        <>
+                          {!isMe && (
+                            <div className={styles.avatarWrapper}>
+                              {msg.avatarUrl ? (
+                                <img src={msg.avatarUrl} alt="Avatar" className={styles.avatarImage} />
+                              ) : (
+                                <div className={styles.avatarFallback}>
+                                  {msg.userName.substring(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
+                            {!isMe && (
+                              <span className={styles.senderName}>{msg.userName}</span>
+                            )}
+
+                            {/* Conteúdo da mensagem */}
+                            {msg.type === 'giphy' && msg.url ? (
+                              <div className={styles.gifContainer}>
+                                <img
+                                  src={msg.url}
+                                  alt="GIF"
+                                  className={styles.messageGif}
+                                  onLoad={() => scrollToBottom(false)}
+                                />
+                              </div>
+                            ) : msg.type === 'image' && msg.url ? (
+                              <>
+                                <div className={styles.imageContainer}>
+                                  <img
+                                    src={msg.url}
+                                    alt={msg.filename || 'Imagem'}
+                                    className={styles.messageImage}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      setViewingImage(msg.url!);
+                                      setImageZoom(1);
+                                    }}
+                                    style={{ cursor: 'pointer' }}
+                                    onLoad={() => scrollToBottom(false)}
+                                  />
+                                </div>
+                                {msg.message && msg.message !== '📷 Imagem' && (
+                                  <p
+                                    className={styles.messageText}
+                                    style={{ marginTop: '8px' }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: parseLinks(escapeHtml(msg.message)),
+                                    }}
+                                  />
+                                )}
+                              </>
+                            ) : msg.type === 'file' && msg.url ? (
+                              <>
+                                <div className={styles.fileContainer}>
+                                  <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
+                                    <span className={styles.fileIcon}>📎</span>
+                                    <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
+                                  </a>
+                                </div>
+                                {msg.message && msg.message !== '📄 ' + msg.filename && (
+                                  <p
+                                    className={styles.messageText}
+                                    style={{ marginTop: '8px' }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: parseLinks(escapeHtml(msg.message)),
+                                    }}
+                                  />
+                                )}
+                              </>
+                            ) : (
+                              <p
+                                className={styles.messageText}
+                                dangerouslySetInnerHTML={{
+                                  __html: parseLinks(escapeHtml(msg.message)),
+                                }}
+                              />
+                            )}
+
+                            <span className={styles.timestamp}>{msg.timestamp}</span>
+                          </div>
+                          {isMe && (
+                            <div className={styles.avatarWrapper}>
+                              {myAvatarUrl ? (
+                                <img src={myAvatarUrl} alt="Avatar" className={styles.avatarImage} />
+                              ) : (
+                                <div className={styles.avatarFallback}>
+                                  {myName.substring(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
-                  )}
-                  </>
+                  );
+                })
+              )}
+              <div ref={bottomRef} />
+            </div>
+
+            {/* Staged file preview */}
+            {stagedFile && (
+              <div className={styles.previewContainer}>
+                {stagedFile.file.type.startsWith('image/') ? (
+                  <img src={stagedFile.previewUrl} alt="Preview" className={styles.filePreviewThumb} />
+                ) : (
+                  <div className={styles.genericFilePreview}>
+                    <span>📄</span>
+                  </div>
                 )}
+                <div className={styles.previewDetails}>
+                  <span className={styles.previewName}>{stagedFile.file.name}</span>
+                  <span className={styles.previewSize}>
+                    {(stagedFile.file.size / 1024).toFixed(1)} KB
+                  </span>
+                </div>
+                <button
+                  className={styles.removeFileBtn}
+                  onClick={() => {
+                    URL.revokeObjectURL(stagedFile.previewUrl);
+                    setStagedFile(null);
+                  }}
+                >
+                  ✕
+                </button>
               </div>
-            );
-          })
-        )}
-        <div ref={bottomRef} />
-      </div>
+            )}
 
-      {/* Staged file preview */}
-      {stagedFile && (
-        <div className={styles.previewContainer}>
-          {stagedFile.file.type.startsWith('image/') ? (
-            <img src={stagedFile.previewUrl} alt="Preview" className={styles.filePreviewThumb} />
-          ) : (
-            <div className={styles.genericFilePreview}>
-              <span>📄</span>
-            </div>
-          )}
-          <div className={styles.previewDetails}>
-            <span className={styles.previewName}>{stagedFile.file.name}</span>
-            <span className={styles.previewSize}>
-              {(stagedFile.file.size / 1024).toFixed(1)} KB
-            </span>
-          </div>
-          <button
-            className={styles.removeFileBtn}
-            onClick={() => {
-              URL.revokeObjectURL(stagedFile.previewUrl);
-              setStagedFile(null);
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
+            {/* Giphy Popover */}
+            {showGiphy && (
+              <div className={styles.giphyPopover} ref={giphyPickerRef}>
+                <div className={styles.giphyHeader}>
+                  <input
+                    type="text"
+                    placeholder="Buscar GIFs no Giphy..."
+                    className={styles.giphySearchInput}
+                    value={giphySearch}
+                    onChange={(e) => setGiphySearch(e.target.value)}
+                    autoFocus
+                  />
+                  <button
+                    className={styles.closeGiphyBtn}
+                    onClick={() => setShowGiphy(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className={styles.giphyGridContainer}>
+                  <Grid
+                    key={giphySearch}
+                    width={300}
+                    columns={2}
+                    fetchGifs={fetchGifs}
+                    onGifClick={handleSelectGif}
+                    noLink
+                    hideAttribution
+                  />
+                </div>
+              </div>
+            )}
 
-      {/* Giphy Popover */}
-      {showGiphy && (
-        <div className={styles.giphyPopover} ref={giphyPickerRef}>
-          <div className={styles.giphyHeader}>
-            <input
-              type="text"
-              placeholder="Buscar GIFs no Giphy..."
-              className={styles.giphySearchInput}
-              value={giphySearch}
-              onChange={(e) => setGiphySearch(e.target.value)}
-              autoFocus
-            />
-            <button
-              className={styles.closeGiphyBtn}
-              onClick={() => setShowGiphy(false)}
-            >
-              ✕
-            </button>
-          </div>
-          <div className={styles.giphyGridContainer}>
-            <Grid
-              key={giphySearch}
-              width={300}
-              columns={2}
-              fetchGifs={fetchGifs}
-              onGifClick={handleSelectGif}
-              noLink
-              hideAttribution
-            />
-          </div>
-        </div>
-      )}
+            {/* Chat input */}
+            <div className={styles.inputContainer}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                style={{ display: 'none' }}
+              />
 
-      {/* Chat input */}
-      <div className={styles.inputContainer}>
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-          style={{ display: 'none' }}
-        />
-
-        <button
-          type="button"
-          className={styles.actionIconBtn}
-          onClick={() => fileInputRef.current?.click()}
-          title="Enviar Arquivo ou Imagem"
-        >
-          📎
-        </button>
-
-        <button
-          type="button"
-          ref={giphyBtnRef}
-          className={styles.actionIconBtn}
-          onClick={() => setShowGiphy(!showGiphy)}
-          title="Buscar GIF"
-        >
-          🎁
-        </button>
-
-        <button
-          type="button"
-          ref={emojiBtnRef}
-          className={styles.actionIconBtn}
-          onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          title="Inserir Emoji"
-        >
-          😊
-        </button>
-
-        {showEmojiPicker && (
-          <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
-            <Suspense fallback={<div style={{padding: '16px', color: '#aaa'}}>Carregando...</div>}>
-              <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
-            </Suspense>
-          </div>
-        )}
-
-        {/* Slash command menu */}
-        {showCmdMenu && (
-          <div className={styles.cmdMenu} ref={cmdMenuRef}>
-            <div className={styles.cmdMenuHeader}>
-              <span>💡 Comandos de Música</span>
-              <kbd className={styles.cmdKbd}>↑↓ navegar</kbd>
-              <kbd className={styles.cmdKbd}>Enter executar</kbd>
-            </div>
-            {cmdFilter.map((c, i) => (
               <button
-                key={c.cmd}
-                className={`${styles.cmdItem} ${i === cmdHighlight ? styles.cmdItemActive : ''}`}
-                onMouseDown={(e) => { e.preventDefault(); applyCommand(c.cmd); }}
-                onMouseEnter={() => setCmdHighlight(i)}
+                type="button"
+                className={styles.actionIconBtn}
+                onClick={() => fileInputRef.current?.click()}
+                title="Enviar Arquivo ou Imagem"
               >
-                <span className={styles.cmdItemIcon}>{c.icon}</span>
-                <span className={styles.cmdItemName}>{c.cmd}</span>
-                <span className={styles.cmdItemDesc}>{c.description}</span>
+                📎
               </button>
-            ))}
-          </div>
-        )}
 
-        <input
-          type="text"
-          className={styles.chatInput}
-          placeholder={
-            isServer
-              ? `Conversar em #${activeChannel.name}... (/ para comandos)`
-              : 'Envie uma mensagem... (/ para comandos)'
-          }
-          value={input}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          maxLength={2000}
-        />
+              <button
+                type="button"
+                ref={giphyBtnRef}
+                className={styles.actionIconBtn}
+                onClick={() => setShowGiphy(!showGiphy)}
+                title="Buscar GIF"
+              >
+                🎁
+              </button>
 
-        <button
-          type="button"
-          className={styles.sendButton}
-          onClick={handleSend}
-          disabled={(!input.trim() && !stagedFile) || isUploading}
-          title="Enviar (Enter)"
-        >
-          {isUploading ? (
-            <span className={styles.spinner} />
-          ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M22 2L11 13" />
-              <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-            </svg>
-          )}
-        </button>
-      </div>
+              <button
+                type="button"
+                ref={emojiBtnRef}
+                className={styles.actionIconBtn}
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                title="Inserir Emoji"
+              >
+                😊
+              </button>
 
-      {viewingImage && (
-        <div className={styles.imageViewerOverlay} onClick={() => setViewingImage(null)}>
-          <div className={styles.imageViewerControls} onClick={(e) => e.stopPropagation()}>
-            <a 
-              href={viewingImage} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className={styles.imageViewerLink}
-              onClick={(e) => {
-                if (viewingImage.startsWith('data:')) {
-                  e.preventDefault();
-                  
-                  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-                  if (isElectron && (window as any).electron?.openBase64InBrowser) {
-                      (window as any).electron.openBase64InBrowser(viewingImage);
-                      return;
-                  }
+              {showEmojiPicker && (
+                <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
+                  <Suspense fallback={<div style={{ padding: '16px', color: '#aaa' }}>Carregando...</div>}>
+                    <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
+                  </Suspense>
+                </div>
+              )}
 
-                  fetch(viewingImage)
-                    .then(res => res.blob())
-                    .then(blob => {
-                      const blobUrl = URL.createObjectURL(blob);
-                      window.open(blobUrl, '_blank');
-                    })
-                    .catch(() => {
-                      window.open(viewingImage, '_blank');
-                    });
+              {/* Slash command menu */}
+              {showCmdMenu && (
+                <div className={styles.cmdMenu} ref={cmdMenuRef}>
+                  <div className={styles.cmdMenuHeader}>
+                    <span>💡 Comandos de Música</span>
+                    <kbd className={styles.cmdKbd}>↑↓ navegar</kbd>
+                    <kbd className={styles.cmdKbd}>Enter executar</kbd>
+                  </div>
+                  {cmdFilter.map((c, i) => (
+                    <button
+                      key={c.cmd}
+                      className={`${styles.cmdItem} ${i === cmdHighlight ? styles.cmdItemActive : ''}`}
+                      onMouseDown={(e) => { e.preventDefault(); applyCommand(c.cmd); }}
+                      onMouseEnter={() => setCmdHighlight(i)}
+                    >
+                      <span className={styles.cmdItemIcon}>{c.icon}</span>
+                      <span className={styles.cmdItemName}>{c.cmd}</span>
+                      <span className={styles.cmdItemDesc}>{c.description}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <input
+                type="text"
+                className={styles.chatInput}
+                placeholder={
+                  isServer
+                    ? `Conversar em #${activeChannel.name}... (/ para comandos)`
+                    : 'Envie uma mensagem... (/ para comandos)'
                 }
-              }}
-            >
-              Abrir Original
-            </a>
-            <button className={styles.imageViewerClose} onClick={() => setViewingImage(null)}>×</button>
-          </div>
-          <img
-            src={viewingImage}
-            className={`${styles.imageViewerImage} ${imageZoom > 1 ? styles.zoomed : ''}`}
-            style={{ transform: `scale(${imageZoom})` }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setImageZoom(z => z === 1 ? 2 : 1);
-            }}
-            alt="Ampliada"
-          />
-        </div>
-      )}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                maxLength={2000}
+              />
+
+              <button
+                type="button"
+                className={styles.sendButton}
+                onClick={handleSend}
+                disabled={(!input.trim() && !stagedFile) || isUploading}
+                title="Enviar (Enter)"
+              >
+                {isUploading ? (
+                  <span className={styles.spinner} />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 2L11 13" />
+                    <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {viewingImage && (
+              <div className={styles.imageViewerOverlay} onClick={() => setViewingImage(null)}>
+                <div className={styles.imageViewerControls} onClick={(e) => e.stopPropagation()}>
+                  <a
+                    href={viewingImage}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.imageViewerLink}
+                    onClick={(e) => {
+                      if (viewingImage.startsWith('data:')) {
+                        e.preventDefault();
+
+                        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                        if (isElectron && (window as any).electron?.openBase64InBrowser) {
+                          (window as any).electron.openBase64InBrowser(viewingImage);
+                          return;
+                        }
+
+                        fetch(viewingImage)
+                          .then(res => res.blob())
+                          .then(blob => {
+                            const blobUrl = URL.createObjectURL(blob);
+                            window.open(blobUrl, '_blank');
+                          })
+                          .catch(() => {
+                            window.open(viewingImage, '_blank');
+                          });
+                      }
+                    }}
+                  >
+                    Abrir Original
+                  </a>
+                  <button className={styles.imageViewerClose} onClick={() => setViewingImage(null)}>×</button>
+                </div>
+                <img
+                  src={viewingImage}
+                  className={`${styles.imageViewerImage} ${imageZoom > 1 ? styles.zoomed : ''}`}
+                  style={{ transform: `scale(${imageZoom})` }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImageZoom(z => z === 1 ? 2 : 1);
+                  }}
+                  alt="Ampliada"
+                />
+              </div>
+            )}
 
           </div>{/* end flipCardFront */}
 
@@ -1000,21 +999,21 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                           <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
                         </div>
 
-                        <button 
+                        <button
                           className={styles.centerPlayBtn}
                           onClick={() => onMusicAction?.(isPlaying ? 'pause' : 'play')}
                           title={isPlaying ? 'Pausar' : 'Reproduzir'}
                         >
                           {isPlaying ? (
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
                           ) : (
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
                           )}
                         </button>
 
                         <div className={styles.videoOverlayBottom}>
                           <span className={styles.timeText}>{formatTime(isDraggingSeek ? seekValue : currentTime)}</span>
-                          
+
                           <div className={styles.seekContainer}>
                             <input
                               type="range"
@@ -1050,9 +1049,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               }}
                             />
                             <div className={styles.seekTrack}>
-                              <div 
-                                className={styles.seekFill} 
-                                style={{ width: `${Math.min(100, (((isDraggingSeek ? seekValue : currentTime) / (duration || 1)) * 100))}%` }} 
+                              <div
+                                className={styles.seekFill}
+                                style={{ width: `${Math.min(100, (((isDraggingSeek ? seekValue : currentTime) / (duration || 1)) * 100))}%` }}
                               />
                             </div>
                           </div>
@@ -1084,11 +1083,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                   onClick={togglePiP}
                                   title={isElectron ? (isMiniPlayer ? "Fechar PiP" : "Picture-in-Picture") : undefined}
                                 >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="12" y="14" width="7" height="5" rx="1" ry="1"/></svg>
+                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>
                                 </button>
                                 {!isElectron && (
                                   <div className={styles.pipWebTooltip}>
-                                    Disponível apenas para <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">Desktop</a>
+                                    Apenas para <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">Desktop</a>
                                   </div>
                                 )}
                               </div>
@@ -1100,7 +1099,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             onClick={toggleFullscreen}
                             title="Tela Cheia"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
                           </button>
                         </div>
                       </div>
@@ -1110,7 +1109,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
                 return videoPlayerContent;
               })()}
-              
+
               {!currentVideoId && (
                 <div className={styles.videoEmptyState}>
                   <div className={styles.videoEmptyIcon}>
@@ -1133,7 +1132,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     onClick={() => onMusicAction?.('play')}
                     title="Retomar música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
                     <span>/play</span>
                     <small>Retomar</small>
                   </button>
@@ -1142,7 +1141,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     onClick={() => onMusicAction?.('pause')}
                     title="Pausar música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
                     <span>/pause</span>
                     <small>Pausar</small>
                   </button>
@@ -1151,7 +1150,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     onClick={() => onMusicAction?.('skip')}
                     title="Pular música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                     <span>/skip</span>
                     <small>Pular</small>
                   </button>
@@ -1160,7 +1159,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     onClick={() => onMusicAction?.('clear')}
                     title="Limpar fila"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>
                     <span>/clear</span>
                     <small>Limpar fila</small>
                   </button>
