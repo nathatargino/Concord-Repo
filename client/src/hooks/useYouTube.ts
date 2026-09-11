@@ -134,6 +134,13 @@ export function useYouTube(
           },
           onStateChange: (event: any) => {
             console.log('[YT] State changed:', event.data);
+            
+            if (event.data === window.YT.PlayerState.BUFFERING || event.data === window.YT.PlayerState.UNSTARTED || event.data === window.YT.PlayerState.CUED) {
+              useAppStore.getState().setIsBuffering(true);
+            } else if (event.data === window.YT.PlayerState.PLAYING || event.data === window.YT.PlayerState.PAUSED) {
+              useAppStore.getState().setIsBuffering(false);
+            }
+
             if (event.data === window.YT.PlayerState.PLAYING) {
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);

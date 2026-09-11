@@ -95,6 +95,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     isPlaying,
     musicStartTime,
     setVisualizerActive,
+    isBuffering,
     pipWindow,
     setPipWindow
   } = useAppStore();
@@ -1029,7 +1030,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
                     {/* Global YT Host */}
-                    <div id="yt-host" className={`${pipWindow ? styles.ytHostPiP : styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked) ? styles.ytHostSeeking : ''}`} />
+                    <div id="yt-host" className={`${pipWindow ? styles.ytHostPiP : styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
 
                     {/* Custom Overlay Controls */}
                     {currentVideoId && (

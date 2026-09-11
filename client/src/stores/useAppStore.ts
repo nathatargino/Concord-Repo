@@ -66,6 +66,8 @@ interface AppState {
   setIsPlaying: (v: boolean) => void;
   visualizerActive: boolean;
   setVisualizerActive: (v: boolean) => void;
+  isBuffering: boolean;
+  setIsBuffering: (v: boolean) => void;
   pipWindow: Window | null;
   setPipWindow: (w: Window | null) => void;
 
@@ -167,7 +169,9 @@ export const useAppStore = create<AppState>((set) => ({
   isPlaying: false,
   setIsPlaying: (isPlaying) => set({ isPlaying }),
   visualizerActive: false,
-  setVisualizerActive: (visualizerActive) => set({ visualizerActive }),
+  setVisualizerActive: (v) => set({ visualizerActive: v }),
+  isBuffering: false,
+  setIsBuffering: (v) => set({ isBuffering: v }),
   pipWindow: null,
   setPipWindow: (pipWindow) => set({ pipWindow }),
 
