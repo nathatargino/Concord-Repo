@@ -469,10 +469,19 @@ export default function App() {
     }
   };
 
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
   return (
     <div className={`${styles.appContainer} ${isMiniPlayer ? styles.miniPlayerMode : ''}`}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
+
+      {(!isElectron && !isMiniPlayer) && (
+        <div className={styles.webTopBar}>
+          <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">
+            Baixar App Desktop
+          </a>
+        </div>
+      )}
 
       {!isMiniPlayer && showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
