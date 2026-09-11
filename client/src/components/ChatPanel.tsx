@@ -1082,6 +1082,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                   className={`${styles.overlayControlBtn} ${isMiniPlayer ? styles.btnActive : ''}`}
                                   onClick={togglePiP}
                                   title={isElectron ? (isMiniPlayer ? "Fechar PiP" : "Picture-in-Picture") : undefined}
+                                  style={!isElectron ? { cursor: 'not-allowed' } : undefined}
                                 >
                                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>
                                 </button>

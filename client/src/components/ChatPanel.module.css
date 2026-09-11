@@ -1432,13 +1432,23 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   opacity: 0;
   transition: opacity 0.2s, visibility 0.2s;
+  transition-delay: 1s; /* Stay visible for 1s after hover out */
   pointer-events: none;
 }
 
 .pipButtonWrapper:hover .pipWebTooltip {
   visibility: visible;
   opacity: 1;
+  transition-delay: 0s; /* Show immediately when hovered */
   pointer-events: auto; /* Allow clicking the link */
+}
+
+/* Also keep the tooltip visible when hovering directly over the tooltip itself */
+.pipWebTooltip:hover {
+  visibility: visible;
+  opacity: 1;
+  transition-delay: 0s;
+  pointer-events: auto;
 }
 
 .pipWebTooltip a {
