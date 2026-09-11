@@ -61,6 +61,15 @@ function formatTime(secs: number): string {
   return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+}
+
 interface ChatPanelProps {
   onSendMessage?: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string) => void;
   onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
@@ -82,7 +91,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     currentTrackTitle,
     isPlaying,
     musicStartTime,
-    musicQueue,
     setVisualizerActive,
     pipWindow,
     setPipWindow
