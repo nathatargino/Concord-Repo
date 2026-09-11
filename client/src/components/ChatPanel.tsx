@@ -1103,7 +1103,31 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </div>
                 );
 
-                return pipWindow ? createPortal(videoPlayerContent, pipWindow.document.body) : videoPlayerContent;
+                const pipPlaceholder = pipWindow ? (
+                  <div className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#09090b', borderRadius: '16px', border: '1px solid #27272a', position: 'relative' }}>
+                    <div style={{ textAlign: 'center', color: '#a1a1aa' }}>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ margin: '0 auto 12px', display: 'block', opacity: 0.5 }}>
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                        <rect x="12" y="14" width="7" height="5" rx="1" ry="1"/>
+                      </svg>
+                      <p style={{ margin: 0, fontSize: '14px', fontWeight: 500 }}>Reproduzindo em Picture-in-Picture</p>
+                      <p style={{ margin: '4px 0 0', fontSize: '12px', opacity: 0.7 }}>O vídeo está sendo exibido em uma janela flutuante.</p>
+                      <button 
+                        onClick={togglePiP}
+                        style={{ marginTop: '16px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
+                      >
+                        Retornar Vídeo
+                      </button>
+                    </div>
+                  </div>
+                ) : null;
+
+                return (
+                  <>
+                    {pipPlaceholder}
+                    {pipWindow ? createPortal(videoPlayerContent, pipWindow.document.body) : videoPlayerContent}
+                  </>
+                );
               })()}
               
               {!currentVideoId && (

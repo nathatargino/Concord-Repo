@@ -1,5 +1,5 @@
 /// <reference types="youtube" />
-import { useCallback, useRef, useMemo } from 'react';
+import { useCallback, useRef, useMemo, useEffect } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 
@@ -42,6 +42,7 @@ function loadYTApi(): Promise<void> {
 export function useYouTube(
   onMusicEnded: (token: number) => void
 ) {
+  const pipWindow = useAppStore(state => state.pipWindow);
   const playerRef = useRef<YT.Player | null>(null);
   const currentTokenRef = useRef<number | null>(null);
   const suppressEndedRef = useRef(false);
@@ -63,6 +64,8 @@ export function useYouTube(
         console.error('[YT] #yt-host not found in DOM! pipWindow=', !!pipWindow);
         return;
       }
+      
+      container.innerHTML = ''; // Clear zombie iframes
 
       const div = doc.createElement('div');
       div.id = 'yt-player-inner';
@@ -261,6 +264,19 @@ export function useYouTube(
   const prewarm = useCallback(() => {
     ensurePlayer().catch(() => {});
   }, [ensurePlayer]);
+
+  useEffect(() => {
+    // When pipWindow changes, re-init the player after React has portaled the #yt-host div
+    const timer = setTimeout(() => {
+      playerRef.current = null;
+      const state = useAppStore.getState();
+      if (state.currentVideoId && state.isPlaying) {
+         const elapsed = Math.max(0, (Date.now() - (state.musicStartTime || Date.now())) / 1000);
+         playYouTube(state.currentVideoId, elapsed, currentTokenRef.current || 0).catch(console.error);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [pipWindow, playYouTube]);
 
   return useMemo(() => ({ 
     playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration 
