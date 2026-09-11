@@ -20,6 +20,8 @@
     "@supabase/supabase-js": "^2.112.4",
     "electron-updater": "^6.8.9",
     "emoji-picker-react": "^4.19.1",
+    "plyr": "^3.8.4",
+    "plyr-react": "^6.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-draggable": "^4.7.1",

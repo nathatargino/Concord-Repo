@@ -7,6 +7,29 @@ import EmojiPicker from 'emoji-picker-react';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
 
+// SVG Icons para o player de vídeo
+const IconVideo = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="23 7 16 12 23 17 23 7" />
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+  </svg>
+);
+
+const IconArrowLeft = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="19" y1="12" x2="5" y2="12" />
+    <polyline points="12 19 5 12 12 5" />
+  </svg>
+);
+
+const IconNoVideo = () => (
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.3">
+    <polygon points="23 7 16 12 23 17 23 7" />
+    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
+);
+
 // Using Giphy API Key from .env or fallback
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
 const gf = new GiphyFetch(GIPHY_API_KEY || 'GlVGYHqc3SyCEGpo3sZa1n5aD1bZ0vE4');
@@ -64,6 +87,81 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [imageZoom, setImageZoom] = useState<number>(1);
 
+  // ── Video Player Flip ──
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+
+  const { currentVideoId, currentTrackTitle, isPlaying } = useAppStore();
+
+  // Auto-fechar o player quando o vídeo parar de tocar
+  useEffect(() => {
+    if (!currentVideoId && showVideoPlayer) {
+      setShowVideoPlayer(false);
+    }
+  }, [currentVideoId, showVideoPlayer]);
+
+  // ── Slash command autocomplete ──
+  const SLASH_COMMANDS = [
+    { cmd: '/skip',  label: 'skip',  icon: '⏭️', description: 'Pula para a próxima música da fila' },
+    { cmd: '/play',  label: 'play',  icon: '▶️', description: 'Retoma a música pausada' },
+    { cmd: '/pause', label: 'pause', icon: '⏸️', description: 'Pausa a música atual' },
+    { cmd: '/clear', label: 'clear', icon: '🗑️', description: 'Limpa toda a fila de músicas' },
+  ];
+
+  const [showCmdMenu, setShowCmdMenu] = useState(false);
+  const [cmdFilter, setCmdFilter] = useState<typeof SLASH_COMMANDS>([]);
+  const [cmdHighlight, setCmdHighlight] = useState(0);
+  const cmdMenuRef = useRef<HTMLDivElement>(null);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setInput(val);
+    if (val.startsWith('/') && val.length >= 1) {
+      const q = val.toLowerCase();
+      const filtered = SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
+      setCmdFilter(filtered);
+      setShowCmdMenu(filtered.length > 0);
+      setCmdHighlight(0);
+    } else {
+      setShowCmdMenu(false);
+    }
+  };
+
+  const applyCommand = (cmd: string) => {
+    const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
+    if (onMusicAction) onMusicAction(action);
+    setInput('');
+    setShowCmdMenu(false);
+  };
+
+  // Navegação por teclado no menu de comandos
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showCmdMenu) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCmdHighlight(h => Math.min(h + 1, cmdFilter.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCmdHighlight(h => Math.max(h - 1, 0));
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        if (cmdFilter[cmdHighlight]) applyCommand(cmdFilter[cmdHighlight].cmd);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowCmdMenu(false);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
   const onEmojiClick = (emojiData: any) => {
     setInput(prev => prev + emojiData.emoji);
     setShowEmojiPicker(false);
@@ -72,6 +170,11 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
   // Barra de Pesquisa de Mensagens
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+
+  // YouTube embed URL (muted, visual only — audio comes from the hidden #yt-host player)
+  const ytEmbedUrl = currentVideoId
+    ? `https://www.youtube.com/embed/${currentVideoId}?autoplay=1&mute=1&controls=1&modestbranding=1&rel=0&enablejsapi=0`
+    : null;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -281,12 +384,6 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
     setInput('');
   }, [input, stagedFile, onSendMessage, onMusicAction, activeChannelId, room?.id, myName]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
 
   const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
@@ -366,7 +463,12 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
       {/* ── CABEÇALHO DO CHAT COM NOME DO CANAL E BARRA DE PESQUISA ── */}
       <div className={styles.chatHeader}>
         <div className={styles.headerTitle}>
-          {isServer ? (
+          {showVideoPlayer ? (
+            <>
+              <span className={styles.headerIcon}>📺</span>
+              <span className={styles.headerChannelName}>Player de Vídeo</span>
+            </>
+          ) : isServer ? (
             <>
               <span className={styles.headerHash}>#</span>
               <span className={styles.headerChannelName}>{activeChannel.name}</span>
@@ -380,41 +482,64 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
         </div>
 
         <div className={styles.headerActions}>
-          {showSearch ? (
-            <div className={styles.searchBar}>
-              <span className={styles.searchIcon}>🔍</span>
-              <input
-                type="text"
-                className={styles.searchInput}
-                placeholder="Pesquisar mensagens..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                autoFocus
-              />
-              {searchQuery && (
-                <span className={styles.searchResultsBadge}>
-                  {displayedMessages.length} {displayedMessages.length === 1 ? 'resultado' : 'resultados'}
-                </span>
+          {!showVideoPlayer && (
+            <>
+              {showSearch ? (
+                <div className={styles.searchBar}>
+                  <span className={styles.searchIcon}>🔍</span>
+                  <input
+                    type="text"
+                    className={styles.searchInput}
+                    placeholder="Pesquisar mensagens..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <span className={styles.searchResultsBadge}>
+                      {displayedMessages.length} {displayedMessages.length === 1 ? 'resultado' : 'resultados'}
+                    </span>
+                  )}
+                  <button 
+                    className={styles.closeSearchBtn} 
+                    onClick={() => { setShowSearch(false); setSearchQuery(''); }}
+                    title="Fechar pesquisa"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  className={styles.searchToggleBtn} 
+                  onClick={() => setShowSearch(true)}
+                  title="Pesquisar mensagens neste chat"
+                >
+                  🔍
+                </button>
               )}
-              <button 
-                className={styles.closeSearchBtn} 
-                onClick={() => { setShowSearch(false); setSearchQuery(''); }}
-                title="Fechar pesquisa"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <button 
-              className={styles.searchToggleBtn} 
-              onClick={() => setShowSearch(true)}
-              title="Pesquisar mensagens neste chat"
+            </>
+          )}
+
+          {/* Botão só aparece quando há vídeo tocando */}
+          {(currentVideoId || showVideoPlayer) && (
+            <button
+              className={`${styles.videoToggleBtn} ${showVideoPlayer ? styles.videoToggleBtnActive : ''} ${isPlaying ? styles.videoToggleBtnPlaying : ''}`}
+              onClick={() => setShowVideoPlayer(v => !v)}
+              title={showVideoPlayer ? 'Voltar ao Chat' : 'Assistir Vídeo'}
             >
-              🔍
+              {showVideoPlayer ? <IconArrowLeft /> : <IconVideo />}
+              <span>{showVideoPlayer ? 'Chat' : 'Assistir'}</span>
             </button>
           )}
         </div>
       </div>
+
+      {/* ── FLIP CARD CONTAINER ── */}
+      <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''}`}>
+        <div className={styles.flipCardInner}>
+
+          {/* ══ FACE FRENTE: Chat normal ══ */}
+          <div className={styles.flipCardFront}>
 
       {isDragging && (
         <div className={styles.dragOverlay}>
@@ -640,16 +765,39 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
           </div>
         )}
 
+        {/* Slash command menu */}
+        {showCmdMenu && (
+          <div className={styles.cmdMenu} ref={cmdMenuRef}>
+            <div className={styles.cmdMenuHeader}>
+              <span>💡 Comandos de Música</span>
+              <kbd className={styles.cmdKbd}>↑↓ navegar</kbd>
+              <kbd className={styles.cmdKbd}>Enter executar</kbd>
+            </div>
+            {cmdFilter.map((c, i) => (
+              <button
+                key={c.cmd}
+                className={`${styles.cmdItem} ${i === cmdHighlight ? styles.cmdItemActive : ''}`}
+                onMouseDown={(e) => { e.preventDefault(); applyCommand(c.cmd); }}
+                onMouseEnter={() => setCmdHighlight(i)}
+              >
+                <span className={styles.cmdItemIcon}>{c.icon}</span>
+                <span className={styles.cmdItemName}>{c.cmd}</span>
+                <span className={styles.cmdItemDesc}>{c.description}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <input
           type="text"
           className={styles.chatInput}
           placeholder={
             isServer
-              ? `Conversar em #${activeChannel.name}...`
-              : 'Envie uma mensagem...'
+              ? `Conversar em #${activeChannel.name}... (/ para comandos)`
+              : 'Envie uma mensagem... (/ para comandos)'
           }
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           maxLength={2000}
@@ -719,6 +867,88 @@ export const ChatPanel: React.FC<Props> = ({ onSendMessage, onMusicAction }) => 
           />
         </div>
       )}
+
+          </div>{/* end flipCardFront */}
+
+          {/* ══ FACE VERSO: Video Player ══ */}
+          <div className={styles.flipCardBack}>
+            <div className={styles.videoPlayerContainer}>
+
+              {/* Player area */}
+              {currentVideoId ? (
+                <div className={styles.videoIframeWrapper}>
+                  <div className={styles.videoIframeContainer}>
+                    <iframe
+                      key={currentVideoId}
+                      src={`https://www.youtube.com/embed/${currentVideoId}?autoplay=1&controls=1&rel=0&modestbranding=1&color=white&iv_load_policy=3&playsinline=1`}
+                      className={styles.videoIframe}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      title={currentTrackTitle || 'Video Player'}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.videoEmptyState}>
+                  <div className={styles.videoEmptyIcon}>
+                    <IconNoVideo />
+                  </div>
+                  <p className={styles.videoEmptyTitle}>Nenhum vídeo tocando</p>
+                  <p className={styles.videoEmptySubtitle}>
+                    Adicione um vídeo do YouTube na fila do painel de música para assistir aqui.
+                  </p>
+                  <div className={styles.videoEmptyPulse} />
+                </div>
+              )}
+
+              {/* Shortcut buttons — controles de música */}
+              <div className={styles.videoShortcutWrapper}>
+                <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
+                <div className={styles.videoShortcutGrid}>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
+                    onClick={() => onMusicAction?.('play')}
+                    title="Retomar música"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    <span>/play</span>
+                    <small>Retomar</small>
+                  </button>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
+                    onClick={() => onMusicAction?.('pause')}
+                    title="Pausar música"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                    <span>/pause</span>
+                    <small>Pausar</small>
+                  </button>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
+                    onClick={() => onMusicAction?.('skip')}
+                    title="Pular música"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                    <span>/skip</span>
+                    <small>Pular</small>
+                  </button>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                    onClick={() => onMusicAction?.('clear')}
+                    title="Limpar fila"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    <span>/clear</span>
+                    <small>Limpar fila</small>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>{/* end flipCardBack */}
+
+        </div>{/* end flipCardInner */}
+      </div>{/* end flipCard */}
     </div>
   );
 };

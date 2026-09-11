@@ -262,7 +262,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── JOIN ROOM / SERVER ────────────────────────────────────────
-    socket.on('join_room', (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string) => {
+    socket.on('join_room', async (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string) => {
       const cleanIdOrCode = (roomIdOrCode || '').trim();
       let room = getRoom(cleanIdOrCode);
       if (!room && fallbackCode) {
@@ -271,20 +271,117 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       // Auto-restore or create room state in memory so socket is never disconnected/orphaned
       if (!room) {
-        const isServer = Boolean(
+        let isServer = Boolean(
           isServerHint || 
           cleanIdOrCode.toUpperCase().startsWith('SRV-') || 
           (fallbackCode && fallbackCode.toUpperCase().startsWith('SRV-'))
         );
-        
-        if (!isServer) {
-          socket.emit('room_error', 'Sala não encontrada ou expirada.');
-          return;
+
+        // ── PERSISTÊNCIA: Tentar restaurar servidor do Supabase ──────
+        // Quando o processo Node reinicia, a memória é perdida mas o Supabase
+        // ainda tem os dados. Buscamos pelo UUID ou pelo código antes de rejeitar.
+        if (!isServer && supabaseClient) {
+          try {
+            const candidates = [cleanIdOrCode, fallbackCode].filter(Boolean) as string[];
+            let dbRoom: any = null;
+
+            for (const candidate of candidates) {
+              const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate);
+              const { data } = await supabaseClient
+                .from('rooms')
+                .select('id, code, name, icon_url, is_server, created_by')
+                .or(isUUID ? `id.eq.${candidate},code.ilike.${candidate}` : `code.ilike.${candidate}`)
+                .eq('is_server', true)
+                .maybeSingle();
+
+              if (data) {
+                dbRoom = data;
+                break;
+              }
+            }
+
+            if (dbRoom) {
+              isServer = true;
+              console.log(`[Room] Restaurando servidor "${dbRoom.name}" (${dbRoom.id}) do Supabase após reinício`);
+
+              // Buscar canais do servidor
+              let restoredChannels: any[] = [];
+              try {
+                const { data: chData } = await supabaseClient
+                  .from('server_channels')
+                  .select('id, name, server_id')
+                  .eq('server_id', dbRoom.id)
+                  .order('created_at', { ascending: true });
+                if (chData && chData.length > 0) {
+                  restoredChannels = chData.map((ch: any) => ({ id: ch.id, name: ch.name, serverId: ch.server_id }));
+                }
+              } catch (chErr) {
+                console.warn('[Room] Erro ao restaurar canais:', chErr);
+              }
+              if (restoredChannels.length === 0) {
+                restoredChannels = [{ id: 'ch-geral', name: 'Geral', serverId: dbRoom.id }];
+              }
+
+              // Buscar admins/donos do servidor
+              let restoredAdminPersistentIds: string[] = [];
+              try {
+                const { data: memData } = await supabaseClient
+                  .from('server_members')
+                  .select('user_id')
+                  .eq('server_id', dbRoom.id)
+                  .in('role', ['owner', 'sub_owner']);
+                if (memData) {
+                  restoredAdminPersistentIds = memData.map((m: any) => m.user_id).filter(Boolean);
+                }
+              } catch (memErr) {
+                console.warn('[Room] Erro ao restaurar admins:', memErr);
+              }
+
+              // Restaurar room em memória com dados do Supabase
+              const now = Date.now();
+              const restored: RoomState = {
+                id: dbRoom.id,
+                code: dbRoom.code,
+                name: dbRoom.name,
+                iconUrl: dbRoom.icon_url || undefined,
+                isServer: true,
+                channels: restoredChannels,
+                createdAt: now,
+                expiresAt: Infinity,
+                adminIds: [],
+                adminPersistentIds: restoredAdminPersistentIds,
+                ownerId: dbRoom.created_by || undefined,
+                subOwnerIds: [],
+                users: new Map(),
+                voiceUsers: new Set(),
+                screenSharingUsers: new Set(),
+                musicQueue: [],
+                currentMusicToken: null,
+                currentMusicVideoId: null,
+                currentMusicStartTime: null,
+                messageHistory: [],
+              };
+              rooms.set(restored.id, restored);
+              codeToRoomId.set(restored.code, restored.id);
+              room = restored;
+            }
+          } catch (sbErr) {
+            console.warn('[Room] Falha ao consultar Supabase para restaurar servidor:', sbErr);
+          }
         }
 
-        const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
-        room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
+        // Se ainda não encontrou: para salas temporárias → erro, para servidores → cria em memória
+        if (!room) {
+          if (!isServer) {
+            socket.emit('room_error', 'Sala não encontrada ou expirada.');
+            return;
+          }
+
+          const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
+          room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
+        }
       }
+
 
       // Consultar dados oficiais no DB do Supabase se o servidor for permanente
       if (supabaseClient && room.isServer) {
