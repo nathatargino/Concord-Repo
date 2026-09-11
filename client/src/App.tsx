@@ -489,7 +489,7 @@ export default function App() {
 
       {(!isElectron && !isPiPActive) && (
         <div className={styles.webTopBar}>
-          <a href="https://github.com/nathatargino/Concord-Repo/releases/download/v1.0.46/Concord-Setup.exe" target="_blank" rel="noopener noreferrer">
+          <a href="https://github.com/nathatargino/Concord-Repo/releases/latest/download/Concord-Setup.exe" target="_blank" rel="noopener noreferrer">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'text-bottom' }}>
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="7 10 12 15 17 10" />
