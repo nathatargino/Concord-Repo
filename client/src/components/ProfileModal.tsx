@@ -20,6 +20,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
   const [userId, setUserId] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -105,6 +106,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       });
       const unsubscribe = (window as any).electron.onUpdateMessage((msg: string) => {
         setUpdateMessage(msg);
+        setIsCheckingUpdate(false);
       });
       return () => {
         if (unsubscribe) unsubscribe();
@@ -256,35 +258,104 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         </form>
 
         {appVersion && (
-          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 style={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sistema</h3>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: '14px', color: '#fff', fontWeight: 600 }}>Concord Desktop</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', marginTop: '2px' }}>Versão {appVersion}</div>
-                {updateMessage && (
-                  <div style={{ fontSize: '12px', color: '#3B82F6', marginTop: '4px' }}>{updateMessage}</div>
-                )}
+          <div className={styles.systemSection}>
+            <div className={styles.systemHeader}>
+              <span className={styles.systemTitle}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                  <line x1="8" y1="21" x2="16" y2="21"/>
+                  <line x1="12" y1="17" x2="12" y2="21"/>
+                </svg>
+                Sistema
+              </span>
+            </div>
+
+            <div className={styles.systemCard}>
+              <div className={styles.systemInfo}>
+                <div className={styles.appNameRow}>
+                  <span className={styles.appName}>Concord Desktop</span>
+                  <span className={styles.versionBadge}>v{appVersion}</span>
+                </div>
+
+                <div className={styles.statusRow}>
+                  {(() => {
+                    if (isCheckingUpdate || updateMessage?.includes('Verificando')) {
+                      return (
+                        <span className={styles.statusChecking}>
+                          <svg className={styles.spin} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                          </svg>
+                          Verificando atualizações...
+                        </span>
+                      );
+                    }
+                    if (updateMessage?.includes('atualizado')) {
+                      return (
+                        <span className={styles.statusSuccess}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          {updateMessage}
+                        </span>
+                      );
+                    }
+                    if (updateMessage?.includes('Erro')) {
+                      return (
+                        <span className={styles.statusError}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                          </svg>
+                          {updateMessage}
+                        </span>
+                      );
+                    }
+                    if (updateMessage) {
+                      return (
+                        <span className={styles.statusChecking}>
+                          <span className={styles.statusIndicatorDot} />
+                          {updateMessage}
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className={styles.statusDefault}>
+                        <span className={styles.statusIndicatorDot} />
+                        Versão estável mais recente
+                      </span>
+                    );
+                  })()}
+                </div>
               </div>
-              <button 
+
+              <button
+                type="button"
+                className={styles.updateBtn}
+                disabled={isCheckingUpdate}
                 onClick={(e) => {
                   e.preventDefault();
+                  setIsCheckingUpdate(true);
                   (window as any).electron?.checkForUpdates();
+                  setTimeout(() => setIsCheckingUpdate(false), 3000);
                 }}
-                style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#fff',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'background 0.2s'
-                }}
-                onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                title="Buscar atualizações do Concord"
               >
-                Verificar Atualizações
+                <svg
+                  className={isCheckingUpdate ? styles.spin : ''}
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21.5 2v6h-6" />
+                  <path d="M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+                </svg>
+                {isCheckingUpdate ? 'Buscando...' : 'Verificar Atualizações'}
               </button>
             </div>
           </div>
