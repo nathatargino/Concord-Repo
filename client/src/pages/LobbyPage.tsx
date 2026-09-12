@@ -11,7 +11,7 @@ import {
   getMyServers,
   removeMyServer
 } from '../lib/supabase';
-import type { SavedServer } from '../lib/supabase';
+import type { SavedServer, DbRoom } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
@@ -120,34 +120,94 @@ export const LobbyPage: React.FC = () => {
     }
   };
 
-  // ─── ENTRAR EM SALA ──────────────────────────────────────────────
+  // ─── ENTRAR EM SALA OU SERVIDOR ────────────────────────────────────
   const handleJoinRoom = async () => {
-    const trimmed = code.trim().toUpperCase();
-    if (!trimmed) {
-      setError('Digite o código da sala ou servidor');
+    const rawInput = code.trim();
+    if (!rawInput) {
+      setError('Digite o código ou link da sala ou servidor');
       return;
     }
     setLoading(true);
     setError('');
     try {
-      const supabaseRoom = await findRoomInSupabase(trimmed);
+      let targetCode = rawInput;
+      let targetId: string | null = null;
+
+      // 1. Extrair parâmetro "code" de link/URL se houver
+      const codeMatch = rawInput.match(/[?&]code=([a-zA-Z0-9_-]+)/i);
+      if (codeMatch) {
+        targetCode = codeMatch[1].toUpperCase();
+      } else {
+        const inviteLabelMatch = rawInput.match(/c[óo]digo(?:\s+de\s+convite)?[:\s]+([a-zA-Z0-9_-]+)/i);
+        if (inviteLabelMatch) {
+          targetCode = inviteLabelMatch[1].toUpperCase();
+        } else if (!rawInput.includes('://') && !rawInput.includes('/')) {
+          targetCode = rawInput.toUpperCase();
+        }
+      }
+
+      // 2. Extrair ID da sala na URL se houver (/room/<id>)
+      const roomMatch = rawInput.match(/\/room\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-zA-Z0-9_-]+)/i);
+      if (roomMatch) {
+        targetId = roomMatch[1];
+      }
+
+      // 3. Buscar no Supabase por código ou por ID
+      let supabaseRoom: DbRoom | null = null;
+      if (targetCode) {
+        supabaseRoom = await findRoomInSupabase(targetCode);
+      }
+      if (!supabaseRoom && targetId) {
+        supabaseRoom = await findRoomInSupabase(targetId);
+      }
+      if (!supabaseRoom && targetCode !== rawInput.toUpperCase()) {
+        supabaseRoom = await findRoomInSupabase(rawInput.trim().toUpperCase());
+      }
+
       let serverRoom: any = null;
-      try {
-        const res = await fetch(`${SERVER_URL}/api/rooms/${trimmed}`);
-        if (res.ok) serverRoom = await res.json();
-      } catch {}
+      if (targetCode) {
+        try {
+          const res = await fetch(`${SERVER_URL}/api/rooms/${targetCode}`);
+          if (res.ok) serverRoom = await res.json();
+        } catch {}
+      }
+
+      if (!serverRoom && targetId) {
+        try {
+          const res = await fetch(`${SERVER_URL}/api/rooms/${targetId}`);
+          if (res.ok) serverRoom = await res.json();
+        } catch {}
+      }
 
       if (supabaseRoom || serverRoom) {
-        const roomId = serverRoom?.id || supabaseRoom?.id;
-        const roomCode = serverRoom?.code || supabaseRoom?.code || trimmed;
-        const isServerParam = supabaseRoom?.is_server || serverRoom?.isServer ? '&server=1' : '';
-        if (supabaseRoom?.is_server || serverRoom?.isServer) {
+        const roomId = serverRoom?.id || supabaseRoom?.id || targetId || targetCode;
+        const roomCode = serverRoom?.code || supabaseRoom?.code || targetCode;
+        const isServer = Boolean(
+          supabaseRoom?.is_server ||
+          serverRoom?.isServer ||
+          roomCode.startsWith('SRV-') ||
+          tab === 'join-server'
+        );
+        const isServerParam = isServer ? '&server=1' : '';
+        if (isServer) {
           setIsServer(true);
           if (supabaseRoom?.name) setServerName(supabaseRoom.name);
         }
         navigate(`/room/${roomId}?code=${roomCode}${isServerParam}`);
       } else {
-        setError('Sala ou servidor não encontrado. Verifique o código.');
+        // Se for um código válido ou UUID, navega diretamente para conectar no servidor
+        if (targetCode.startsWith('SRV-') || targetId || targetCode.length >= 4) {
+          const roomId = targetId || targetCode;
+          const roomCode = targetCode;
+          const isServer = targetCode.startsWith('SRV-') || tab === 'join-server';
+          const isServerParam = isServer ? '&server=1' : '';
+          if (isServer) {
+            setIsServer(true);
+          }
+          navigate(`/room/${roomId}?code=${roomCode}${isServerParam}`);
+        } else {
+          setError('Sala ou servidor não encontrado. Verifique o código ou link.');
+        }
       }
     } catch (e) {
       setError('Erro ao verificar a sala. Tente novamente.');
@@ -363,13 +423,13 @@ export const LobbyPage: React.FC = () => {
               <input
                 className={styles.codeInput}
                 type="text"
-                placeholder="Ex: AB3CX7"
+                placeholder="Ex: AB3CX7 ou link da sala"
                 value={code}
-                maxLength={12}
+                maxLength={500}
                 autoComplete="off"
                 spellCheck={false}
                 onChange={(e) => {
-                  setCode(e.target.value.toUpperCase());
+                  setCode(e.target.value);
                   setError('');
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleJoinRoom(); }}
@@ -567,13 +627,13 @@ export const LobbyPage: React.FC = () => {
               <input
                 className={styles.codeInput}
                 type="text"
-                placeholder="Ex: SRV-AB3X7"
+                placeholder="Ex: SRV-AB3X7 ou link permanente"
                 value={code}
-                maxLength={20}
+                maxLength={500}
                 autoComplete="off"
                 spellCheck={false}
                 onChange={(e) => {
-                  setCode(e.target.value.toUpperCase());
+                  setCode(e.target.value);
                   setError('');
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleJoinRoom(); }}

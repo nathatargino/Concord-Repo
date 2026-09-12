@@ -250,7 +250,10 @@ export default function App() {
       const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.startsWith('SRV-') || roomId.startsWith('SRV-');
 
       // Consultar metadados reais do Supabase para obter ID canônico, nome, logo e autor
-      const dbRoom = await findRoomInSupabase(roomId || codeParam);
+      let dbRoom = await findRoomInSupabase(roomId);
+      if (!dbRoom && codeParam) {
+        dbRoom = await findRoomInSupabase(codeParam);
+      }
       const targetRoomId = dbRoom?.id || roomId;
       const targetCode = dbRoom?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
       const targetName = dbRoom?.name || (isServerParam ? (store.serverName || 'Servidor Concord') : 'Sala Concord');

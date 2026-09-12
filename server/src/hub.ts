@@ -293,7 +293,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         // ── PERSISTÊNCIA: Tentar restaurar servidor do Supabase ──────
         // Quando o processo Node reinicia, a memória é perdida mas o Supabase
         // ainda tem os dados. Buscamos pelo UUID ou pelo código antes de rejeitar.
-        if (!isServer && supabaseClient) {
+        if (supabaseClient) {
           try {
             const candidates = [cleanIdOrCode, fallbackCode].filter(Boolean) as string[];
             let dbRoom: any = null;

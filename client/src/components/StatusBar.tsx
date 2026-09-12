@@ -100,23 +100,16 @@ export const StatusBar: React.FC = () => {
     navigate('/');
   }, [navigate]);
 
-  // Ação 3: Sair do Servidor — Remove vínculo, e se 0 membros restantes, deleta o servidor
+  // Ação 3: Sair do Servidor — Remove vínculo do usuário com o servidor
   const handleConfirmLeave = useCallback(async () => {
     if (!room) return;
     setIsLeaving(true);
     try {
       if (room.isServer || isServer) {
-        const { serverDeleted } = await leaveServerFromSupabase(room.id, myName);
+        await leaveServerFromSupabase(room.id, myName);
         removeMyServer(room.id);
         removeMyServer(room.code);
-
-        if (serverDeleted) {
-          (window as any).__concord_socket?.emit?.('destroy_empty_server', room.id);
-          (window as any).__concord_socket?.emit?.('destroy_empty_server', room.code);
-          toast.success('Você saiu do servidor. Como não restavam outros membros, o servidor foi excluído.');
-        } else {
-          toast.success('Você saiu do servidor.');
-        }
+        toast.success('Você saiu do servidor.');
       } else {
         toast.success('Você saiu da sala.');
       }
@@ -232,7 +225,7 @@ export const StatusBar: React.FC = () => {
             </div>
             <p className={styles.modalDescription}>
               {room?.isServer || isServer
-                ? 'Tem certeza de que deseja sair deste servidor? Você deixará de ser membro e precisará de um novo convite para entrar novamente. Se este servidor ficar com zero membros, ele será automaticamente excluído.'
+                ? 'Tem certeza de que deseja sair deste servidor? Você deixará de ser membro e precisará de um código ou link de convite para entrar novamente.'
                 : 'Tem certeza de que deseja sair desta sala temporária?'}
             </p>
             <div className={styles.modalActions}>

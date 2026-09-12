@@ -166,14 +166,17 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
     }
 
     // 2. Se não encontrou por código e tem formato de UUID ou ID, tenta por ID
-    const { data: byId, error: errId } = await supabase
-      .from('rooms')
-      .select('*')
-      .eq('id', clean)
-      .maybeSingle();
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+    if (isUUID) {
+      const { data: byId, error: errId } = await supabase
+        .from('rooms')
+        .select('*')
+        .eq('id', clean)
+        .maybeSingle();
 
-    if (byId && !errId) {
-      return byId as DbRoom;
+      if (byId && !errId) {
+        return byId as DbRoom;
+      }
     }
 
     return null;
@@ -753,7 +756,8 @@ export async function registerServerMember(
 
 /**
  * Remove a filiação do usuário ao servidor.
- * Se o servidor ficar com zero membros após a saída, o servidor é automaticamente deletado.
+ * O servidor permanece ativo permanentemente para que os membros (e convidados futuros)
+ * possam retornar utilizando o código ou link de convite.
  */
 export async function leaveServerFromSupabase(
   serverId: string,
@@ -796,32 +800,6 @@ export async function leaveServerFromSupabase(
         .delete()
         .eq('server_id', actualServerId)
         .ilike('username', username);
-    }
-
-    // 3. Regra de deleção: Contar membros restantes do servidor
-    const { count, error } = await supabase
-      .from('server_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('server_id', actualServerId);
-
-    const remainingCount = error ? 0 : (count ?? 0);
-    console.log(`[leaveServerFromSupabase] Servidor ${actualServerId} - Membros restantes: ${remainingCount}`);
-
-    if (remainingCount === 0) {
-      // Deletar canais do servidor
-      await supabase
-        .from('server_channels')
-        .delete()
-        .eq('server_id', actualServerId);
-
-      // Deletar o servidor da tabela rooms
-      await supabase
-        .from('rooms')
-        .delete()
-        .eq('id', actualServerId);
-
-      console.log(`[leaveServerFromSupabase] Servidor ${actualServerId} deletado automaticamente por ficar sem membros.`);
-      return { success: true, serverDeleted: true };
     }
 
     return { success: true, serverDeleted: false };
