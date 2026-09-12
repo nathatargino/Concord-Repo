@@ -18,6 +18,7 @@ declare global {
             toggleMiniPlayer?: (isMini: boolean) => void;
             openPipWindow?: (initialState: any) => void;
             closePipWindow?: () => void;
+            movePipWindow?: (deltaX: number, deltaY: number) => void;
             sendPipAction?: (action: string, payload?: any) => void;
             sendPipSync?: (state: any) => void;
             onPipAction?: (callback: (action: string, payload?: any) => void) => () => void;
@@ -55,6 +56,7 @@ contextBridge.exposeInMainWorld('electron', {
     toggleMiniPlayer: (isMini: boolean) => ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState: any) => ipcRenderer.send('open-pip-window', initialState),
     closePipWindow: () => ipcRenderer.send('close-pip-window'),
+    movePipWindow: (deltaX: number, deltaY: number) => ipcRenderer.send('pip-move', { deltaX, deltaY }),
     sendPipAction: (action: string, payload?: any) => ipcRenderer.send('pip-action', action, payload),
     sendPipSync: (state: any) => ipcRenderer.send('pip-sync', state),
     onPipAction: (callback: (action: string, payload?: any) => void) => {

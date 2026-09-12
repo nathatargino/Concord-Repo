@@ -61,6 +61,32 @@ export const PiPPlayer: React.FC = () => {
     }
   };
 
+  // Movimentação dinâmica da janela através do mouse
+  const handleDragMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, a')) return;
+    
+    let startX = e.screenX;
+    let startY = e.screenY;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.screenX - startX;
+      const deltaY = moveEvent.screenY - startY;
+      startX = moveEvent.screenX;
+      startY = moveEvent.screenY;
+      if (deltaX !== 0 || deltaY !== 0) {
+        (window as any).electron?.movePipWindow?.(deltaX, deltaY);
+      }
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
   const formatTime = (secs: number) => {
     if (!secs || isNaN(secs)) return '0:00';
     const m = Math.floor(secs / 60);
@@ -128,13 +154,18 @@ export const PiPPlayer: React.FC = () => {
 
   return (
     <div className={styles.pipContainer}>
-      <div className={styles.dragHeader}>
-        <span className={styles.dragTitle}>{title || 'Concord PiP'}</span>
+      {/* Barra superior de arraste */}
+      <div className={styles.dragHeader} onMouseDown={handleDragMouseDown} title="Clique e arraste para mover o PiP">
+        <div className={styles.dragHeaderLeft}>
+          <span className={styles.gripIcon}>⠿</span>
+          <span className={styles.dragTitle}>{title || 'Concord PiP'}</span>
+        </div>
         <button className={styles.closeBtn} onClick={handleClose} title="Fechar PiP">
           ✕
         </button>
       </div>
 
+      {/* Área do vídeo */}
       <div className={styles.videoWrapper}>
         {videoId ? (
           <>
@@ -142,27 +173,9 @@ export const PiPPlayer: React.FC = () => {
               <div id="pip-yt-player" style={{ width: '100%', height: '100%' }} />
             </div>
 
-            <div className={styles.overlay}>
-              <div className={styles.centerControl}>
-                <button
-                  className={styles.playBtn}
-                  onClick={() => sendAction(isPlaying ? 'pause' : 'play')}
-                  title={isPlaying ? 'Pausar' : 'Reproduzir'}
-                >
-                  {isPlaying ? (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="4" width="4" height="16" />
-                      <rect x="14" y="4" width="4" height="16" />
-                    </svg>
-                  ) : (
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-
-              <div className={styles.bottomBar}>
+            {/* Barra de progresso visível ao passar o mouse sobre o vídeo */}
+            <div className={styles.videoOverlay}>
+              <div className={styles.bottomSeekRow}>
                 <span className={styles.timeLabel}>
                   {formatTime(isDraggingSeek ? seekValue : currentTime)}
                 </span>
@@ -187,17 +200,6 @@ export const PiPPlayer: React.FC = () => {
                   />
                 </div>
                 <span className={styles.timeLabel}>{formatTime(duration)}</span>
-
-                <button 
-                  className={styles.controlBtn} 
-                  onClick={() => sendAction('skip')} 
-                  title="Pular Música"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polygon points="5 4 15 12 5 20 5 4" />
-                    <line x1="19" y1="5" x2="19" y2="19" />
-                  </svg>
-                </button>
               </div>
             </div>
           </>
@@ -206,6 +208,61 @@ export const PiPPlayer: React.FC = () => {
             <span>Nenhum vídeo em reprodução</span>
           </div>
         )}
+      </div>
+
+      {/* Comandos de Controle fixos no bloco do PiP */}
+      <div className={styles.commandsBar} onMouseDown={handleDragMouseDown}>
+        <p className={styles.commandsLabel}>⎯⎯ COMANDOS DE CONTROLE ⎯⎯</p>
+        <div className={styles.commandsGrid}>
+          <button
+            className={`${styles.cmdBtn} ${styles.btnPlay}`}
+            onClick={() => sendAction('play')}
+            title="Retomar música"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            <span>/play</span>
+          </button>
+
+          <button
+            className={`${styles.cmdBtn} ${styles.btnPause}`}
+            onClick={() => sendAction('pause')}
+            title="Pausar música"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16" />
+              <rect x="14" y="4" width="4" height="16" />
+            </svg>
+            <span>/pause</span>
+          </button>
+
+          <button
+            className={`${styles.cmdBtn} ${styles.btnSkip}`}
+            onClick={() => sendAction('skip')}
+            title="Pular música"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 4 15 12 5 20 5 4" />
+              <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span>/skip</span>
+          </button>
+
+          <button
+            className={`${styles.cmdBtn} ${styles.btnClear}`}
+            onClick={() => sendAction('clear')}
+            title="Limpar fila"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14H6L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4h6v2" />
+            </svg>
+            <span>/clear</span>
+          </button>
+        </div>
       </div>
     </div>
   );

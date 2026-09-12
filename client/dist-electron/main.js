@@ -383,11 +383,11 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
     const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
     pipWindow = new electron_1.BrowserWindow({
         width: 380,
-        height: 220,
-        minWidth: 260,
-        minHeight: 150,
+        height: 320,
+        minWidth: 320,
+        minHeight: 240,
         x: width - 400,
-        y: height - 240,
+        y: height - 340,
         alwaysOnTop: true,
         frame: false,
         backgroundColor: '#0a0a14',
@@ -419,6 +419,12 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
 electron_1.ipcMain.on('close-pip-window', () => {
     if (pipWindow) {
         pipWindow.close();
+    }
+});
+electron_1.ipcMain.on('pip-move', (_event, { deltaX, deltaY }) => {
+    if (pipWindow && !pipWindow.isDestroyed()) {
+        const [currentX, currentY] = pipWindow.getPosition();
+        pipWindow.setPosition(Math.round(currentX + deltaX), Math.round(currentY + deltaY));
     }
 });
 electron_1.ipcMain.on('check-for-updates', () => {

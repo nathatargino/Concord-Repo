@@ -29,6 +29,7 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     toggleMiniPlayer: (isMini) => electron_1.ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState) => electron_1.ipcRenderer.send('open-pip-window', initialState),
     closePipWindow: () => electron_1.ipcRenderer.send('close-pip-window'),
+    movePipWindow: (deltaX, deltaY) => electron_1.ipcRenderer.send('pip-move', { deltaX, deltaY }),
     sendPipAction: (action, payload) => electron_1.ipcRenderer.send('pip-action', action, payload),
     sendPipSync: (state) => electron_1.ipcRenderer.send('pip-sync', state),
     onPipAction: (callback) => {

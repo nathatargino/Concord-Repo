@@ -223,6 +223,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         if (action === 'play') onMusicAction?.('play');
         else if (action === 'pause') onMusicAction?.('pause');
         else if (action === 'skip') onMusicAction?.('skip');
+        else if (action === 'clear') onMusicAction?.('clear');
         else if (action === 'seek') onMusicSeek?.(payload);
       });
       const unsubClosed = electron.onPipClosed(() => {

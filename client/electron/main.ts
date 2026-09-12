@@ -390,11 +390,11 @@ ipcMain.on('open-pip-window', (event, initialState) => {
 
     pipWindow = new BrowserWindow({
         width: 380,
-        height: 220,
-        minWidth: 260,
-        minHeight: 150,
+        height: 320,
+        minWidth: 320,
+        minHeight: 240,
         x: width - 400,
-        y: height - 240,
+        y: height - 340,
         alwaysOnTop: true,
         frame: false,
         backgroundColor: '#0a0a14',
@@ -432,6 +432,13 @@ ipcMain.on('open-pip-window', (event, initialState) => {
 ipcMain.on('close-pip-window', () => {
     if (pipWindow) {
         pipWindow.close();
+    }
+});
+
+ipcMain.on('pip-move', (_event, { deltaX, deltaY }) => {
+    if (pipWindow && !pipWindow.isDestroyed()) {
+        const [currentX, currentY] = pipWindow.getPosition();
+        pipWindow.setPosition(Math.round(currentX + deltaX), Math.round(currentY + deltaY));
     }
 });
 
