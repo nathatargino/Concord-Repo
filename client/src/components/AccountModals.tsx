@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, savePrefsToElectron } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
@@ -92,6 +92,7 @@ export const AccountModals: React.FC = () => {
       localStorage.setItem('concord_username', cleanName);
       localStorage.setItem('concord_username_v1', cleanName);
       useAppStore.getState().setMyName(cleanName);
+      await savePrefsToElectron({ concord_username: cleanName });
 
       toast.success('Nome de usuário alterado com sucesso!');
       if (window.fecharModal) window.fecharModal('modal-alterar-usuario');

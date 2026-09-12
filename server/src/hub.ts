@@ -146,6 +146,18 @@ export function destroyRoom(roomId: string) {
   console.log(`[Room] Destroyed room ${roomId}`);
 }
 
+export function forceDestroyServer(roomIdOrCode: string) {
+  let targetRoom = rooms.get(roomIdOrCode);
+  if (!targetRoom && codeToRoomId.has(roomIdOrCode.toUpperCase())) {
+    const id = codeToRoomId.get(roomIdOrCode.toUpperCase());
+    if (id) targetRoom = rooms.get(id);
+  }
+  if (!targetRoom) return;
+  codeToRoomId.delete(targetRoom.code);
+  rooms.delete(targetRoom.id);
+  console.log(`[Room] Force destroyed empty server ${targetRoom.id} (${targetRoom.code})`);
+}
+
 // Clean up expired rooms every 5 minutes (ignoring permanent servers)
 setInterval(() => {
   const now = Date.now();
@@ -961,6 +973,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         io.to(targetId).emit('toast_notification', 'Você recebeu permissões de Administrador!', 'info');
         io.to(room.id).emit('room_info', toRoomInfo(room));
       }
+    });
+
+    // ─── DESTROY EMPTY SERVER ───────────────────────────────────────
+    socket.on('destroy_empty_server', (serverId: string) => {
+      forceDestroyServer(serverId);
     });
 
     // ─── DISCONNECT ────────────────────────────────────────────────

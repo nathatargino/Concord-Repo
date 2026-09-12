@@ -37,26 +37,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
 
     const syncSession = async () => {
       try {
-        // 1. No Electron, tentar carregar prefs persistentes do arquivo (sobrevive a reinstalações)
-        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-        if (isElectron && (window as any).electron?.loadPreferences) {
-          const prefs = await (window as any).electron.loadPreferences();
-          if (prefs?.concord_username) {
-            // Sincroniza também no localStorage para o resto do app
-            localStorage.setItem('concord_username', prefs.concord_username);
-            if (prefs.concord_pid) localStorage.setItem('concord_pid', prefs.concord_pid);
-            if (prefs.concord_avatar_url) localStorage.setItem('concord_avatar_url', prefs.concord_avatar_url);
-            // Auto-login direto — sem mostrar modal
-            onLogin(prefs.concord_username);
-            return;
-          }
-        }
-
-        // 2. Tentar localStorage (web ou Electron sem arquivo ainda)
-        const savedUsername = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
-        if (savedUsername) setUsername(savedUsername);
-
-        // 3. Sync account name and avatar from active Supabase session if logged in
+        // 1. Sincronizar nome e avatar da sessão ativa do Supabase se autenticado
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           if (user.email) setEmail(user.email);
@@ -75,10 +56,32 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError }) => {
           const name = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
           if (name) {
             setUsername(name);
-            savePrefsToElectron({ concord_username: name });
+            localStorage.setItem('concord_username', name);
+            localStorage.setItem('concord_username_v1', name);
+            savePrefsToElectron({ concord_username: name, concord_avatar_url: avatar || '' });
             onLogin(name);
+            return;
           }
         }
+
+        // 2. No Electron, tentar carregar prefs persistentes do arquivo (sobrevive a reinstalações)
+        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+        if (isElectron && (window as any).electron?.loadPreferences) {
+          const prefs = await (window as any).electron.loadPreferences();
+          if (prefs?.concord_username) {
+            // Sincroniza também no localStorage para o resto do app
+            localStorage.setItem('concord_username', prefs.concord_username);
+            if (prefs.concord_pid) localStorage.setItem('concord_pid', prefs.concord_pid);
+            if (prefs.concord_avatar_url) localStorage.setItem('concord_avatar_url', prefs.concord_avatar_url);
+            // Auto-login direto — sem mostrar modal
+            onLogin(prefs.concord_username);
+            return;
+          }
+        }
+
+        // 3. Tentar localStorage (web ou Electron sem arquivo ainda)
+        const savedUsername = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+        if (savedUsername) setUsername(savedUsername);
       } catch (err) {
         console.debug('Session check note:', err);
       }

@@ -13,7 +13,9 @@ import {
   registerServerMember,
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
-  updateMemberRoleInSupabase
+  updateMemberRoleInSupabase,
+  findRoomInSupabase,
+  supabase
 } from '../lib/supabase';
 import type { ServerChannel } from '../types';
 import toast from 'react-hot-toast';
@@ -75,7 +77,7 @@ export const Sidebar: React.FC<Props> = ({
   const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
 
   const [showOnline, setShowOnline] = useState(true);
-  const [showOffline, setShowOffline] = useState(false);
+  const [showOffline, setShowOffline] = useState(true);
   const [showVoice, setShowVoice] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string } | null>(null);
 
@@ -110,31 +112,18 @@ export const Sidebar: React.FC<Props> = ({
   useEffect(() => {
     if (!room?.id || !isServer) return;
 
-    // Registrar membro atual com dados completos do servidor
-    if (myName) {
-      registerServerMember(
-        room.id, 
-        myName, 
-        null, 
-        isOwner ? 'owner' : isSubOwner ? 'sub_owner' : 'member',
-        { 
-          name: room.name || serverName, 
-          code: room.code, 
-          icon_url: serverIconUrl || room.iconUrl 
-        }
-      );
-    }
+    let isMounted = true;
+    let memberSub: any = null;
 
-    // Buscar canais
-    fetchServerChannels(room.id).then((chs) => {
-      if (chs && chs.length > 0) {
-        setChannels(chs.map(c => ({ id: c.id, name: c.name, serverId: c.server_id })));
+    const loadMembers = async () => {
+      let actualServerId = room.id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(room.id)) {
+        const dbRoom = await findRoomInSupabase(room.id);
+        if (dbRoom?.id) actualServerId = dbRoom.id;
       }
-    });
 
-    // Buscar membros registrados
-    fetchServerMembers(room.id).then((mems) => {
-      if (mems) {
+      const mems = await fetchServerMembers(actualServerId);
+      if (isMounted && mems) {
         setServerMembers(mems.map(m => ({
           id: m.id,
           username: m.username,
@@ -144,8 +133,71 @@ export const Sidebar: React.FC<Props> = ({
           role: m.role as any,
         })));
       }
+      return actualServerId;
+    };
+
+    const setup = async () => {
+      let actualServerId = room.id;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(room.id)) {
+        const dbRoom = await findRoomInSupabase(room.id);
+        if (dbRoom?.id) actualServerId = dbRoom.id;
+      }
+
+      // Registrar membro atual com dados completos do servidor
+      if (myName) {
+        await registerServerMember(
+          actualServerId, 
+          myName, 
+          null, 
+          isOwner ? 'owner' : isSubOwner ? 'sub_owner' : 'member',
+          { 
+            name: room.name || serverName, 
+            code: room.code, 
+            icon_url: serverIconUrl || room.iconUrl 
+          }
+        );
+      }
+
+      await loadMembers();
+
+      // Iniciar listener em tempo real para presença/membros na tabela server_members
+      try {
+        memberSub = supabase
+          .channel(`sidebar_members_${actualServerId}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'server_members',
+              filter: `server_id=eq.${actualServerId}`,
+            },
+            () => {
+              loadMembers();
+            }
+          )
+          .subscribe();
+      } catch (subErr) {
+        console.warn('[Realtime] Erro ao subscrever alterações de membros:', subErr);
+      }
+    };
+
+    setup();
+
+    // Buscar canais
+    fetchServerChannels(room.id).then((chs) => {
+      if (isMounted && chs && chs.length > 0) {
+        setChannels(chs.map(c => ({ id: c.id, name: c.name, serverId: c.server_id })));
+      }
     });
-  }, [room?.id, isServer, myName, isOwner, isSubOwner, setChannels, setServerMembers]);
+
+    return () => {
+      isMounted = false;
+      if (memberSub) {
+        supabase.removeChannel(memberSub);
+      }
+    };
+  }, [room?.id, isServer, myName, isOwner, isSubOwner, setChannels, setServerMembers, serverName, serverIconUrl]);
 
   // Fechar menu de contexto no clique fora
   useEffect(() => {
@@ -173,11 +225,12 @@ export const Sidebar: React.FC<Props> = ({
   }] : []);
 
   const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
-  const onlineUsers = effectiveUsers.filter((u) => !u.inVoice);
+  // Regra de Presença: Online = Conexão ativa presente dentro do servidor
+  const onlineMembers = effectiveUsers;
   
-  // Usuários offline: membros do servidor que não estão presentes na lista `users` conectada
+  // Offline = Membro registrado no servidor que não está presente na lista ativa (app fechado ou no lobby)
   const offlineMembers = serverMembers.filter(
-    (m) => !effectiveUsers.some((u) => u.name && u.name.toLowerCase() === m.username.toLowerCase())
+    (m) => !effectiveUsers.some((u) => u.name && u.name.trim().toLowerCase() === m.username.trim().toLowerCase())
   );
 
   // ─── CRIAÇÃO DE NOVO CANAL ─────────────────────────────────────────
@@ -533,7 +586,7 @@ export const Sidebar: React.FC<Props> = ({
           >
             <div className={styles.sectionLabelLeft}>
               <span className={styles.onlineBadgeDot}>🟢</span>
-              Online — {isServer ? onlineUsers.length : effectiveUsers.length}
+              Online — {onlineMembers.length}
             </div>
             <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -543,7 +596,7 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {(isServer ? onlineUsers : effectiveUsers).map((user) => {
+              {onlineMembers.map((user) => {
                 const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
                 const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
                 const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';

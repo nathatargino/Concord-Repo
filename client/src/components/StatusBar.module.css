@@ -185,6 +185,25 @@
   background: rgba(34, 197, 94, 0.2);
 }
 
+.menuBtn {
+  padding: 4px 12px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.menuBtn:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: white;
+}
+
 .leaveBtn {
   padding: 4px 12px;
   background: rgba(239, 68, 68, 0.15);
@@ -202,6 +221,114 @@
   background: rgba(239, 68, 68, 0.25);
   border-color: rgba(239, 68, 68, 0.5);
   color: white;
+}
+
+/* ── Modal de Confirmação de Saída ── */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  animation: fadeIn 0.18s ease-out;
+}
+
+.modalCard {
+  background: linear-gradient(145deg, #181826 0%, #10101c 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  width: 90%;
+  max-width: 440px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.7);
+  animation: scaleUp 0.2s ease-out;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.modalWarningIcon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.modalTitle {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #F9FAFB;
+}
+
+.modalDescription {
+  margin: 0 0 24px 0;
+  color: #9CA3AF;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.modalActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.modalCancelBtn {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #E5E7EB;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.modalCancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #FFF;
+}
+
+.modalConfirmBtn {
+  padding: 8px 20px;
+  background: #EF4444;
+  border: none;
+  border-radius: 8px;
+  color: #FFF;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+  transition: all 0.15s;
+}
+
+.modalConfirmBtn:hover:not(:disabled) {
+  background: #DC2626;
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.55);
+}
+
+.modalConfirmBtn:disabled,
+.modalCancelBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .userText {

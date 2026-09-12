@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './ProfileModal.module.css';
-import { supabase } from '../lib/supabase';
+import { supabase, savePrefsToElectron } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
@@ -124,7 +124,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
 
     setSaving(true);
     try {
-      // 1. Atualizar estado global Zustand & LocalStorage imediatamente
+      // 1. Atualizar estado global Zustand, LocalStorage e preferências do Electron
       useAppStore.getState().setMyName(cleanName);
       useAppStore.getState().setMyAvatarUrl(avatarUrl || null);
 
@@ -135,6 +135,11 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       } else {
         localStorage.removeItem('concord_avatar_url');
       }
+
+      await savePrefsToElectron({
+        concord_username: cleanName,
+        concord_avatar_url: avatarUrl || '',
+      });
 
       // 2. Atualizar no Supabase (se autenticado ou por busca de conta correspondente)
       try {
@@ -162,17 +167,19 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             }
           });
         } else {
-          // Atualizar perfil existente correspondente pelo nome de usuário se houver no DB
+          // Atualizar perfil existente correspondente pelo nome antigo ou novo se houver no DB
+          const lookupName = initialName || cleanName;
           const { data: existingProf } = await supabase
             .from('profiles')
             .select('id')
-            .ilike('username', cleanName)
+            .ilike('username', lookupName)
             .maybeSingle();
 
           if (existingProf?.id) {
             await supabase
               .from('profiles')
               .update({
+                username: cleanName,
                 avatar_url: avatarUrl.trim() || null,
                 updated_at: new Date().toISOString(),
               })
@@ -209,11 +216,11 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <button className={styles.closeBtn} onClick={onClose}>×</button>
         <h2 className={styles.title}>Meu Perfil</h2>
-        
+
         <form onSubmit={handleSave} className={styles.form}>
           <div className={styles.avatarPreviewArea}>
-            <div 
-              className={styles.avatarCircle} 
+            <div
+              className={styles.avatarCircle}
               onClick={() => fileInputRef.current?.click()}
               title="Clique para alterar a foto de perfil"
             >
@@ -224,8 +231,8 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
               )}
               <div className={styles.avatarHoverOverlay}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9"/>
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>
                 <span className={styles.avatarHoverText}>Alterar</span>
               </div>
@@ -262,9 +269,9 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             <div className={styles.systemHeader}>
               <span className={styles.systemTitle}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                  <line x1="8" y1="21" x2="16" y2="21"/>
-                  <line x1="12" y1="17" x2="12" y2="21"/>
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                  <line x1="8" y1="21" x2="16" y2="21" />
+                  <line x1="12" y1="17" x2="12" y2="21" />
                 </svg>
                 Sistema
               </span>
@@ -273,7 +280,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
             <div className={styles.systemCard}>
               <div className={styles.systemInfo}>
                 <div className={styles.appNameRow}>
-                  <span className={styles.appName}>Concord Desktop</span>
+                  <span className={styles.appName}>Concord</span>
                   <span className={styles.versionBadge}>v{appVersion}</span>
                 </div>
 
@@ -303,9 +310,9 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
                       return (
                         <span className={styles.statusError}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="12" y1="8" x2="12" y2="12"/>
-                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="8" x2="12" y2="12" />
+                            <line x1="12" y1="16" x2="12.01" y2="16" />
                           </svg>
                           {updateMessage}
                         </span>

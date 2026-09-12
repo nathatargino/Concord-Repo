@@ -96,6 +96,7 @@ interface ClientToServerEvents {
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
   admin_transfer_role: (targetId: string) => void;
+  destroy_empty_server: (serverId: string) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -139,6 +140,7 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socketRef.current = socket;
+    (window as any).__concord_socket = socket;
 
     socket.on('connect', () => {
       store.setConnected(true);
@@ -356,6 +358,9 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     return () => {
+      if ((window as any).__concord_socket === socket) {
+        (window as any).__concord_socket = null;
+      }
       socket.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

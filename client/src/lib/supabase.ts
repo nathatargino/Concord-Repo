@@ -544,7 +544,7 @@ export function removeMyServer(serverId: string): void {
     const raw = localStorage.getItem(MY_SERVERS_KEY);
     if (!raw) return;
     let list: SavedServer[] = JSON.parse(raw);
-    list = list.filter(s => s.id !== serverId);
+    list = list.filter(s => s.id !== serverId && s.code !== serverId);
     localStorage.setItem(MY_SERVERS_KEY, JSON.stringify(list));
     savePrefsToElectron({ [MY_SERVERS_KEY]: JSON.stringify(list) });
   } catch (err) {
@@ -691,46 +691,167 @@ export async function registerServerMember(
     icon_url: serverInfo?.icon_url
   });
 
-  if (!supabaseUrl || !supabaseAnonKey) return;
+  if (!supabaseUrl || !supabaseAnonKey || !serverId || !username) return;
 
   try {
+    let actualServerId = serverId;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id) actualServerId = dbRoom.id;
+    }
+
     let uid = userId;
     if (!uid) {
       const { data: { user } } = await supabase.auth.getUser();
       uid = user?.id || null;
     }
 
+    if (!uid) {
+      // Tentar associar a perfil existente com o mesmo username se houver
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', username)
+        .maybeSingle();
+      if (prof?.id) uid = prof.id;
+    }
+
     if (uid) {
       await supabase
         .from('server_members')
         .upsert({
-          server_id: serverId,
+          server_id: actualServerId,
           user_id: uid,
           username,
           role,
           joined_at: new Date().toISOString(),
         }, { onConflict: 'server_id,user_id' });
+    } else {
+      // Para visitante/anônimo sem id de perfil
+      const { data: existing } = await supabase
+        .from('server_members')
+        .select('id')
+        .eq('server_id', actualServerId)
+        .ilike('username', username)
+        .maybeSingle();
+
+      if (!existing) {
+        await supabase
+          .from('server_members')
+          .insert({
+            server_id: actualServerId,
+            username,
+            role,
+            joined_at: new Date().toISOString(),
+          });
+      }
     }
   } catch (err) {
     console.warn('[Supabase] Falha ao registrar membro:', err);
   }
 }
 
-export async function fetchServerMembers(serverId: string): Promise<DbMember[]> {
-  if (!supabaseUrl || !supabaseAnonKey) return [];
+/**
+ * Remove a filiação do usuário ao servidor.
+ * Se o servidor ficar com zero membros após a saída, o servidor é automaticamente deletado.
+ */
+export async function leaveServerFromSupabase(
+  serverId: string,
+  username: string,
+  userId?: string | null
+): Promise<{ success: boolean; serverDeleted: boolean }> {
+  // 1. Remover do histórico local "Meus Servidores"
+  removeMyServer(serverId);
+
+  if (!supabaseUrl || !supabaseAnonKey || !serverId) {
+    return { success: true, serverDeleted: false };
+  }
 
   try {
+    let actualServerId = serverId;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id) actualServerId = dbRoom.id;
+    }
+
+    let uid = userId;
+    if (!uid) {
+      const { data: { user } } = await supabase.auth.getUser();
+      uid = user?.id || null;
+    }
+
+    // 2. Deletar registro do membro em server_members
+    if (uid) {
+      await supabase
+        .from('server_members')
+        .delete()
+        .eq('server_id', actualServerId)
+        .eq('user_id', uid);
+    }
+    
+    // Deletar também por username para garantir limpeza completa de registros anônimos
+    if (username) {
+      await supabase
+        .from('server_members')
+        .delete()
+        .eq('server_id', actualServerId)
+        .ilike('username', username);
+    }
+
+    // 3. Regra de deleção: Contar membros restantes do servidor
+    const { count, error } = await supabase
+      .from('server_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('server_id', actualServerId);
+
+    const remainingCount = error ? 0 : (count ?? 0);
+    console.log(`[leaveServerFromSupabase] Servidor ${actualServerId} - Membros restantes: ${remainingCount}`);
+
+    if (remainingCount === 0) {
+      // Deletar canais do servidor
+      await supabase
+        .from('server_channels')
+        .delete()
+        .eq('server_id', actualServerId);
+
+      // Deletar o servidor da tabela rooms
+      await supabase
+        .from('rooms')
+        .delete()
+        .eq('id', actualServerId);
+
+      console.log(`[leaveServerFromSupabase] Servidor ${actualServerId} deletado automaticamente por ficar sem membros.`);
+      return { success: true, serverDeleted: true };
+    }
+
+    return { success: true, serverDeleted: false };
+  } catch (err) {
+    console.error('[Supabase] Erro ao sair do servidor:', err);
+    return { success: false, serverDeleted: false };
+  }
+}
+
+export async function fetchServerMembers(serverId: string): Promise<DbMember[]> {
+  if (!supabaseUrl || !supabaseAnonKey || !serverId) return [];
+
+  try {
+    let actualServerId = serverId;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id) actualServerId = dbRoom.id;
+    }
+
     const { data, error } = await supabase
       .from('server_members')
       .select('*, profiles(avatar_url)')
-      .eq('server_id', serverId)
+      .eq('server_id', actualServerId)
       .order('joined_at', { ascending: true });
 
     if (error || !data) {
       const { data: fallbackData } = await supabase
         .from('server_members')
         .select('*')
-        .eq('server_id', serverId)
+        .eq('server_id', actualServerId)
         .order('joined_at', { ascending: true });
       return (fallbackData || []) as DbMember[];
     }

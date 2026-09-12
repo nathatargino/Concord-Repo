@@ -98,6 +98,9 @@ CREATE POLICY "Anyone can create a room or server."
 CREATE POLICY "Room creators can update their rooms."
     ON public.rooms FOR UPDATE USING (auth.uid() = created_by);
 
+CREATE POLICY "Anyone can delete rooms."
+    ON public.rooms FOR DELETE USING (true);
+
 
 -- 3. SERVER CHANNELS TABLE (Multiple text channels per server)
 CREATE TABLE IF NOT EXISTS public.server_channels (
@@ -114,6 +117,9 @@ CREATE POLICY "Anyone can view server channels."
 
 CREATE POLICY "Anyone can create server channels."
     ON public.server_channels FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Anyone can delete server channels."
+    ON public.server_channels FOR DELETE USING (true);
 
 
 -- 4. SERVER MEMBERS TABLE (Track offline, online and permanent server members)
@@ -137,6 +143,9 @@ CREATE POLICY "Anyone can join or register as server member."
 
 CREATE POLICY "Members can update their membership status."
     ON public.server_members FOR UPDATE USING (true);
+
+CREATE POLICY "Anyone can delete server members."
+    ON public.server_members FOR DELETE USING (true);
 
 
 -- 5. ROOM PARTICIPANTS TABLE (Active or historical call members)

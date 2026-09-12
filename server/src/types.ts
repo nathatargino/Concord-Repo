@@ -84,6 +84,7 @@ export interface ClientToServerEvents {
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
   admin_transfer_role: (targetId: string) => void;
+  destroy_empty_server: (serverId: string) => void;
 }
 
 // Server → Client events
