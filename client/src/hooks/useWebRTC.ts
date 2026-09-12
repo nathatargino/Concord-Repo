@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
@@ -146,6 +147,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             }
 
             screenAudioEl.srcObject = stream;
+            const outputId = useAudioStore.getState().selectedAudioOutputId;
+            if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
+              (screenAudioEl as any).setSinkId(outputId).catch(() => {});
+            }
             screenAudioEl.play().catch((err) => {
               console.warn('[WebRTC] Remote screen audio autoplay blocked:', err);
             });
@@ -171,6 +176,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             }
 
             audioEl.srcObject = stream;
+            const outputId = useAudioStore.getState().selectedAudioOutputId;
+            if (outputId && outputId !== 'default' && typeof (audioEl as any).setSinkId === 'function') {
+              (audioEl as any).setSinkId(outputId).catch(() => {});
+            }
             audioEl.play().catch((err) => {
               console.warn('[WebRTC] Remote mic audio autoplay blocked:', err);
             });

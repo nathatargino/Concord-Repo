@@ -163,6 +163,9 @@
   gap: 12px;
   scrollbar-width: thin;
   scrollbar-color: rgba(124, 58, 237, 0.3) transparent;
+  -webkit-app-region: no-drag;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
 
 .messageList::-webkit-scrollbar {
@@ -660,42 +663,61 @@
 .flipCard {
   flex: 1;
   min-height: 0;
-  perspective: 1400px;
   position: relative;
   overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+
+.flipCard.flipped {
+  perspective: 1400px;
 }
 
 .flipCardInner {
   width: 100%;
   height: 100%;
   position: relative;
-  transform-style: preserve-3d;
   transition: transform 0.72s cubic-bezier(0.4, 0.2, 0.2, 1);
   will-change: transform;
 }
 
 .flipCard.flipped .flipCardInner {
+  transform-style: preserve-3d;
   transform: rotateY(180deg);
 }
 
-.flipCardFront,
+.flipCardFront {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-app-region: no-drag;
+}
+
 .flipCardBack {
+  display: none;
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
+  overflow: hidden;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.flipCard.flipped .flipCardFront {
+  position: absolute;
+  inset: 0;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  overflow: hidden;
+  pointer-events: none;
+}
+
+.flipCard.flipped .flipCardBack {
   display: flex;
-  flex-direction: column;
-}
-
-.flipCardFront {
-  /* Normal chat face */
-}
-
-.flipCardBack {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  pointer-events: auto;
   transform: rotateY(180deg);
   background: linear-gradient(145deg, #0c0c1a 0%, #10101e 40%, #0d0d1c 100%);
 }

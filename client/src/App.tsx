@@ -440,8 +440,10 @@ export default function App() {
     }
 
     try {
+      const inputDeviceId = useAudioStore.getState().selectedAudioInputId;
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          deviceId: (inputDeviceId && inputDeviceId !== 'default') ? { exact: inputDeviceId } : undefined,
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,

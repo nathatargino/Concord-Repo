@@ -423,6 +423,23 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     return () => observer.disconnect();
   }, [searchQuery, scrollToBottom]);
 
+  // Listener explícito de roda do mouse para garantir rolagem 100% confiável no Electron Desktop
+  useEffect(() => {
+    const listEl = messageListRef.current;
+    if (!listEl) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (listEl.scrollHeight > listEl.clientHeight) {
+        listEl.scrollTop += e.deltaY;
+      }
+    };
+
+    listEl.addEventListener('wheel', onWheel, { passive: true });
+    return () => {
+      listEl.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
   // Timers múltiplos de alinhamento suave ao entrar no servidor ou mudar de canal
   useEffect(() => {
     if (!searchQuery) {
