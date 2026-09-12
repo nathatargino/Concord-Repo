@@ -29,6 +29,24 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
+      - name: Sync package version with git tag
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "Syncing package version to $VERSION from tag $TAG"
+          node -e "
+            const fs = require('fs');
+            ['package.json', 'client/package.json'].forEach(file => {
+              if (fs.existsSync(file)) {
+                const pkg = JSON.parse(fs.readFileSync(file, 'utf8'));
+                pkg.version = '$VERSION';
+                fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + '\n');
+                console.log('Updated ' + file + ' to version ' + '$VERSION');
+              }
+            });
+          "
+
       - name: Build Electron App (no publish)
         run: pnpm --filter client run electron:ci
 

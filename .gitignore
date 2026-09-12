@@ -6,3 +6,8 @@ dist/
 node_modules
 client/release/
 client/dist-electron/
+client/asar*
+client/extracted_asar/
+client/*.cjs
+client/error*.txt
+server/public/uploads/

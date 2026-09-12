@@ -5,7 +5,8 @@
   pointer-events: none;
 }
 
-.panel {
+.panel,
+.container {
   background: var(--bg-elevated);
   border: 1px solid rgba(34, 211, 238, 0.3);
   border-radius: 12px;

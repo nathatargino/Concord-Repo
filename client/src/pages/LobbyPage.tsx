@@ -29,6 +29,15 @@ export const LobbyPage: React.FC = () => {
   const [error, setError] = useState('');
   const [visible, setVisible] = useState(false);
   const [savedServers, setSavedServers] = useState<SavedServer[]>([]);
+  const [appVersion, setAppVersion] = useState<string>(packageJson.version);
+
+  useEffect(() => {
+    if ((window as any).electron?.getAppVersion) {
+      (window as any).electron.getAppVersion().then((v: string) => {
+        if (v) setAppVersion(v);
+      });
+    }
+  }, []);
 
   const loadSavedServers = useCallback(async () => {
     try {
@@ -597,7 +606,7 @@ export const LobbyPage: React.FC = () => {
         {/* Footer info */}
         <p className={styles.footer}>
           Concord WebRTC • Criptografado de ponta a ponta
-          {(/electron/i.test(navigator.userAgent) || !!(window as any).electron) && ` • v${packageJson.version}`}
+          {(/electron/i.test(navigator.userAgent) || !!(window as any).electron) && ` • v${appVersion}`}
         </p>
       </div>
     </div>

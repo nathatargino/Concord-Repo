@@ -155,37 +155,58 @@ function initAutoUpdater(window: BrowserWindowType) {
     autoUpdater.autoInstallOnAppQuit = true;
 
     autoUpdater.on('checking-for-update', () => {
-        window.webContents.send('update-message', 'Verificando atualizações...');
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', 'Verificando atualizações...');
+        }
     });
     autoUpdater.on('update-available', (info) => {
-        window.webContents.send('update-message', 'Atualização disponível.');
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', `Atualização v${info.version || ''} encontrada! Baixando...`);
+        }
     });
     autoUpdater.on('update-not-available', (info) => {
-        window.webContents.send('update-message', 'O aplicativo está atualizado.');
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', 'O aplicativo está atualizado.');
+        }
     });
     autoUpdater.on('error', (err) => {
-        window.webContents.send('update-message', 'Erro ao atualizar: ' + err);
+        fs.appendFileSync(logFile, `autoUpdater error: ${err}\n`);
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', 'Erro ao verificar atualizações: ' + (err?.message || err));
+        }
     });
     autoUpdater.on('download-progress', (progressObj) => {
-        let log_message = "Abaixando velocidade de " + progressObj.bytesPerSecond;
-        log_message = log_message + ' - Baixado ' + progressObj.percent + '%';
-        log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
-        window.webContents.send('update-message', log_message);
+        const percent = Math.round(progressObj.percent || 0);
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', `Baixando atualização: ${percent}%`);
+        }
     });
     autoUpdater.on('update-downloaded', (info) => {
-        window.webContents.send('update-message', 'Atualização baixada. O app será reiniciado para instalar.');
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', `Versão ${info.version || ''} baixada! Reiniciando para instalar...`);
+        }
         
-        new Notification({
-            title: 'Nova atualização pronta para instalar',
-            body: `A versão ${info.version || ''} do Concord foi baixada e será instalada automaticamente.`
-        }).show();
+        try {
+            new Notification({
+                title: 'Nova atualização pronta para instalar',
+                body: `A versão ${info.version || ''} do Concord foi baixada e será instalada automaticamente.`
+            }).show();
+        } catch {}
 
         setTimeout(() => {
             autoUpdater.quitAndInstall();
-        }, 5000);
+        }, 4000);
     });
 
-    autoUpdater.checkForUpdates();
+    autoUpdater.checkForUpdates().catch(err => {
+        fs.appendFileSync(logFile, `Initial autoUpdater.checkForUpdates error: ${err}\n`);
+    });
+
+    // Verificar atualizações a cada 1 hora em segundo plano
+    setInterval(() => {
+        autoUpdater.checkForUpdates().catch(() => {});
+    }, 60 * 60 * 1000);
+
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
 // Deep Linking Setup
@@ -368,29 +389,33 @@ ipcMain.on('open-pip-window', (event, initialState) => {
     const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
 
     pipWindow = new BrowserWindow({
-        width: 320,
-        height: 180,
-        x: width - 340,
-        y: height - 200,
+        width: 380,
+        height: 220,
+        minWidth: 260,
+        minHeight: 150,
+        x: width - 400,
+        y: height - 240,
         alwaysOnTop: true,
         frame: false,
-        transparent: true,
+        backgroundColor: '#0a0a14',
         resizable: true,
+        skipTaskbar: false,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js'),
+            autoplayPolicy: 'no-user-gesture-required'
         }
     });
 
     pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     // Ensure it uses a hash route to render just the PiP
-    if (process.env.VITE_DEV_SERVER_URL) {
-        pipWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}#/pip`);
-    } else {
-        pipWindow.loadFile(path.join(__dirname, '../dist/index.html'), { hash: '/pip' });
-    }
+    const pipUrl = isDev
+        ? `${process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'}#/pip`
+        : `http://127.0.0.1:${localServerPort}/#/pip`;
+
+    pipWindow.loadURL(pipUrl);
 
     pipWindow.webContents.on('did-finish-load', () => {
         pipWindow?.webContents.send('pip-sync', initialState);
@@ -398,7 +423,7 @@ ipcMain.on('open-pip-window', (event, initialState) => {
 
     pipWindow.on('closed', () => {
         pipWindow = null;
-        if (mainWindow) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('pip-closed');
         }
     });
@@ -412,9 +437,18 @@ ipcMain.on('close-pip-window', () => {
 
 ipcMain.on('check-for-updates', () => {
     if (!isDev) {
-        autoUpdater.checkForUpdates();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-message', 'Verificando atualizações...');
+        }
+        autoUpdater.checkForUpdates().catch((err) => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('update-message', 'Erro ao verificar atualizações: ' + (err?.message || err));
+            }
+        });
     } else {
-        if (mainWindow) mainWindow.webContents.send('update-message', 'Atualizações desabilitadas no modo de desenvolvimento.');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-message', 'Atualizações desabilitadas no modo de desenvolvimento.');
+        }
     }
 });
 
