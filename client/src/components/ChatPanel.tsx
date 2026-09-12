@@ -99,7 +99,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     setVisualizerActive
   } = useAppStore();
 
-  const { ytVol, setYtVol } = useAudioStore();
+  const { ytVol, setYtVol, callMuted } = useAudioStore();
 
   const [input, setInput] = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
@@ -204,12 +204,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       } else {
         store.setPiPActive(true);
         if (electron?.openPipWindow) {
+          const { ytVol: curYtVol, callMuted: curCallMuted } = useAudioStore.getState();
           electron.openPipWindow({
             videoId: currentVideoId,
             isPlaying,
             currentTime: isDraggingSeek ? seekValue : currentTime,
             duration,
-            title: activeTrackTitle
+            title: activeTrackTitle,
+            volume: curCallMuted ? 0 : curYtVol
           });
         }
       }
@@ -225,6 +227,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         else if (action === 'skip') onMusicAction?.('skip');
         else if (action === 'clear') onMusicAction?.('clear');
         else if (action === 'seek') onMusicSeek?.(payload);
+        else if (action === 'volume') setYtVol(payload);
       });
       const unsubClosed = electron.onPipClosed(() => {
          useAppStore.getState().setPiPActive(false);
@@ -234,7 +237,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
          unsubClosed();
       };
     }
-  }, [onMusicAction, onMusicSeek]);
+  }, [onMusicAction, onMusicSeek, setYtVol]);
 
   useEffect(() => {
     const electron = (window as any).electron;
@@ -244,10 +247,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         isPlaying,
         currentTime: isDraggingSeek ? seekValue : currentTime,
         duration,
-        title: activeTrackTitle
+        title: activeTrackTitle,
+        volume: callMuted ? 0 : ytVol
       });
     }
-  }, [currentVideoId, isPlaying, currentTime, isDraggingSeek, seekValue, duration, activeTrackTitle]);
+  }, [currentVideoId, isPlaying, currentTime, isDraggingSeek, seekValue, duration, activeTrackTitle, ytVol, callMuted]);
 
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

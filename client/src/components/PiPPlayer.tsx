@@ -10,7 +10,25 @@ export const PiPPlayer: React.FC = () => {
   
   const [isDraggingSeek, setIsDraggingSeek] = useState(false);
   const [seekValue, setSeekValue] = useState(0);
+  const [volume, setVolume] = useState<number>(80);
+  const volumeRef = useRef<number>(80);
   const playerRef = useRef<any>(null);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+    if (playerRef.current?.setVolume) {
+      try {
+        playerRef.current.setVolume(volume);
+        if (volume === 0) {
+          playerRef.current.mute();
+        } else {
+          playerRef.current.unMute();
+        }
+      } catch (e) {
+        console.debug('Error setting PiP volume in effect:', e);
+      }
+    }
+  }, [volume]);
 
   useEffect(() => {
     const electron = (window as any).electron;
@@ -21,6 +39,24 @@ export const PiPPlayer: React.FC = () => {
         if (state.isPlaying !== undefined) setIsPlaying(state.isPlaying);
         if (state.duration !== undefined) setDuration(state.duration);
         if (state.title !== undefined) setTitle(state.title);
+
+        if (state.volume !== undefined) {
+          const vol = Number(state.volume);
+          setVolume(vol);
+          volumeRef.current = vol;
+          if (playerRef.current) {
+            try {
+              playerRef.current.setVolume(vol);
+              if (vol === 0) {
+                playerRef.current.mute();
+              } else {
+                playerRef.current.unMute();
+              }
+            } catch (e) {
+              console.debug('Error setting PiP volume:', e);
+            }
+          }
+        }
         
         if (state.currentTime !== undefined && !isDraggingSeek) {
           setCurrentTime(state.currentTime);
@@ -102,6 +138,12 @@ export const PiPPlayer: React.FC = () => {
       if (playerRef.current) {
         try {
           playerRef.current.loadVideoById(videoId, currentTime);
+          playerRef.current.setVolume(volumeRef.current);
+          if (volumeRef.current === 0) {
+            playerRef.current.mute();
+          } else {
+            playerRef.current.unMute();
+          }
           return;
         } catch {
           playerRef.current = null;
@@ -124,13 +166,29 @@ export const PiPPlayer: React.FC = () => {
           },
           events: {
             onReady: (e: any) => {
+              try {
+                e.target.setVolume(volumeRef.current);
+                if (volumeRef.current === 0) {
+                  e.target.mute();
+                } else {
+                  e.target.unMute();
+                }
+              } catch (err) {}
               if (isPlaying) e.target.playVideo();
               if (currentTime > 0) e.target.seekTo(currentTime);
             },
             onStateChange: (e: any) => {
-              if (e.data === (window as any).YT.PlayerState.PLAYING && !isPlaying) {
-                sendAction('play');
-              } else if (e.data === (window as any).YT.PlayerState.PAUSED && isPlaying) {
+              if (e.data === (window as any).YT?.PlayerState?.PLAYING) {
+                try {
+                  e.target.setVolume(volumeRef.current);
+                  if (volumeRef.current === 0) {
+                    e.target.mute();
+                  } else {
+                    e.target.unMute();
+                  }
+                } catch (err) {}
+                if (!isPlaying) sendAction('play');
+              } else if (e.data === (window as any).YT?.PlayerState?.PAUSED && isPlaying) {
                 sendAction('pause');
               }
             }
@@ -200,6 +258,43 @@ export const PiPPlayer: React.FC = () => {
                   />
                 </div>
                 <span className={styles.timeLabel}>{formatTime(duration)}</span>
+
+                {/* Controle de Volume integrado ao PiP */}
+                <div className={styles.volumeWrapper}>
+                  <button
+                    className={styles.volumeBtn}
+                    onClick={() => {
+                      const newVol = volume > 0 ? 0 : 80;
+                      setVolume(newVol);
+                      sendAction('volume', newVol);
+                    }}
+                    title={volume === 0 ? "Desmutar" : "Mutar"}
+                  >
+                    {volume === 0 ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                      </svg>
+                    )}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={volume}
+                    onChange={(e) => {
+                      const newVol = parseInt(e.target.value);
+                      setVolume(newVol);
+                      sendAction('volume', newVol);
+                    }}
+                    className={styles.volumeBar}
+                    title={`Volume: ${volume}%`}
+                  />
+                </div>
               </div>
             </div>
           </>

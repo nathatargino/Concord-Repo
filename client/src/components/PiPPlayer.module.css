@@ -153,6 +153,41 @@
   accent-color: #8b5cf6;
 }
 
+.volumeWrapper {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.volumeBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.volumeBtn:hover {
+  color: #fff;
+}
+
+.volumeBar {
+  width: 45px;
+  height: 3px;
+  -webkit-appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  accent-color: #8b5cf6;
+}
+
 /* ─── PAINEL COMANDOS DE CONTROLE ─── */
 .commandsBar {
   background: #0c0c18;

@@ -110,11 +110,17 @@ export default function App() {
 
   // Sync audio volumes and screen share audio when stores change
   useEffect(() => {
-    const unsubAudio = useAudioStore.subscribe(() => {
+    const unsubAudio = useAudioStore.subscribe((state) => {
       audio.applyMicSettings();
       audio.applyRemoteSettings();
       audio.applyNoiseSuppressionSettings();
       yt.applyYTVolume();
+
+      const electron = (window as any).electron;
+      if (electron?.sendPipSync && useAppStore.getState().isPiPActive) {
+        const targetVol = state.callMuted ? 0 : state.ytVol;
+        electron.sendPipSync({ volume: targetVol });
+      }
     });
 
     const unsubApp = useAppStore.subscribe((state, prevState) => {
