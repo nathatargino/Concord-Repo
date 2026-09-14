@@ -70,7 +70,6 @@ export function useYouTube(
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCCEnabledRef = useRef<boolean>(false);
   const targetQualityRef = useRef<string>('auto');
   const availableQualitiesRef = useRef<string[]>(['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny']);
@@ -161,25 +160,17 @@ export function useYouTube(
   }, []);
 
   /** Force quality on the internal YouTube player — targets the sub-frame directly via Electron IPC
-   * and preserves room synchronization timestamp without causing delay. */
-  const forceQualityOnPlayer = useCallback((q: string, targetTimestamp?: number) => {
+   * without interrupting video playback or buffer (avoids black screen / flickering). */
+  const forceQualityOnPlayer = useCallback((q: string) => {
     if (!playerRef.current) return;
     const p = playerRef.current as any;
     const isDefault = q === 'default' || q === 'auto';
-
-    let syncTime = targetTimestamp;
-    if (syncTime === undefined) {
-      const state = useAppStore.getState();
-      if (state.musicStartTime && state.isPlaying) {
-        syncTime = Math.max(0, (Date.now() - state.musicStartTime) / 1000);
-      }
-    }
 
     // 1. [Electron only] Ask the main process to run executeJavaScript directly
     //    inside the YouTube sub-frame — bypasses all cross-origin restrictions.
     const electronSetQuality = (window as any).electron?.setYouTubeQuality;
     if (typeof electronSetQuality === 'function') {
-      electronSetQuality(isDefault ? 'auto' : q, syncTime).catch(() => {});
+      electronSetQuality(isDefault ? 'auto' : q).catch(() => {});
     }
 
     // 2. Try the internal movie_player object via renderer (works when disable-web-security is on)
@@ -196,9 +187,6 @@ export function useYouTube(
           if (typeof mp.setPlaybackQuality === 'function') {
             mp.setPlaybackQuality(isDefault ? 'default' : q);
           }
-          if (syncTime !== undefined && typeof mp.seekTo === 'function') {
-            mp.seekTo(syncTime, true);
-          }
         }
       }
     } catch {/* cross-origin: silent */}
@@ -212,9 +200,6 @@ export function useYouTube(
     // 4. postMessage to iframe
     postYTCommand('setPlaybackQuality', [isDefault ? 'default' : q]);
     postYTCommand('setPlaybackQualityRange', [isDefault ? 'auto' : q, isDefault ? 'auto' : q]);
-    if (syncTime !== undefined) {
-      postYTCommand('seekTo', [syncTime, true]);
-    }
   }, [postYTCommand]);
 
   const setQuality = useCallback((quality: string) => {
@@ -224,25 +209,15 @@ export function useYouTube(
     const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
     console.log('[YT] Setting quality to:', q);
 
-    const state = useAppStore.getState();
-    const currentSyncTime = state.musicStartTime && state.isPlaying
-      ? Math.max(0, (Date.now() - state.musicStartTime) / 1000)
-      : (playerRef.current?.getCurrentTime?.() || 0);
+    // Apply quality directly without seeking (prevents black screen and buffer loops)
+    forceQualityOnPlayer(q);
 
-    // Apply immediately with sync timestamp to keep everyone in sync
-    forceQualityOnPlayer(q, currentSyncTime);
-
-    // Retry to beat DASH ABR adaptation, always synchronized with the room timestamp
-    const delays = [350, 800, 1500];
-    delays.forEach(ms => {
-      setTimeout(() => {
-        if (targetQualityRef.current === quality) {
-          const s = useAppStore.getState();
-          const t = s.musicStartTime && s.isPlaying ? Math.max(0, (Date.now() - s.musicStartTime) / 1000) : undefined;
-          forceQualityOnPlayer(q, t);
-        }
-      }, ms);
-    });
+    // Gentle retry to ensure DASH ABR selection applies seamlessly
+    setTimeout(() => {
+      if (targetQualityRef.current === quality) {
+        forceQualityOnPlayer(q);
+      }
+    }, 600);
   }, [forceQualityOnPlayer]);
 
   const getAvailableQualities = useCallback(() => {
@@ -351,34 +326,12 @@ export function useYouTube(
               // Query available resolutions from player
               refreshAvailableQualities();
 
-              // Re-apply quality when playback starts with room timestamp
+              // Re-apply quality when playback starts if user set a preference
               const tq = targetQualityRef.current;
               if (tq && tq !== 'auto') {
                 const q = tq === 'default' ? 'default' : tq;
-                const s = useAppStore.getState();
-                const t = s.musicStartTime && s.isPlaying ? Math.max(0, (Date.now() - s.musicStartTime) / 1000) : undefined;
-                forceQualityOnPlayer(q, t);
-                setTimeout(() => {
-                  const s2 = useAppStore.getState();
-                  const t2 = s2.musicStartTime && s2.isPlaying ? Math.max(0, (Date.now() - s2.musicStartTime) / 1000) : undefined;
-                  forceQualityOnPlayer(q, t2);
-                }, 600);
+                forceQualityOnPlayer(q);
               }
-
-              // Synchronization Watchdog: ensures quality changes or buffering do not create
-              // delay relative to other participants
-              if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
-              syncIntervalRef.current = setInterval(() => {
-                const state = useAppStore.getState();
-                if (state.isPlaying && state.musicStartTime && playerRef.current && !state.isBuffering) {
-                  const expected = Math.max(0, (Date.now() - state.musicStartTime) / 1000);
-                  const actual = playerRef.current.getCurrentTime?.() || 0;
-                  if (Math.abs(expected - actual) > 1.5) {
-                    console.log('[YT Sync] Resyncing drift: expected=', expected, 'actual=', actual);
-                    playerRef.current.seekTo(expected, true);
-                  }
-                }
-              }, 2000);
 
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
@@ -409,7 +362,6 @@ export function useYouTube(
             
             if (event.data === window.YT.PlayerState.ENDED) {
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
-              if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
               if (!suppressEndedRef.current && currentTokenRef.current !== null) {
                 onMusicEnded(currentTokenRef.current);
               }
@@ -417,7 +369,6 @@ export function useYouTube(
             }
             if (event.data === window.YT.PlayerState.PAUSED) {
                if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
-               if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
             }
           },
         },
@@ -465,7 +416,6 @@ export function useYouTube(
 
   const stopYouTube = useCallback(async () => {
     suppressEndedRef.current = true;
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
     playerRef.current?.stopVideo();
     useAppStore.getState().setCurrentVideoId(null);
@@ -479,7 +429,6 @@ export function useYouTube(
   }, []);
 
   const pauseYouTube = useCallback(() => {
-    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     playerRef.current?.pauseVideo();
     useAppStore.getState().setIsPlaying(false);
   }, []);

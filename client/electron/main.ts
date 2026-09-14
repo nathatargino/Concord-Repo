@@ -540,7 +540,7 @@ ipcMain.handle('load-preferences', () => {
 // ─── YOUTUBE QUALITY CONTROL ──────────────────────────────────────────────────
 // Executes quality-setting code DIRECTLY inside the YouTube iframe sub-frame
 // (bypasses cross-origin restrictions that block the renderer from doing it).
-ipcMain.handle('yt-set-quality', async (_event, quality: string, targetTimestamp?: number) => {
+ipcMain.handle('yt-set-quality', async (_event, quality: string) => {
     if (!mainWindow || mainWindow.isDestroyed()) return false;
 
     const isDefault = quality === 'auto' || quality === 'default';
@@ -588,15 +588,6 @@ ipcMain.handle('yt-set-quality', async (_event, quality: string, targetTimestamp
           mp.setPlaybackQuality('${q}');
           applied.push('setPlaybackQuality');
         }
-
-        ${typeof targetTimestamp === 'number' && targetTimestamp >= 0 ? `
-          try {
-            if (typeof mp.seekTo === 'function') {
-              mp.seekTo(${targetTimestamp}, true);
-              applied.push('seekTo');
-            }
-          } catch (e) {}
-        ` : ''}
 
         return applied.join(',') || 'no-methods';
       })()
