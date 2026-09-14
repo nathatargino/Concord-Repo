@@ -72,20 +72,54 @@ export function useYouTube(
   const isCCEnabledRef = useRef<boolean>(false);
   const targetQualityRef = useRef<string>('auto');
 
+  const postYTCommand = useCallback((func: string, args: any[] = []) => {
+    try {
+      const p = playerRef.current as any;
+      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: func,
+          args: args
+        }), '*');
+      }
+    } catch (e) {
+      console.warn('[YT] postMessage command error:', e);
+    }
+  }, []);
+
   const applyCCState = useCallback((enabled: boolean) => {
     if (!playerRef.current) return;
     try {
       const p = playerRef.current as any;
       if (enabled) {
+        postYTCommand('loadModule', ['captions']);
+        postYTCommand('loadModule', ['cc']);
         p.loadModule?.('captions');
         p.loadModule?.('cc');
-        const tracklist = p.getOption?.('captions', 'tracklist') || p.getOption?.('cc', 'tracklist');
-        if (tracklist && tracklist.length > 0) {
+
+        let tracklist: any[] = [];
+        try {
+          tracklist = p.getOption?.('captions', 'tracklist') || p.getOption?.('cc', 'tracklist') || [];
+        } catch {}
+
+        if (Array.isArray(tracklist) && tracklist.length > 0) {
           const ptTrack = tracklist.find((t: any) => t.languageCode === 'pt' || t.languageCode?.startsWith('pt')) || tracklist[0];
-          p.setOption?.('captions', 'track', ptTrack || {});
-          p.setOption?.('cc', 'track', ptTrack || {});
+          postYTCommand('setOption', ['captions', 'track', ptTrack]);
+          postYTCommand('setOption', ['cc', 'track', ptTrack]);
+          p.setOption?.('captions', 'track', ptTrack);
+          p.setOption?.('cc', 'track', ptTrack);
+        } else {
+          postYTCommand('setOption', ['captions', 'track', { languageCode: 'pt' }]);
+          postYTCommand('setOption', ['cc', 'track', { languageCode: 'pt' }]);
+          p.setOption?.('captions', 'track', { languageCode: 'pt' });
+          p.setOption?.('cc', 'track', { languageCode: 'pt' });
         }
       } else {
+        postYTCommand('unloadModule', ['captions']);
+        postYTCommand('unloadModule', ['cc']);
+        postYTCommand('setOption', ['captions', 'track', {}]);
+        postYTCommand('setOption', ['cc', 'track', {}]);
         p.unloadModule?.('captions');
         p.unloadModule?.('cc');
         p.setOption?.('captions', 'track', {});
@@ -94,7 +128,7 @@ export function useYouTube(
     } catch (e) {
       console.warn('[YT] Failed to apply CC state:', e);
     }
-  }, []);
+  }, [postYTCommand]);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
@@ -130,8 +164,8 @@ export function useYouTube(
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
 
       playerRef.current = new YTAPI.Player(div, {
-        height: '200',
-        width: '200',
+        height: '100%',
+        width: '100%',
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: {
           autoplay: 0,
@@ -143,7 +177,8 @@ export function useYouTube(
           disablekb: 1,
           enablejsapi: 1,
           playsinline: 1,
-          cc_load_policy: 0 as any, // Cast to any to bypass strict ClosedCaptionsLoadPolicy type
+          cc_load_policy: 1 as any, // Enable cc module for iframe API controls
+          cc_lang_pref: 'pt',
           ...(ytOrigin ? { origin: ytOrigin } : {})
         },
         events: {
