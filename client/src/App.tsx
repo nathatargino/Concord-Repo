@@ -557,6 +557,9 @@ export default function App() {
             getYtCurrentTime={yt.getCurrentTime}
             getYtDuration={yt.getDuration}
             onSetCC={yt.setCC}
+            onSetQuality={yt.setQuality}
+            getYtAvailableQualities={yt.getAvailableQualities}
+            getYtQuality={yt.getQuality}
           />
         </div>
 

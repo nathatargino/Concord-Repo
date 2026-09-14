@@ -1493,3 +1493,135 @@
 .pipWebTooltip a:hover {
   text-decoration: underline;
 }
+
+/* ── Video Settings Menu ── */
+.settingsWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settingsMenuOverlay {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: 0;
+  width: 210px;
+  background: rgba(15, 15, 26, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7), 0 0 1px rgba(255, 255, 255, 0.2);
+  padding: 6px;
+  z-index: 100;
+  animation: fadeInSettings 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInSettings {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.settingsMenuList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.settingsMenuList::-webkit-scrollbar {
+  width: 4px;
+}
+
+.settingsMenuList::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.settingsSubHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 4px;
+}
+
+.settingsSubHeader:hover {
+  color: #fff;
+}
+
+.settingsMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.settingsMenuItem:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.menuItemActive {
+  background: rgba(124, 58, 237, 0.25);
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+.settingsItemLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsItemRight {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settingsValueText {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.settingsBadge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 600;
+}
+
+.badgeActive {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+

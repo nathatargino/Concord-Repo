@@ -69,6 +69,31 @@ export function useYouTube(
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isCCEnabledRef = useRef<boolean>(false);
+
+  const applyCCState = useCallback((enabled: boolean) => {
+    if (!playerRef.current) return;
+    try {
+      const p = playerRef.current as any;
+      if (enabled) {
+        p.loadModule?.('captions');
+        p.loadModule?.('cc');
+        const tracklist = p.getOption?.('captions', 'tracklist') || p.getOption?.('cc', 'tracklist');
+        if (tracklist && tracklist.length > 0) {
+          const ptTrack = tracklist.find((t: any) => t.languageCode === 'pt' || t.languageCode?.startsWith('pt')) || tracklist[0];
+          p.setOption?.('captions', 'track', ptTrack || {});
+          p.setOption?.('cc', 'track', ptTrack || {});
+        }
+      } else {
+        p.unloadModule?.('captions');
+        p.unloadModule?.('cc');
+        p.setOption?.('captions', 'track', {});
+        p.setOption?.('cc', 'track', {});
+      }
+    } catch (e) {
+      console.warn('[YT] Failed to apply CC state:', e);
+    }
+  }, []);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
@@ -133,14 +158,9 @@ export function useYouTube(
              } catch {
                // ignore
              }
-             // Force CC off immediately
-             try {
-               const p = playerRef.current as any;
-               if (p?.unloadModule) {
-                 p.unloadModule('captions');
-                 p.unloadModule('cc');
-               }
-             } catch {}
+             // Apply initial CC state (off by default)
+             applyCCState(isCCEnabledRef.current);
+             
              const { ytVol, callMuted } = useAudioStore.getState();
              const targetVol = callMuted ? 0 : ytVol;
              // Force-unmute at the Electron audio pipeline level immediately on ready
@@ -166,6 +186,9 @@ export function useYouTube(
             }
 
             if (event.data === window.YT.PlayerState.PLAYING) {
+              // Ensure CC state matches preference on play start
+              applyCCState(isCCEnabledRef.current);
+
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
               
@@ -207,7 +230,7 @@ export function useYouTube(
         },
       });
     });
-  }, [onMusicEnded]);
+  }, [onMusicEnded, applyCCState]);
 
   const playYouTube = useCallback(
     async (videoId: string, startSeconds: number, token: number) => {
@@ -221,6 +244,7 @@ export function useYouTube(
 
       const player = await ensurePlayer();
       player.loadVideoById(videoId, Math.floor(startSeconds));
+      applyCCState(isCCEnabledRef.current);
 
       const { ytVol, callMuted } = useAudioStore.getState();
       const { isPiPActive } = useAppStore.getState();
@@ -232,7 +256,7 @@ export function useYouTube(
       useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
     },
-    [ensurePlayer]
+    [ensurePlayer, applyCCState]
   );
 
   const stopYouTube = useCallback(async () => {
@@ -309,19 +333,43 @@ export function useYouTube(
   }, [ensurePlayer]);
 
   const setCC = useCallback((enabled: boolean) => {
+    isCCEnabledRef.current = enabled;
+    applyCCState(enabled);
+  }, [applyCCState]);
+
+  const setQuality = useCallback((quality: string) => {
     if (!playerRef.current) return;
     try {
       const p = playerRef.current as any;
-      if (enabled) {
-        p.loadModule?.('captions');
-        p.loadModule?.('cc');
-      } else {
-        p.unloadModule?.('captions');
-        p.unloadModule?.('cc');
+      if (typeof p.setPlaybackQuality === 'function') {
+        p.setPlaybackQuality(quality);
       }
     } catch (e) {
-      console.warn('[YT] Failed to toggle CC:', e);
+      console.warn('[YT] Failed to set quality:', e);
     }
+  }, []);
+
+  const getAvailableQualities = useCallback(() => {
+    if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+    try {
+      const p = playerRef.current as any;
+      if (typeof p.getAvailableQualityLevels === 'function') {
+        const levels = p.getAvailableQualityLevels();
+        if (Array.isArray(levels) && levels.length > 0) return levels;
+      }
+    } catch {}
+    return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+  }, []);
+
+  const getQuality = useCallback(() => {
+    if (!playerRef.current) return 'auto';
+    try {
+      const p = playerRef.current as any;
+      if (typeof p.getPlaybackQuality === 'function') {
+        return p.getPlaybackQuality() || 'auto';
+      }
+    } catch {}
+    return 'auto';
   }, []);
 
   useEffect(() => {
@@ -338,7 +386,7 @@ export function useYouTube(
   }, [pipWindow, playYouTube]);
 
   return useMemo(() => ({ 
-    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC
-  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC]);
+    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality
+  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality]);
 }
 

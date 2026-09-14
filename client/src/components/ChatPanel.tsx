@@ -78,9 +78,12 @@ interface ChatPanelProps {
   getYtCurrentTime?: () => number;
   getYtDuration?: () => number;
   onSetCC?: (enabled: boolean) => void;
+  onSetQuality?: (quality: string) => void;
+  getYtAvailableQualities?: () => string[];
+  getYtQuality?: () => string;
 }
 
-export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration }: ChatPanelProps) {
+export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration, onSetCC, onSetQuality, getYtAvailableQualities, getYtQuality }: ChatPanelProps) {
   const {
     messages,
     setMessages,
@@ -113,6 +116,45 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+
+  // ── Video Settings Menu ──
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [settingsSubMenu, setSettingsSubMenu] = useState<'main' | 'quality'>('main');
+  const [isCCActive, setIsCCActive] = useState(false);
+  const [selectedQuality, setSelectedQuality] = useState('auto');
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
+        setShowSettingsMenu(false);
+        setSettingsSubMenu('main');
+      }
+    };
+    if (showSettingsMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showSettingsMenu]);
+
+  const formatQualityLabel = (q: string) => {
+    switch (q) {
+      case 'hd2160': return '2160p (4K)';
+      case 'hd1440': return '1440p (2K)';
+      case 'hd1080': return '1080p (HD)';
+      case 'hd720': return '720p (HD)';
+      case 'large': return '480p';
+      case 'medium': return '360p';
+      case 'small': return '240p';
+      case 'tiny': return '144p';
+      case 'auto':
+      case 'default':
+      default:
+        return 'Automática';
+    }
+  };
 
   // Auto-fechar o player quando o vídeo parar de tocar
   useEffect(() => {
@@ -1170,6 +1212,106 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               </div>
                             );
                           })()}
+
+                          {/* Botão de Engrenagem (Configurações de Legenda e Qualidade) */}
+                          <div className={styles.settingsWrapper} ref={settingsMenuRef}>
+                            <button
+                              className={`${styles.overlayControlBtn} ${showSettingsMenu ? styles.btnActive : ''}`}
+                              onClick={() => {
+                                if (!showSettingsMenu) {
+                                  setSettingsSubMenu('main');
+                                  if (getYtQuality) setSelectedQuality(getYtQuality());
+                                }
+                                setShowSettingsMenu(prev => !prev);
+                              }}
+                              title="Configurações (Legendas e Qualidade)"
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                              </svg>
+                            </button>
+
+                            {showSettingsMenu && (
+                              <div className={styles.settingsMenuOverlay}>
+                                {settingsSubMenu === 'main' ? (
+                                  <div className={styles.settingsMenuList}>
+                                    {/* Item Legendas */}
+                                    <button
+                                      className={styles.settingsMenuItem}
+                                      onClick={() => {
+                                        const nextState = !isCCActive;
+                                        setIsCCActive(nextState);
+                                        onSetCC?.(nextState);
+                                      }}
+                                    >
+                                      <div className={styles.settingsItemLeft}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <rect x="2" y="4" width="20" height="16" rx="2" />
+                                          <path d="M7 15h4M13 15h4M7 11h10" />
+                                        </svg>
+                                        <span>Legendas</span>
+                                      </div>
+                                      <span className={`${styles.settingsBadge} ${isCCActive ? styles.badgeActive : ''}`}>
+                                        {isCCActive ? 'Ativadas' : 'Desativadas'}
+                                      </span>
+                                    </button>
+
+                                    {/* Item Qualidade */}
+                                    <button
+                                      className={styles.settingsMenuItem}
+                                      onClick={() => setSettingsSubMenu('quality')}
+                                    >
+                                      <div className={styles.settingsItemLeft}>
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                        </svg>
+                                        <span>Qualidade</span>
+                                      </div>
+                                      <div className={styles.settingsItemRight}>
+                                        <span className={styles.settingsValueText}>{formatQualityLabel(selectedQuality)}</span>
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                                      </div>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className={styles.settingsMenuList}>
+                                    {/* Header Submenu Qualidade */}
+                                    <button
+                                      className={styles.settingsSubHeader}
+                                      onClick={() => setSettingsSubMenu('main')}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+                                      <span>Qualidade</span>
+                                    </button>
+
+                                    {/* Opções de Qualidade */}
+                                    {(() => {
+                                      const qualities = getYtAvailableQualities ? getYtAvailableQualities() : ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+                                      const allQualities = Array.from(new Set(['auto', ...qualities]));
+                                      return allQualities.map((q) => (
+                                        <button
+                                          key={q}
+                                          className={`${styles.settingsMenuItem} ${selectedQuality === q ? styles.menuItemActive : ''}`}
+                                          onClick={() => {
+                                            setSelectedQuality(q);
+                                            onSetQuality?.(q);
+                                            setShowSettingsMenu(false);
+                                            setSettingsSubMenu('main');
+                                          }}
+                                        >
+                                          <span>{formatQualityLabel(q)}</span>
+                                          {selectedQuality === q && (
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                          )}
+                                        </button>
+                                      ));
+                                    })()}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
 
                           <button
                             className={styles.overlayControlBtn}
