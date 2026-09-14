@@ -156,14 +156,25 @@ export function useYouTube(
         p.setOption('playbackQuality', 'quality', q);
       }
       
+      const videoId = useAppStore.getState().currentVideoId;
       const currTime = p.getCurrentTime?.() || 0;
-      if (currTime > 0 && typeof p.seekTo === 'function') {
+
+      if (videoId && typeof p.loadVideoById === 'function') {
+        p.loadVideoById({
+          videoId: videoId,
+          startSeconds: Math.floor(currTime),
+          suggestedQuality: q
+        });
+        setTimeout(() => {
+          applyCCState(isCCEnabledRef.current);
+        }, 150);
+      } else if (currTime > 0 && typeof p.seekTo === 'function') {
         p.seekTo(currTime, true);
       }
     } catch (e) {
       console.warn('[YT] Failed to set quality:', e);
     }
-  }, [postYTCommand]);
+  }, [postYTCommand, applyCCState]);
 
   const getAvailableQualities = useCallback(() => {
     if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
