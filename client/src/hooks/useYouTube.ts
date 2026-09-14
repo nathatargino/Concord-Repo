@@ -70,6 +70,7 @@ export function useYouTube(
   const unlockedRef = useRef(false);
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCCEnabledRef = useRef<boolean>(false);
+  const targetQualityRef = useRef<string>('auto');
 
   const applyCCState = useCallback((enabled: boolean) => {
     if (!playerRef.current) return;
@@ -246,6 +247,10 @@ export function useYouTube(
       player.loadVideoById(videoId, Math.floor(startSeconds));
       applyCCState(isCCEnabledRef.current);
 
+      if (targetQualityRef.current !== 'auto') {
+        setQuality(targetQualityRef.current);
+      }
+
       const { ytVol, callMuted } = useAudioStore.getState();
       const { isPiPActive } = useAppStore.getState();
       const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
@@ -256,7 +261,7 @@ export function useYouTube(
       useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
     },
-    [ensurePlayer, applyCCState]
+    [ensurePlayer, applyCCState, setQuality]
   );
 
   const stopYouTube = useCallback(async () => {
@@ -338,11 +343,25 @@ export function useYouTube(
   }, [applyCCState]);
 
   const setQuality = useCallback((quality: string) => {
+    targetQualityRef.current = quality;
     if (!playerRef.current) return;
     try {
       const p = playerRef.current as any;
+      const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
+      console.log('[YT] Setting quality to:', q);
       if (typeof p.setPlaybackQuality === 'function') {
-        p.setPlaybackQuality(quality);
+        p.setPlaybackQuality(q);
+      }
+      if (typeof p.setPlaybackQualityRange === 'function') {
+        p.setPlaybackQualityRange(q, q);
+      }
+      if (typeof p.setOption === 'function') {
+        p.setOption('playbackQuality', 'quality', q);
+      }
+      // Re-seek slightly to trigger segment refresh with new quality
+      const currTime = p.getCurrentTime?.() || 0;
+      if (currTime > 0 && typeof p.seekTo === 'function') {
+        p.seekTo(currTime, true);
       }
     } catch (e) {
       console.warn('[YT] Failed to set quality:', e);
@@ -362,14 +381,7 @@ export function useYouTube(
   }, []);
 
   const getQuality = useCallback(() => {
-    if (!playerRef.current) return 'auto';
-    try {
-      const p = playerRef.current as any;
-      if (typeof p.getPlaybackQuality === 'function') {
-        return p.getPlaybackQuality() || 'auto';
-      }
-    } catch {}
-    return 'auto';
+    return targetQualityRef.current || 'auto';
   }, []);
 
   useEffect(() => {
