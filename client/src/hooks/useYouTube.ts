@@ -169,7 +169,7 @@ export function useYouTube(
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: {
           autoplay: 0,
-          controls: 0,
+          controls: 1, // Enable controls so YouTube loads captions and quality subsystems
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
@@ -177,7 +177,7 @@ export function useYouTube(
           disablekb: 1,
           enablejsapi: 1,
           playsinline: 1,
-          cc_load_policy: 1 as any, // Enable cc module for iframe API controls
+          cc_load_policy: 0 as any, // Start with captions OFF by default
           cc_lang_pref: 'pt',
           ...(ytOrigin ? { origin: ytOrigin } : {})
         },
