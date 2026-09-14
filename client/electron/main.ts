@@ -531,3 +531,49 @@ ipcMain.handle('load-preferences', () => {
     }
     return {};
 });
+
+// ─── YOUTUBE QUALITY CONTROL ──────────────────────────────────────────────────
+// Executes quality-setting code DIRECTLY inside the YouTube iframe sub-frame
+// (bypasses cross-origin restrictions that block the renderer from doing it).
+ipcMain.handle('yt-set-quality', async (_event, quality: string) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+
+    const isDefault = quality === 'auto' || quality === 'default';
+    const q = isDefault ? 'default' : quality;
+    const qRange = isDefault ? 'auto' : quality;
+
+    const script = `
+      (function() {
+        var mp = document.getElementById('movie_player') ||
+                 document.querySelector('.html5-video-player');
+        if (!mp) { return 'no-player'; }
+        var applied = [];
+        if (typeof mp.setPlaybackQualityRange === 'function') {
+          mp.setPlaybackQualityRange('${qRange}', '${qRange}');
+          applied.push('setPlaybackQualityRange');
+        }
+        if (typeof mp.setPlaybackQuality === 'function') {
+          mp.setPlaybackQuality('${q}');
+          applied.push('setPlaybackQuality');
+        }
+        return applied.join(',') || 'no-methods';
+      })()
+    `;
+
+    // Iterate over all web contents to find the YouTube sub-frame
+    const { webContents } = require('electron');
+    let found = false;
+    for (const wc of webContents.getAllWebContents()) {
+        try {
+            const url = wc.getURL();
+            if (url && url.includes('youtube.com')) {
+                const result = await wc.executeJavaScript(script);
+                fs.appendFileSync(logFile, `[YT-quality] frame url=${url.substring(0,60)} result=${result}\n`);
+                found = true;
+            }
+        } catch (e) {
+            fs.appendFileSync(logFile, `[YT-quality] exec error: ${e}\n`);
+        }
+    }
+    return found;
+});

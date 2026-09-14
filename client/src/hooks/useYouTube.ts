@@ -150,12 +150,18 @@ export function useYouTube(
     const p = playerRef.current as any;
     const isDefault = q === 'default' || q === 'auto';
 
-    // 1. Try the internal movie_player object inside the iframe (most reliable)
+    // 1. [Electron only] Ask the main process to run executeJavaScript directly
+    //    inside the YouTube sub-frame — bypasses all cross-origin restrictions.
+    const electronSetQuality = (window as any).electron?.setYouTubeQuality;
+    if (typeof electronSetQuality === 'function') {
+      electronSetQuality(isDefault ? 'auto' : q).catch(() => {});
+    }
+
+    // 2. Try the internal movie_player object via renderer (works when disable-web-security is on)
     try {
       const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
       const win = iframe?.contentWindow as any;
       if (win) {
-        // Directly invoke internal player methods
         const mp = win.document?.getElementById('movie_player') ||
                    win.document?.querySelector('.html5-video-player');
         if (mp) {
@@ -173,13 +179,13 @@ export function useYouTube(
       }
     } catch {/* cross-origin: silent */}
 
-    // 2. IFrame API instance methods (deprecated but still attempted)
+    // 3. IFrame API instance methods (deprecated but still attempted)
     try {
       if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(q, q);
       if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(isDefault ? 'default' : q);
     } catch {}
 
-    // 3. postMessage to iframe
+    // 4. postMessage to iframe
     postYTCommand('setPlaybackQuality', [isDefault ? 'default' : q]);
     postYTCommand('setPlaybackQualityRange', [isDefault ? 'auto' : q, isDefault ? 'auto' : q]);
   }, [postYTCommand]);

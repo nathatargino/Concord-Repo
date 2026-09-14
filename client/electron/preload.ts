@@ -24,6 +24,8 @@ declare global {
             onPipAction?: (callback: (action: string, payload?: any) => void) => () => void;
             onPipSync?: (callback: (state: any) => void) => () => void;
             onPipClosed?: (callback: () => void) => () => void;
+            /** Force YouTube stream quality via Electron main process (bypasses cross-origin) */
+            setYouTubeQuality?: (quality: string) => Promise<boolean>;
         }
     }
 }
@@ -73,5 +75,6 @@ contextBridge.exposeInMainWorld('electron', {
         const subscription = () => callback();
         ipcRenderer.on('pip-closed', subscription);
         return () => ipcRenderer.removeListener('pip-closed', subscription);
-    }
+    },
+    setYouTubeQuality: (quality: string) => ipcRenderer.invoke('yt-set-quality', quality),
 });
