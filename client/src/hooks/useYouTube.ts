@@ -130,6 +130,57 @@ export function useYouTube(
     }
   }, [postYTCommand]);
 
+  const setCC = useCallback((enabled: boolean) => {
+    isCCEnabledRef.current = enabled;
+    applyCCState(enabled);
+  }, [applyCCState]);
+
+  const setQuality = useCallback((quality: string) => {
+    targetQualityRef.current = quality;
+    if (!playerRef.current) return;
+    try {
+      const p = playerRef.current as any;
+      const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
+      console.log('[YT] Setting quality to:', q);
+      postYTCommand('setPlaybackQuality', [q]);
+      postYTCommand('setPlaybackQualityRange', [q, q]);
+      postYTCommand('setOption', ['playbackQuality', 'quality', q]);
+
+      if (typeof p.setPlaybackQuality === 'function') {
+        p.setPlaybackQuality(q);
+      }
+      if (typeof p.setPlaybackQualityRange === 'function') {
+        p.setPlaybackQualityRange(q, q);
+      }
+      if (typeof p.setOption === 'function') {
+        p.setOption('playbackQuality', 'quality', q);
+      }
+      
+      const currTime = p.getCurrentTime?.() || 0;
+      if (currTime > 0 && typeof p.seekTo === 'function') {
+        p.seekTo(currTime, true);
+      }
+    } catch (e) {
+      console.warn('[YT] Failed to set quality:', e);
+    }
+  }, [postYTCommand]);
+
+  const getAvailableQualities = useCallback(() => {
+    if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+    try {
+      const p = playerRef.current as any;
+      if (typeof p.getAvailableQualityLevels === 'function') {
+        const levels = p.getAvailableQualityLevels();
+        if (Array.isArray(levels) && levels.length > 0) return levels;
+      }
+    } catch {}
+    return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+  }, []);
+
+  const getQuality = useCallback(() => {
+    return targetQualityRef.current || 'auto';
+  }, []);
+
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
     return new Promise(async (resolve) => {
       console.log('[YT] ensurePlayer called');
@@ -371,53 +422,6 @@ export function useYouTube(
   const prewarm = useCallback(() => {
     ensurePlayer().catch(() => {});
   }, [ensurePlayer]);
-
-  const setCC = useCallback((enabled: boolean) => {
-    isCCEnabledRef.current = enabled;
-    applyCCState(enabled);
-  }, [applyCCState]);
-
-  const setQuality = useCallback((quality: string) => {
-    targetQualityRef.current = quality;
-    if (!playerRef.current) return;
-    try {
-      const p = playerRef.current as any;
-      const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
-      console.log('[YT] Setting quality to:', q);
-      if (typeof p.setPlaybackQuality === 'function') {
-        p.setPlaybackQuality(q);
-      }
-      if (typeof p.setPlaybackQualityRange === 'function') {
-        p.setPlaybackQualityRange(q, q);
-      }
-      if (typeof p.setOption === 'function') {
-        p.setOption('playbackQuality', 'quality', q);
-      }
-      // Re-seek slightly to trigger segment refresh with new quality
-      const currTime = p.getCurrentTime?.() || 0;
-      if (currTime > 0 && typeof p.seekTo === 'function') {
-        p.seekTo(currTime, true);
-      }
-    } catch (e) {
-      console.warn('[YT] Failed to set quality:', e);
-    }
-  }, []);
-
-  const getAvailableQualities = useCallback(() => {
-    if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
-    try {
-      const p = playerRef.current as any;
-      if (typeof p.getAvailableQualityLevels === 'function') {
-        const levels = p.getAvailableQualityLevels();
-        if (Array.isArray(levels) && levels.length > 0) return levels;
-      }
-    } catch {}
-    return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
-  }, []);
-
-  const getQuality = useCallback(() => {
-    return targetQualityRef.current || 'auto';
-  }, []);
 
   useEffect(() => {
     // When pipWindow changes, re-init the player after React has portaled the #yt-host div
