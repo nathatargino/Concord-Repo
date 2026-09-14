@@ -1110,9 +1110,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                       </div>
                     )}
 
-                    {/* Custom Overlay Controls */}
+                    {/* Custom Overlay Controls - always above YouTube iframe */}
                     {currentVideoId && (
-                      <div className={styles.customVideoOverlay}>
+                      <div className={styles.customVideoOverlay} style={{ zIndex: 100, pointerEvents: 'none' }}>
                         <div className={styles.videoOverlayTop}>
                           <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
                         </div>

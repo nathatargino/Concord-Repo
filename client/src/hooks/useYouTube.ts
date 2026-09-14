@@ -242,47 +242,32 @@ export function useYouTube(
       const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
       console.log('[YT] Setting quality to:', q);
 
-      // 1. Direct native DOM automation inside iframe (works in Electron / unblocked environments)
-      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
-      try {
-        const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-        if (doc) {
-          applyNativeQuality(doc, quality);
-        }
-      } catch (e) {
-        console.log('[YT] Cross-origin iframe doc access blocked:', e);
-      }
-
-      // 2. Send postMessage commands
-      postYTCommand('setPlaybackQuality', [q]);
-      postYTCommand('setPlaybackQualityRange', [q, q]);
-      postYTCommand('setOption', ['playbackQuality', 'quality', q]);
-
-      // 3. Call player instance methods if available
-      if (typeof p.setPlaybackQuality === 'function') {
-        p.setPlaybackQuality(q);
-      }
-      if (typeof p.setPlaybackQualityRange === 'function') {
-        p.setPlaybackQualityRange(q, q);
-      }
-      if (typeof p.setOption === 'function') {
-        p.setOption('playbackQuality', 'quality', q);
-      }
-
-      // 4. Trigger seamless DASH buffer refresh via seekTo without reloading the video
+      // loadVideoById with suggestedQuality is the most reliable way to force quality
+      // because it tells YouTube which stream to fetch from the start.
+      const videoId = useAppStore.getState().currentVideoId;
       const currTime = p.getCurrentTime?.() || 0;
-      if (currTime > 0 && typeof p.seekTo === 'function') {
+
+      if (videoId && typeof p.loadVideoById === 'function') {
+        p.loadVideoById({
+          videoId,
+          startSeconds: Math.floor(currTime),
+          suggestedQuality: q
+        });
+        // Re-apply CC state after reload
         setTimeout(() => {
-          try {
-            const timeNow = p.getCurrentTime?.() || currTime;
-            p.seekTo(timeNow, true);
-          } catch {}
-        }, 150);
+          applyCCState(isCCEnabledRef.current);
+        }, 300);
+      } else {
+        // Fallback: postMessage + direct API calls
+        postYTCommand('setPlaybackQuality', [q]);
+        postYTCommand('setPlaybackQualityRange', [q, q]);
+        if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(q);
+        if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(q, q);
       }
     } catch (e) {
       console.warn('[YT] Failed to set quality:', e);
     }
-  }, [postYTCommand]);
+  }, [postYTCommand, applyCCState]);
 
   const getAvailableQualities = useCallback(() => {
     try {
@@ -359,7 +344,7 @@ export function useYouTube(
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: {
           autoplay: 0,
-          controls: 1, // Enable controls so YouTube loads captions and quality subsystems
+          controls: 0, // Hide YouTube native controls — Concord overlay handles all UI
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
