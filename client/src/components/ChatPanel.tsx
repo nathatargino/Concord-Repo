@@ -156,10 +156,18 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     }
   };
 
-  // Auto-fechar o player quando o vídeo parar de tocar
+  // Auto-fechar o player e o PiP quando o vídeo parar de tocar
   useEffect(() => {
-    if (!currentVideoId && showVideoPlayer) {
-      setShowVideoPlayer(false);
+    if (!currentVideoId) {
+      if (showVideoPlayer) {
+        setShowVideoPlayer(false);
+      }
+      const store = useAppStore.getState();
+      if (store.isPiPActive) {
+        const electron = (window as any).electron;
+        if (electron?.closePipWindow) electron.closePipWindow();
+        store.setPiPActive(false);
+      }
     }
   }, [currentVideoId, showVideoPlayer]);
 
@@ -267,7 +275,15 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         if (action === 'play') onMusicAction?.('play');
         else if (action === 'pause') onMusicAction?.('pause');
         else if (action === 'skip') onMusicAction?.('skip');
-        else if (action === 'clear') onMusicAction?.('clear');
+        else if (action === 'clear') {
+          onMusicAction?.('clear');
+          const store = useAppStore.getState();
+          if (store.isPiPActive) {
+            const electron = (window as any).electron;
+            if (electron?.closePipWindow) electron.closePipWindow();
+            store.setPiPActive(false);
+          }
+        }
         else if (action === 'seek') onMusicSeek?.(payload);
         else if (action === 'volume') setYtVol(payload);
       });
@@ -512,6 +528,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
         if (onMusicAction) {
           onMusicAction(action);
+        }
+        if (action === 'clear') {
+          const store = useAppStore.getState();
+          if (store.isPiPActive) {
+            const electron = (window as any).electron;
+            if (electron?.closePipWindow) electron.closePipWindow();
+            store.setPiPActive(false);
+          }
         }
         setInput('');
         return;
@@ -1375,7 +1399,15 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
-                    onClick={() => onMusicAction?.('clear')}
+                    onClick={() => {
+                      onMusicAction?.('clear');
+                      const store = useAppStore.getState();
+                      if (store.isPiPActive) {
+                        const electron = (window as any).electron;
+                        if (electron?.closePipWindow) electron.closePipWindow();
+                        store.setPiPActive(false);
+                      }
+                    }}
                     title="Limpar fila"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>

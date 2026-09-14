@@ -276,6 +276,10 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setCurrentVideoId(null);
       store.setIsPlaying(false);
       callbacksRef.current.onStopYouTube(token);
+      if (store.isPiPActive) {
+        (window as any).electron?.closePipWindow?.();
+        store.setPiPActive(false);
+      }
     });
 
     socket.on('music_pause', () => {

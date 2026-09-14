@@ -451,6 +451,11 @@ electron_1.ipcMain.on('pip-action', (event, action, payload) => {
     }
 });
 electron_1.ipcMain.on('pip-sync', (event, state) => {
+    // If sync indicates no video is playing or queue cleared, close PiP immediately
+    if (state && state.videoId === null && pipWindow && !pipWindow.isDestroyed()) {
+        pipWindow.close();
+        return;
+    }
     // Forward sync state from Main window to PiP window
     if (pipWindow && !pipWindow.isDestroyed()) {
         pipWindow.webContents.send('pip-sync', state);
@@ -513,4 +518,127 @@ electron_1.ipcMain.handle('load-preferences', () => {
         console.error('Failed to load preferences:', e);
     }
     return {};
+});
+// ─── YOUTUBE QUALITY CONTROL ──────────────────────────────────────────────────
+// Executes quality-setting code DIRECTLY inside the YouTube iframe sub-frame
+// (bypasses cross-origin restrictions that block the renderer from doing it).
+electron_1.ipcMain.handle('yt-set-quality', async (_event, quality, targetTimestamp) => {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return false;
+    const isDefault = quality === 'auto' || quality === 'default';
+    const q = isDefault ? 'default' : quality;
+    const qRange = isDefault ? 'auto' : quality;
+    const script = `
+      (function() {
+        var mp = document.getElementById('movie_player') ||
+                 document.querySelector('.html5-video-player');
+        if (!mp) { return 'no-player'; }
+
+        var resMap = {
+          'hd2160': 2160,
+          'hd1440': 1440,
+          'hd1080': 1080,
+          'hd720': 720,
+          'large': 480,
+          'medium': 360,
+          'small': 240,
+          'tiny': 144
+        };
+
+        try {
+          if (${isDefault}) {
+            localStorage.removeItem('yt-player-quality');
+          } else {
+            var num = resMap['${q}'];
+            if (num) {
+              localStorage.setItem('yt-player-quality', JSON.stringify({
+                data: JSON.stringify({ quality: num, previousQuality: num }),
+                expiration: Date.now() + 31536000000,
+                creation: Date.now()
+              }));
+            }
+          }
+        } catch (e) {}
+
+        var applied = [];
+        if (typeof mp.setPlaybackQualityRange === 'function') {
+          mp.setPlaybackQualityRange('${qRange}', '${qRange}');
+          applied.push('setPlaybackQualityRange');
+        }
+        if (typeof mp.setPlaybackQuality === 'function') {
+          mp.setPlaybackQuality('${q}');
+          applied.push('setPlaybackQuality');
+        }
+
+        ${typeof targetTimestamp === 'number' && targetTimestamp >= 0 ? `
+          try {
+            if (typeof mp.seekTo === 'function') {
+              mp.seekTo(${targetTimestamp}, true);
+              applied.push('seekTo');
+            }
+          } catch (e) {}
+        ` : ''}
+
+        return applied.join(',') || 'no-methods';
+      })()
+    `;
+    // Iterate over all web contents and their subframes to find the YouTube iframe
+    const { webContents } = require('electron');
+    let found = false;
+    for (const wc of webContents.getAllWebContents()) {
+        const frames = wc.mainFrame ? wc.mainFrame.framesInSubtree : [];
+        for (const frame of frames) {
+            try {
+                const url = frame.url;
+                if (url && (url.includes('youtube.com/embed') || url.includes('youtube-nocookie.com/embed'))) {
+                    const result = await frame.executeJavaScript(script);
+                    fs.appendFileSync(logFile, `[YT-quality] frame url=${url.substring(0, 60)} result=${result}\n`);
+                    found = true;
+                }
+            }
+            catch (e) {
+                fs.appendFileSync(logFile, `[YT-quality] exec error: ${e}\n`);
+            }
+        }
+    }
+    return found;
+});
+electron_1.ipcMain.handle('yt-get-qualities', async () => {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return [];
+    const script = `
+      (function() {
+        var mp = document.getElementById('movie_player') ||
+                 document.querySelector('.html5-video-player');
+        if (!mp) return [];
+
+        if (typeof mp.getAvailableQualityLevels === 'function') {
+          var levels = mp.getAvailableQualityLevels();
+          if (Array.isArray(levels) && levels.length > 0) return levels;
+        }
+        if (typeof mp.getAvailableQualityData === 'function') {
+          var data = mp.getAvailableQualityData();
+          if (Array.isArray(data) && data.length > 0) {
+            return data.map(function(d) { return d.quality; }).filter(Boolean);
+          }
+        }
+        return [];
+      })()
+    `;
+    const { webContents } = require('electron');
+    for (const wc of webContents.getAllWebContents()) {
+        const frames = wc.mainFrame ? wc.mainFrame.framesInSubtree : [];
+        for (const frame of frames) {
+            try {
+                const url = frame.url;
+                if (url && (url.includes('youtube.com/embed') || url.includes('youtube-nocookie.com/embed'))) {
+                    const res = await frame.executeJavaScript(script);
+                    if (Array.isArray(res) && res.length > 0)
+                        return res;
+                }
+            }
+            catch (e) { }
+        }
+    }
+    return [];
 });

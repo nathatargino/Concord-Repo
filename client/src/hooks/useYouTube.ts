@@ -70,8 +70,10 @@ export function useYouTube(
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const syncIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCCEnabledRef = useRef<boolean>(false);
   const targetQualityRef = useRef<string>('auto');
+  const availableQualitiesRef = useRef<string[]>(['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny']);
 
   const postYTCommand = useCallback((func: string, args: any[] = []) => {
     try {
@@ -143,18 +145,41 @@ export function useYouTube(
     applyCCState(enabled);
   }, [applyCCState]);
 
-  /** Force quality on the internal YouTube player — the only approach that still works
-   * after YouTube deprecated setPlaybackQuality in the IFrame API. */
-  const forceQualityOnPlayer = useCallback((q: string) => {
+  const refreshAvailableQualities = useCallback(async () => {
+    const electronGetQualities = (window as any).electron?.getYouTubeQualities;
+    if (typeof electronGetQualities === 'function') {
+      try {
+        const levels = await electronGetQualities();
+        if (Array.isArray(levels) && levels.length > 0) {
+          const unique = Array.from(new Set(['auto', ...levels]));
+          availableQualitiesRef.current = unique;
+          return unique;
+        }
+      } catch {}
+    }
+    return availableQualitiesRef.current;
+  }, []);
+
+  /** Force quality on the internal YouTube player — targets the sub-frame directly via Electron IPC
+   * and preserves room synchronization timestamp without causing delay. */
+  const forceQualityOnPlayer = useCallback((q: string, targetTimestamp?: number) => {
     if (!playerRef.current) return;
     const p = playerRef.current as any;
     const isDefault = q === 'default' || q === 'auto';
+
+    let syncTime = targetTimestamp;
+    if (syncTime === undefined) {
+      const state = useAppStore.getState();
+      if (state.musicStartTime && state.isPlaying) {
+        syncTime = Math.max(0, (Date.now() - state.musicStartTime) / 1000);
+      }
+    }
 
     // 1. [Electron only] Ask the main process to run executeJavaScript directly
     //    inside the YouTube sub-frame — bypasses all cross-origin restrictions.
     const electronSetQuality = (window as any).electron?.setYouTubeQuality;
     if (typeof electronSetQuality === 'function') {
-      electronSetQuality(isDefault ? 'auto' : q).catch(() => {});
+      electronSetQuality(isDefault ? 'auto' : q, syncTime).catch(() => {});
     }
 
     // 2. Try the internal movie_player object via renderer (works when disable-web-security is on)
@@ -166,28 +191,30 @@ export function useYouTube(
                    win.document?.querySelector('.html5-video-player');
         if (mp) {
           if (typeof mp.setPlaybackQualityRange === 'function') {
-            if (isDefault) {
-              mp.setPlaybackQualityRange('auto', 'auto');
-            } else {
-              mp.setPlaybackQualityRange(q, q);
-            }
+            mp.setPlaybackQualityRange(isDefault ? 'auto' : q, isDefault ? 'auto' : q);
           }
           if (typeof mp.setPlaybackQuality === 'function') {
             mp.setPlaybackQuality(isDefault ? 'default' : q);
+          }
+          if (syncTime !== undefined && typeof mp.seekTo === 'function') {
+            mp.seekTo(syncTime, true);
           }
         }
       }
     } catch {/* cross-origin: silent */}
 
-    // 3. IFrame API instance methods (deprecated but still attempted)
+    // 3. IFrame API instance methods (fallback)
     try {
-      if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(q, q);
+      if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(isDefault ? 'auto' : q, isDefault ? 'auto' : q);
       if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(isDefault ? 'default' : q);
     } catch {}
 
     // 4. postMessage to iframe
     postYTCommand('setPlaybackQuality', [isDefault ? 'default' : q]);
     postYTCommand('setPlaybackQualityRange', [isDefault ? 'auto' : q, isDefault ? 'auto' : q]);
+    if (syncTime !== undefined) {
+      postYTCommand('seekTo', [syncTime, true]);
+    }
   }, [postYTCommand]);
 
   const setQuality = useCallback((quality: string) => {
@@ -197,49 +224,29 @@ export function useYouTube(
     const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
     console.log('[YT] Setting quality to:', q);
 
-    // Apply immediately and then retry — YouTube's DASH ABR can override the first call
-    forceQualityOnPlayer(q);
-    // Retry at 300ms, 700ms, 1500ms to beat DASH adaptation
-    const delays = [300, 700, 1500];
+    const state = useAppStore.getState();
+    const currentSyncTime = state.musicStartTime && state.isPlaying
+      ? Math.max(0, (Date.now() - state.musicStartTime) / 1000)
+      : (playerRef.current?.getCurrentTime?.() || 0);
+
+    // Apply immediately with sync timestamp to keep everyone in sync
+    forceQualityOnPlayer(q, currentSyncTime);
+
+    // Retry to beat DASH ABR adaptation, always synchronized with the room timestamp
+    const delays = [350, 800, 1500];
     delays.forEach(ms => {
       setTimeout(() => {
         if (targetQualityRef.current === quality) {
-          forceQualityOnPlayer(q);
+          const s = useAppStore.getState();
+          const t = s.musicStartTime && s.isPlaying ? Math.max(0, (Date.now() - s.musicStartTime) / 1000) : undefined;
+          forceQualityOnPlayer(q, t);
         }
       }, ms);
     });
   }, [forceQualityOnPlayer]);
 
   const getAvailableQualities = useCallback(() => {
-    try {
-      const p = playerRef.current as any;
-      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
-      const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
-      if (doc) {
-        const mp = (doc.getElementById('movie_player') || doc.querySelector('.html5-video-player')) as any;
-        if (mp && typeof mp.getAvailableQualityData === 'function') {
-          const data = mp.getAvailableQualityData();
-          if (Array.isArray(data) && data.length > 0) {
-            const list = data.map((d: any) => d.quality).filter(Boolean);
-            if (list.length > 0) return ['auto', ...list];
-          }
-        }
-        if (mp && typeof mp.getAvailableQualityLevels === 'function') {
-          const levels = mp.getAvailableQualityLevels();
-          if (Array.isArray(levels) && levels.length > 0) return ['auto', ...levels];
-        }
-      }
-    } catch {}
-
-    if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
-    try {
-      const p = playerRef.current as any;
-      if (typeof p.getAvailableQualityLevels === 'function') {
-        const levels = p.getAvailableQualityLevels();
-        if (Array.isArray(levels) && levels.length > 0) return levels;
-      }
-    } catch {}
-    return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
+    return availableQualitiesRef.current;
   }, []);
 
   const getQuality = useCallback(() => {
@@ -341,14 +348,37 @@ export function useYouTube(
               // Ensure CC state matches preference on play start
               applyCCState(isCCEnabledRef.current);
 
-              // Re-apply quality when playback starts — DASH ABR may have overridden it
+              // Query available resolutions from player
+              refreshAvailableQualities();
+
+              // Re-apply quality when playback starts with room timestamp
               const tq = targetQualityRef.current;
               if (tq && tq !== 'auto') {
                 const q = tq === 'default' ? 'default' : tq;
-                forceQualityOnPlayer(q);
-                setTimeout(() => forceQualityOnPlayer(q), 500);
-                setTimeout(() => forceQualityOnPlayer(q), 1200);
+                const s = useAppStore.getState();
+                const t = s.musicStartTime && s.isPlaying ? Math.max(0, (Date.now() - s.musicStartTime) / 1000) : undefined;
+                forceQualityOnPlayer(q, t);
+                setTimeout(() => {
+                  const s2 = useAppStore.getState();
+                  const t2 = s2.musicStartTime && s2.isPlaying ? Math.max(0, (Date.now() - s2.musicStartTime) / 1000) : undefined;
+                  forceQualityOnPlayer(q, t2);
+                }, 600);
               }
+
+              // Synchronization Watchdog: ensures quality changes or buffering do not create
+              // delay relative to other participants
+              if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+              syncIntervalRef.current = setInterval(() => {
+                const state = useAppStore.getState();
+                if (state.isPlaying && state.musicStartTime && playerRef.current && !state.isBuffering) {
+                  const expected = Math.max(0, (Date.now() - state.musicStartTime) / 1000);
+                  const actual = playerRef.current.getCurrentTime?.() || 0;
+                  if (Math.abs(expected - actual) > 1.5) {
+                    console.log('[YT Sync] Resyncing drift: expected=', expected, 'actual=', actual);
+                    playerRef.current.seekTo(expected, true);
+                  }
+                }
+              }, 2000);
 
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
@@ -379,6 +409,7 @@ export function useYouTube(
             
             if (event.data === window.YT.PlayerState.ENDED) {
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+              if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
               if (!suppressEndedRef.current && currentTokenRef.current !== null) {
                 onMusicEnded(currentTokenRef.current);
               }
@@ -386,6 +417,7 @@ export function useYouTube(
             }
             if (event.data === window.YT.PlayerState.PAUSED) {
                if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+               if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
             }
           },
         },
@@ -433,12 +465,21 @@ export function useYouTube(
 
   const stopYouTube = useCallback(async () => {
     suppressEndedRef.current = true;
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
     playerRef.current?.stopVideo();
     useAppStore.getState().setCurrentVideoId(null);
     useAppStore.getState().setIsPlaying(false);
+
+    const store = useAppStore.getState();
+    if (store.isPiPActive) {
+      (window as any).electron?.closePipWindow?.();
+      store.setPiPActive(false);
+    }
   }, []);
 
   const pauseYouTube = useCallback(() => {
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
     playerRef.current?.pauseVideo();
     useAppStore.getState().setIsPlaying(false);
   }, []);

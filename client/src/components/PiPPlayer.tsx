@@ -35,7 +35,13 @@ export const PiPPlayer: React.FC = () => {
     if (electron && electron.onPipSync) {
       const unsubscribe = electron.onPipSync((state: any) => {
         if (!state) return;
-        if (state.videoId !== undefined) setVideoId(state.videoId);
+        if (state.videoId !== undefined) {
+          if (!state.videoId) {
+            handleClose();
+            return;
+          }
+          setVideoId(state.videoId);
+        }
         if (state.isPlaying !== undefined) setIsPlaying(state.isPlaying);
         if (state.duration !== undefined) setDuration(state.duration);
         if (state.title !== undefined) setTitle(state.title);
@@ -346,7 +352,10 @@ export const PiPPlayer: React.FC = () => {
 
           <button
             className={`${styles.cmdBtn} ${styles.btnClear}`}
-            onClick={() => sendAction('clear')}
+            onClick={() => {
+              sendAction('clear');
+              handleClose();
+            }}
             title="Limpar fila"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

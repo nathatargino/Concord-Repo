@@ -46,5 +46,7 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
         const subscription = () => callback();
         electron_1.ipcRenderer.on('pip-closed', subscription);
         return () => electron_1.ipcRenderer.removeListener('pip-closed', subscription);
-    }
+    },
+    setYouTubeQuality: (quality, targetTimestamp) => electron_1.ipcRenderer.invoke('yt-set-quality', quality, targetTimestamp),
+    getYouTubeQualities: () => electron_1.ipcRenderer.invoke('yt-get-qualities'),
 });
