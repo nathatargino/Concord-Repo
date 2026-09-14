@@ -143,40 +143,66 @@ export function useYouTube(
     applyCCState(enabled);
   }, [applyCCState]);
 
+  /** Force quality on the internal YouTube player — the only approach that still works
+   * after YouTube deprecated setPlaybackQuality in the IFrame API. */
+  const forceQualityOnPlayer = useCallback((q: string) => {
+    if (!playerRef.current) return;
+    const p = playerRef.current as any;
+    const isDefault = q === 'default' || q === 'auto';
+
+    // 1. Try the internal movie_player object inside the iframe (most reliable)
+    try {
+      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
+      const win = iframe?.contentWindow as any;
+      if (win) {
+        // Directly invoke internal player methods
+        const mp = win.document?.getElementById('movie_player') ||
+                   win.document?.querySelector('.html5-video-player');
+        if (mp) {
+          if (typeof mp.setPlaybackQualityRange === 'function') {
+            if (isDefault) {
+              mp.setPlaybackQualityRange('auto', 'auto');
+            } else {
+              mp.setPlaybackQualityRange(q, q);
+            }
+          }
+          if (typeof mp.setPlaybackQuality === 'function') {
+            mp.setPlaybackQuality(isDefault ? 'default' : q);
+          }
+        }
+      }
+    } catch {/* cross-origin: silent */}
+
+    // 2. IFrame API instance methods (deprecated but still attempted)
+    try {
+      if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(q, q);
+      if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(isDefault ? 'default' : q);
+    } catch {}
+
+    // 3. postMessage to iframe
+    postYTCommand('setPlaybackQuality', [isDefault ? 'default' : q]);
+    postYTCommand('setPlaybackQualityRange', [isDefault ? 'auto' : q, isDefault ? 'auto' : q]);
+  }, [postYTCommand]);
+
   const setQuality = useCallback((quality: string) => {
     targetQualityRef.current = quality;
     if (!playerRef.current) return;
-    try {
-      const p = playerRef.current as any;
-      const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
-      console.log('[YT] Setting quality to:', q);
 
-      // loadVideoById with suggestedQuality is the most reliable way to force quality
-      // because it tells YouTube which stream to fetch from the start.
-      const videoId = useAppStore.getState().currentVideoId;
-      const currTime = p.getCurrentTime?.() || 0;
+    const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
+    console.log('[YT] Setting quality to:', q);
 
-      if (videoId && typeof p.loadVideoById === 'function') {
-        p.loadVideoById({
-          videoId,
-          startSeconds: Math.floor(currTime),
-          suggestedQuality: q
-        });
-        // Re-apply CC state after reload
-        setTimeout(() => {
-          applyCCState(isCCEnabledRef.current);
-        }, 300);
-      } else {
-        // Fallback: postMessage + direct API calls
-        postYTCommand('setPlaybackQuality', [q]);
-        postYTCommand('setPlaybackQualityRange', [q, q]);
-        if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(q);
-        if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(q, q);
-      }
-    } catch (e) {
-      console.warn('[YT] Failed to set quality:', e);
-    }
-  }, [postYTCommand, applyCCState]);
+    // Apply immediately and then retry — YouTube's DASH ABR can override the first call
+    forceQualityOnPlayer(q);
+    // Retry at 300ms, 700ms, 1500ms to beat DASH adaptation
+    const delays = [300, 700, 1500];
+    delays.forEach(ms => {
+      setTimeout(() => {
+        if (targetQualityRef.current === quality) {
+          forceQualityOnPlayer(q);
+        }
+      }, ms);
+    });
+  }, [forceQualityOnPlayer]);
 
   const getAvailableQualities = useCallback(() => {
     try {
@@ -309,6 +335,15 @@ export function useYouTube(
               // Ensure CC state matches preference on play start
               applyCCState(isCCEnabledRef.current);
 
+              // Re-apply quality when playback starts — DASH ABR may have overridden it
+              const tq = targetQualityRef.current;
+              if (tq && tq !== 'auto') {
+                const q = tq === 'default' ? 'default' : tq;
+                forceQualityOnPlayer(q);
+                setTimeout(() => forceQualityOnPlayer(q), 500);
+                setTimeout(() => forceQualityOnPlayer(q), 1200);
+              }
+
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
               
@@ -366,10 +401,15 @@ export function useYouTube(
       player.loadVideoById(videoId, Math.floor(startSeconds));
       applyCCState(isCCEnabledRef.current);
 
-      if (targetQualityRef.current !== 'auto') {
-        setTimeout(() => {
-          setQuality(targetQualityRef.current);
-        }, 350);
+      // Apply quality after player has had time to initialize the stream
+      const tq = targetQualityRef.current;
+      if (tq && tq !== 'auto') {
+        const q = tq === 'default' ? 'default' : tq;
+        [350, 800, 1500, 2500].forEach(ms => {
+          setTimeout(() => {
+            if (targetQualityRef.current === tq) forceQualityOnPlayer(q);
+          }, ms);
+        });
       }
 
       const { ytVol, callMuted } = useAudioStore.getState();
@@ -382,7 +422,7 @@ export function useYouTube(
       useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
     },
-    [ensurePlayer, applyCCState, setQuality]
+    [ensurePlayer, applyCCState, forceQualityOnPlayer]
   );
 
   const stopYouTube = useCallback(async () => {
