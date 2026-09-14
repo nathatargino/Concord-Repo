@@ -60,6 +60,98 @@ function loadYTApiForWindow(win: Window, doc: Document): Promise<any> {
   });
 }
 
+function applyNativeQuality(doc: Document, targetQuality: string): boolean {
+  try {
+    const mp = (doc.getElementById('movie_player') || doc.querySelector('.html5-video-player')) as any;
+    const q = (targetQuality === 'auto' || targetQuality === 'default') ? 'default' : targetQuality;
+    
+    // 1. Direct player element methods if available
+    if (mp) {
+      if (typeof mp.setPlaybackQualityRange === 'function') mp.setPlaybackQualityRange(q, q);
+      if (typeof mp.setPlaybackQuality === 'function') mp.setPlaybackQuality(q);
+      if (typeof mp.setOption === 'function') mp.setOption('playbackQuality', 'quality', q);
+    }
+
+    // 2. LocalStorage persistence in iframe
+    try {
+      doc.defaultView?.localStorage?.setItem('yt-player-quality', JSON.stringify({
+        data: q,
+        expiration: Date.now() + 2592000000,
+        creation: Date.now()
+      }));
+    } catch {}
+
+    // 3. Automated UI selection in YouTube native settings menu
+    const settingsBtn = doc.querySelector('.ytp-settings-button') as HTMLElement;
+    if (!settingsBtn) return false;
+
+    // Temporarily hide popup to avoid visual flicker
+    const popup = doc.querySelector('.ytp-popup') as HTMLElement;
+    const originalOpacity = popup ? popup.style.opacity : '';
+    if (popup) popup.style.opacity = '0';
+
+    settingsBtn.click();
+
+    setTimeout(() => {
+      try {
+        const menuItems = Array.from(doc.querySelectorAll('.ytp-menuitem')) as HTMLElement[];
+        const qualityItem = menuItems.find(item => {
+          const text = (item.textContent || '').toLowerCase();
+          return text.includes('qualidade') || text.includes('quality') || text.includes('calidad') ||
+                 text.includes('1080') || text.includes('720') || text.includes('480') || 
+                 text.includes('360') || text.includes('240') || text.includes('144') || text.includes('auto');
+        });
+
+        if (qualityItem) {
+          qualityItem.click();
+
+          setTimeout(() => {
+            try {
+              const subItems = Array.from(doc.querySelectorAll('.ytp-menuitem, .ytp-quality-menu .ytp-menuitem')) as HTMLElement[];
+              const target = subItems.find(item => {
+                const text = (item.textContent || '').toLowerCase();
+                switch (targetQuality) {
+                  case 'tiny': return text.includes('144');
+                  case 'small': return text.includes('240');
+                  case 'medium': return text.includes('360');
+                  case 'large': return text.includes('480');
+                  case 'hd720': return text.includes('720');
+                  case 'hd1080': return text.includes('1080');
+                  case 'hd1440': return text.includes('1440');
+                  case 'hd2160': return text.includes('2160') || text.includes('4k');
+                  case 'auto':
+                  case 'default':
+                  default:
+                    return text.includes('auto') || text.includes('automática');
+                }
+              });
+
+              if (target) {
+                target.click();
+              } else {
+                settingsBtn.click();
+              }
+            } finally {
+              if (popup) popup.style.opacity = originalOpacity;
+            }
+          }, 50);
+        } else {
+          settingsBtn.click();
+          if (popup) popup.style.opacity = originalOpacity;
+        }
+      } catch {
+        settingsBtn.click();
+        if (popup) popup.style.opacity = originalOpacity;
+      }
+    }, 50);
+
+    return true;
+  } catch (e) {
+    console.warn('[YT] applyNativeQuality error:', e);
+    return false;
+  }
+}
+
 export function useYouTube(
   onMusicEnded: (token: number) => void
 ) {
@@ -81,6 +173,13 @@ export function useYouTube(
           event: 'command',
           func: func,
           args: args
+        }), '*');
+        iframe.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: func,
+          args: args,
+          channel: 'widget',
+          id: p?.id || 1
         }), '*');
       }
     } catch (e) {
@@ -142,10 +241,24 @@ export function useYouTube(
       const p = playerRef.current as any;
       const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
       console.log('[YT] Setting quality to:', q);
+
+      // 1. Direct native DOM automation inside iframe (works in Electron / unblocked environments)
+      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
+      try {
+        const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+        if (doc) {
+          applyNativeQuality(doc, quality);
+        }
+      } catch (e) {
+        console.log('[YT] Cross-origin iframe doc access blocked:', e);
+      }
+
+      // 2. Send postMessage commands
       postYTCommand('setPlaybackQuality', [q]);
       postYTCommand('setPlaybackQualityRange', [q, q]);
       postYTCommand('setOption', ['playbackQuality', 'quality', q]);
 
+      // 3. Call player instance methods if available
       if (typeof p.setPlaybackQuality === 'function') {
         p.setPlaybackQuality(q);
       }
@@ -155,28 +268,43 @@ export function useYouTube(
       if (typeof p.setOption === 'function') {
         p.setOption('playbackQuality', 'quality', q);
       }
-      
-      const videoId = useAppStore.getState().currentVideoId;
-      const currTime = p.getCurrentTime?.() || 0;
 
-      if (videoId && typeof p.loadVideoById === 'function') {
-        p.loadVideoById({
-          videoId: videoId,
-          startSeconds: Math.floor(currTime),
-          suggestedQuality: q
-        });
+      // 4. Trigger seamless DASH buffer refresh via seekTo without reloading the video
+      const currTime = p.getCurrentTime?.() || 0;
+      if (currTime > 0 && typeof p.seekTo === 'function') {
         setTimeout(() => {
-          applyCCState(isCCEnabledRef.current);
+          try {
+            const timeNow = p.getCurrentTime?.() || currTime;
+            p.seekTo(timeNow, true);
+          } catch {}
         }, 150);
-      } else if (currTime > 0 && typeof p.seekTo === 'function') {
-        p.seekTo(currTime, true);
       }
     } catch (e) {
       console.warn('[YT] Failed to set quality:', e);
     }
-  }, [postYTCommand, applyCCState]);
+  }, [postYTCommand]);
 
   const getAvailableQualities = useCallback(() => {
+    try {
+      const p = playerRef.current as any;
+      const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
+      const doc = iframe?.contentDocument || iframe?.contentWindow?.document;
+      if (doc) {
+        const mp = (doc.getElementById('movie_player') || doc.querySelector('.html5-video-player')) as any;
+        if (mp && typeof mp.getAvailableQualityData === 'function') {
+          const data = mp.getAvailableQualityData();
+          if (Array.isArray(data) && data.length > 0) {
+            const list = data.map((d: any) => d.quality).filter(Boolean);
+            if (list.length > 0) return ['auto', ...list];
+          }
+        }
+        if (mp && typeof mp.getAvailableQualityLevels === 'function') {
+          const levels = mp.getAvailableQualityLevels();
+          if (Array.isArray(levels) && levels.length > 0) return ['auto', ...levels];
+        }
+      }
+    } catch {}
+
     if (!playerRef.current) return ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
     try {
       const p = playerRef.current as any;
@@ -345,7 +473,9 @@ export function useYouTube(
       applyCCState(isCCEnabledRef.current);
 
       if (targetQualityRef.current !== 'auto') {
-        setQuality(targetQualityRef.current);
+        setTimeout(() => {
+          setQuality(targetQualityRef.current);
+        }, 350);
       }
 
       const { ytVol, callMuted } = useAudioStore.getState();
