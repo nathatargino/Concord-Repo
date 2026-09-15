@@ -2,7 +2,7 @@
   "name": "client",
   "productName": "Concord",
   "private": true,
-  "version": "1.0.62",
+  "version": "1.0.63",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -49,6 +49,12 @@
   "build": {
     "appId": "com.concord.desktop",
     "icon": "build/icon.png",
+    "electronDownload": {
+      "unsafelyDisableChecksums": true,
+      "mirrorOptions": {
+        "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
+      }
+    },
     "win": {
       "artifactName": "Concord-Setup.exe"
     },
