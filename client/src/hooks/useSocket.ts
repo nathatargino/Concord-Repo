@@ -123,7 +123,12 @@ export interface SocketCallbacks {
   onScreenShareStopped?: (userId: string) => void;
 }
 
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
+const isLocalhost = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  !import.meta.env.PROD
+);
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (isLocalhost ? 'http://localhost:3001' : 'https://concord-repo.onrender.com');
 
 export function useSocket(callbacks: SocketCallbacks) {
   const socketRef = useRef<ConcordSocket | null>(null);

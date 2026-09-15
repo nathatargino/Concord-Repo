@@ -252,6 +252,12 @@ export function useYouTube(
 
       const div = doc.createElement('div');
       div.id = 'yt-player-inner';
+      // Ensure placeholder video is completely invisible initially
+      if (!useAppStore.getState().currentVideoId) {
+        div.style.display = 'none';
+        div.style.opacity = '0';
+        div.style.visibility = 'hidden';
+      }
       container.appendChild(div);
 
       const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
@@ -288,6 +294,12 @@ export function useYouTube(
                const iframe = playerRef.current?.getIframe?.();
                if (iframe && !/autoplay/.test(iframe.getAttribute('allow') || '')) {
                  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+               }
+               // Keep placeholder invisible unless there is an actual track
+               if (iframe && !useAppStore.getState().currentVideoId) {
+                 iframe.style.display = 'none';
+                 iframe.style.opacity = '0';
+                 iframe.style.visibility = 'hidden';
                }
              } catch {
                // ignore
@@ -387,6 +399,15 @@ export function useYouTube(
       }
 
       const player = await ensurePlayer();
+      try {
+        const iframe = player.getIframe?.();
+        if (iframe) {
+          iframe.style.display = 'block';
+          iframe.style.opacity = '1';
+          iframe.style.visibility = 'visible';
+        }
+      } catch {}
+
       player.loadVideoById(videoId, Math.floor(startSeconds));
       applyCCState(isCCEnabledRef.current);
 
@@ -417,7 +438,15 @@ export function useYouTube(
   const stopYouTube = useCallback(async () => {
     suppressEndedRef.current = true;
     if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
-    playerRef.current?.stopVideo();
+    try {
+      playerRef.current?.stopVideo();
+      const iframe = playerRef.current?.getIframe?.();
+      if (iframe) {
+        iframe.style.display = 'none';
+        iframe.style.opacity = '0';
+        iframe.style.visibility = 'hidden';
+      }
+    } catch {}
     useAppStore.getState().setCurrentVideoId(null);
     useAppStore.getState().setIsPlaying(false);
 

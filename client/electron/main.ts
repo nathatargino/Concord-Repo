@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net, BrowserView } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
@@ -19,7 +19,10 @@ import { autoUpdater } from 'electron-updater';
 const path = require('path');
 const isDev = !app.isPackaged;
 
-// Allow autoplay without user gesture for YouTube
+// Widevine CDM configuration for Castlabs ECS
+app.commandLine.appendSwitch('no-verify-widevine-cdm');
+
+// Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
@@ -31,10 +34,14 @@ app.commandLine.appendSwitch('disable-site-isolation-trials');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 
-// Strip Electron from user-agent globally so YouTube doesn't detect and block the embed
+// Strip Electron from user-agent globally so YouTube and streaming services don't block
 app.userAgentFallback = app.userAgentFallback
     .replace(/Electron\/\S+\s*/g, '')
     .replace(/concord\/\S+\s*/g, '');
+
+(app as any).on('widevine-ready', (version: string, lastVersion: string) => {
+    fs.appendFileSync(logFile, `[Widevine] Widevine CDM ready! version=${version}, lastVersion=${lastVersion}\n`);
+});
 
 let mainWindow: BrowserWindowType | null = null;
 let localServerPort = 0;
@@ -144,6 +151,10 @@ function createWindow() {
     });
 
     mainWindow!.on('closed', () => {
+        if (streamingView) {
+            try { (streamingView.webContents as any).destroy?.(); } catch (e) {}
+            streamingView = null;
+        }
         mainWindow = null;
     });
 }
@@ -248,8 +259,18 @@ app.on('open-url', (event, url) => {
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 let pipWindow: BrowserWindow | null = null;
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
+
+    try {
+        const { components } = require('electron');
+        if (components && typeof components.whenReady === 'function') {
+            await components.whenReady();
+            fs.appendFileSync(logFile, '[Widevine] components.whenReady() resolved!\n');
+        }
+    } catch (wvErr) {
+        fs.appendFileSync(logFile, `[Widevine] components.whenReady() error: ${wvErr}\n`);
+    }
     
     // Handle media permissions for WebRTC
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -651,4 +672,153 @@ ipcMain.handle('yt-get-qualities', async () => {
         }
     }
     return [];
+});
+
+// ==========================================
+// Widevine Streaming BrowserView Management
+// ==========================================
+let streamingView: BrowserView | null = null;
+let streamingBounds: { x: number; y: number; width: number; height: number } | null = null;
+
+ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+
+    if (streamingView) {
+        try {
+            mainWindow.removeBrowserView(streamingView);
+            (streamingView.webContents as any).destroy?.();
+        } catch (e) {}
+        streamingView = null;
+    }
+
+    const partition = 'persist:streaming-session';
+    const streamingSession = session.fromPartition(partition);
+    
+    // Netflix enforces Windows VMP (Verified Media Path) PE checks when UA is Windows Chrome.
+    // In dev mode (unsigned binary), Netflix denies license key with Error E100 (tvq-pb-101).
+    // Using ChromeOS UA tells Netflix to use standard Widevine L3 EME decryption without VMP checks.
+    const NETFLIX_UA = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const activeUA = options.service === 'netflix' ? NETFLIX_UA : DEFAULT_UA;
+    streamingSession.setUserAgent(activeUA);
+
+    if (options.service === 'netflix') {
+        try {
+            await streamingSession.clearCache();
+        } catch (e) {}
+    }
+
+    // Automatically allow media and DRM permissions for the streaming session
+    streamingSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+        const allowed = ['media', 'display-capture', 'encrypted-media', 'autoplay'];
+        callback(allowed.includes(permission) || true);
+    });
+
+    streamingView = new BrowserView({
+        webPreferences: {
+            partition,
+            nodeIntegration: false,
+            contextIsolation: true,
+            plugins: true,
+            autoplayPolicy: 'no-user-gesture-required'
+        }
+    });
+
+    streamingView.setBackgroundColor('#000000');
+    mainWindow.addBrowserView(streamingView);
+
+    // Forward streaming view console logs to concord-debug.log for diagnostics
+    streamingView.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
+        fs.appendFileSync(logFile, `[Streaming Console] ${message} (${sourceId}:${line})\n`);
+    });
+
+    const safeBounds = {
+        x: Math.max(0, Math.round(options.bounds.x)),
+        y: Math.max(0, Math.round(options.bounds.y)),
+        width: Math.max(10, Math.round(options.bounds.width)),
+        height: Math.max(10, Math.round(options.bounds.height)),
+    };
+    streamingBounds = safeBounds;
+    streamingView.setBounds(safeBounds);
+
+    let targetUrl = options.url?.trim();
+    if (!targetUrl) {
+        targetUrl = options.service === 'netflix'
+            ? 'https://www.netflix.com/browse'
+            : 'https://www.primevideo.com';
+    }
+
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${activeUA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl, { userAgent: activeUA });
+
+    streamingView.webContents.on('did-finish-load', () => {
+        if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
+            streamingView?.webContents.executeJavaScript(`
+                setTimeout(() => {
+                    const p = document.getElementById('player') || document.querySelector('.bmpui-ui-player') || document.querySelector('video') || document.querySelector('.bitmovinplayer-container');
+                    if (p) {
+                        p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                        window.scrollTo({ top: 320, behavior: 'smooth' });
+                    }
+                }, 400);
+            `).catch(() => {});
+        }
+    });
+
+    streamingView.webContents.on('did-navigate', (_e, navUrl) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('streaming-event', { type: 'navigate', url: navUrl });
+        }
+    });
+});
+
+ipcMain.on('resize-streaming-view', (_event, bounds: { x: number; y: number; width: number; height: number }) => {
+    if (!streamingView || !mainWindow || mainWindow.isDestroyed()) return;
+    const safeBounds = {
+        x: Math.max(0, Math.round(bounds.x)),
+        y: Math.max(0, Math.round(bounds.y)),
+        width: Math.max(10, Math.round(bounds.width)),
+        height: Math.max(10, Math.round(bounds.height)),
+    };
+    streamingBounds = safeBounds;
+    streamingView.setBounds(safeBounds);
+});
+
+ipcMain.on('close-streaming-view', () => {
+    if (streamingView && mainWindow && !mainWindow.isDestroyed()) {
+        try {
+            mainWindow.removeBrowserView(streamingView);
+            (streamingView.webContents as any).destroy?.();
+        } catch (e) {}
+        streamingView = null;
+        streamingBounds = null;
+        mainWindow.webContents.send('streaming-event', { type: 'closed' });
+    }
+});
+
+ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
+    if (!streamingView || streamingView.webContents.isDestroyed()) return;
+    if (command === 'play') {
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                const v = document.querySelector('video');
+                if (v && v.paused) v.play();
+            })()
+        `).catch(() => {});
+    } else if (command === 'pause') {
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                const v = document.querySelector('video');
+                if (v && !v.paused) v.pause();
+            })()
+        `).catch(() => {});
+    } else if (command === 'seek' && typeof payload?.time === 'number') {
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                const v = document.querySelector('video');
+                if (v) v.currentTime = ${payload.time};
+            })()
+        `).catch(() => {});
+    }
 });

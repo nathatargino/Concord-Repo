@@ -27,6 +27,12 @@ declare global {
             /** Force YouTube stream quality via Electron main process (bypasses cross-origin) */
             setYouTubeQuality?: (quality: string) => Promise<boolean>;
             getYouTubeQualities?: () => Promise<string[]>;
+            /** Widevine Streaming (Netflix / Prime Video) */
+            openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => Promise<void>;
+            resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
+            closeStreamingView?: () => void;
+            sendStreamingCommand?: (command: string, payload?: any) => void;
+            onStreamingEvent?: (callback: (event: any) => void) => () => void;
         }
     }
 }
@@ -79,4 +85,13 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setYouTubeQuality: (quality: string) => ipcRenderer.invoke('yt-set-quality', quality),
     getYouTubeQualities: () => ipcRenderer.invoke('yt-get-qualities'),
+    openStreamingView: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => ipcRenderer.invoke('open-streaming-view', options),
+    resizeStreamingView: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.send('resize-streaming-view', bounds),
+    closeStreamingView: () => ipcRenderer.send('close-streaming-view'),
+    sendStreamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
+    onStreamingEvent: (callback: (event: any) => void) => {
+        const subscription = (_event: any, data: any) => callback(data);
+        ipcRenderer.on('streaming-event', subscription);
+        return () => ipcRenderer.removeListener('streaming-event', subscription);
+    },
 });

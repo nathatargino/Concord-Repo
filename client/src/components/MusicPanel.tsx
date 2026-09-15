@@ -56,10 +56,37 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [trackTitle, setTrackTitle] = useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('youtube');
-  const { musicQueue, currentVideoId, isPlaying } = useAppStore();
+  const [streamingUrl, setStreamingUrl] = useState('');
+  const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
+  const { musicQueue, currentVideoId, isPlaying, activeStreaming, setActiveStreaming } = useAppStore();
 
   // Detect if running inside Electron
   const isElectron = !!(window as any).electron;
+
+  const handleOpenStreaming = async (service: 'netflix' | 'prime', targetUrl?: string) => {
+    setIsOpeningStreaming(true);
+    try {
+      setActiveStreaming({ service, url: targetUrl });
+      const electron = (window as any).electron;
+      if (electron?.openStreamingView) {
+        await electron.openStreamingView({
+          service,
+          url: targetUrl,
+          bounds: { x: 320, y: 40, width: 850, height: 650 }
+        });
+      }
+    } finally {
+      setIsOpeningStreaming(false);
+    }
+  };
+
+  const handleCloseStreaming = () => {
+    const electron = (window as any).electron;
+    if (electron?.closeStreamingView) {
+      electron.closeStreamingView();
+    }
+    setActiveStreaming(null);
+  };
 
   React.useEffect(() => {
     if (!currentVideoId) {
@@ -301,19 +328,103 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
               </div>
             )}
 
-            {/* Desktop: coming soon (Phase 2) */}
+            {/* Desktop: Player Controls (Phase 2) */}
             {isElectron && (
-              <div className={styles.comingSoonBanner} role="status">
-                <div className={styles.comingSoonIcon}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12 6 12 12 16 14" />
-                  </svg>
-                </div>
-                <p className={styles.comingSoonTitle}>Em breve!</p>
-                <p className={styles.comingSoonDesc}>
-                  O suporte a {platformName} no app desktop está em desenvolvimento e será liberado em breve. Fique ligado nas atualizações!
-                </p>
+              <div className={styles.streamingControls}>
+                {activeStreaming?.service === selectedPlatform ? (
+                  <>
+                    <div className={styles.streamingActiveBadge}>
+                      <span>
+                        <span className={styles.streamingDot} />
+                        {platformName} aberta no app
+                      </span>
+                      <button
+                        className={styles.removeBtn}
+                        onClick={handleCloseStreaming}
+                        title="Fechar streaming"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (streamingUrl.trim()) {
+                          handleOpenStreaming(selectedPlatform, streamingUrl.trim());
+                        }
+                      }}
+                      className={styles.form}
+                    >
+                      <input
+                        type="url"
+                        className={styles.input}
+                        placeholder={`Navegar para link de ${platformName}...`}
+                        value={streamingUrl}
+                        onChange={(e) => setStreamingUrl(e.target.value)}
+                      />
+                      <button
+                        type="submit"
+                        className={styles.addBtn}
+                        disabled={!streamingUrl.trim()}
+                      >
+                        Ir
+                      </button>
+                    </form>
+
+                    <button
+                      className={styles.closeStreamingBtn}
+                      onClick={handleCloseStreaming}
+                    >
+                      ✕ Fechar Player da {platformName}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleOpenStreaming(selectedPlatform, streamingUrl.trim() || undefined);
+                      }}
+                      className={styles.form}
+                    >
+                      <input
+                        id={`input-url-${selectedPlatform}`}
+                        type="url"
+                        className={styles.input}
+                        placeholder={`URL do filme/série (opcional)...`}
+                        value={streamingUrl}
+                        onChange={(e) => setStreamingUrl(e.target.value)}
+                      />
+                    </form>
+
+                    <button
+                      id={`btn-open-${selectedPlatform}`}
+                      className={`${styles.openStreamingBtn} ${styles[`openStreamingBtn_${selectedPlatform}`]}`}
+                      onClick={() => handleOpenStreaming(selectedPlatform, streamingUrl.trim() || undefined)}
+                      disabled={isOpeningStreaming}
+                    >
+                      {isOpeningStreaming ? 'Iniciando...' : (
+                        <>
+                          <span>▶</span> Abrir {platformName} no App
+                        </>
+                      )}
+                    </button>
+
+                    <p className={styles.streamingHint}>
+                      🔒 Faça login com sua conta da {platformName}. Sua sessão e cookies ficam salvos com segurança no Concord.
+                    </p>
+
+                    <button
+                      type="button"
+                      className={styles.testDrmBtn}
+                      onClick={() => handleOpenStreaming(selectedPlatform, 'https://bitmovin.com/demos/drm')}
+                      title="Testar reprodução de vídeo protegido por Widevine DRM (Bitmovin)"
+                    >
+                      🧪 Testar Widevine DRM (Bitmovin Demo)
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

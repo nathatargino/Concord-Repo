@@ -1311,13 +1311,16 @@
 }
 
 .hiddenSlot {
+  display: none !important;
+  visibility: hidden !important;
   position: absolute !important;
   left: -10000px !important;
   top: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
-  opacity: 0;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .ytHostSeeking {

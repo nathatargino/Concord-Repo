@@ -73,6 +73,10 @@ interface AppState {
   isPiPActive: boolean;
   setPiPActive: (v: boolean) => void;
 
+  // Streaming (Netflix / Prime Video)
+  activeStreaming: { service: 'netflix' | 'prime'; url?: string } | null;
+  setActiveStreaming: (s: { service: 'netflix' | 'prime'; url?: string } | null) => void;
+
   // Screen share
   screenShareUserId: string | null;
   screenShareUserName: string | null;
@@ -179,6 +183,10 @@ export const useAppStore = create<AppState>((set) => ({
   isPiPActive: false,
   setPiPActive: (isPiPActive) => set({ isPiPActive }),
 
+  // Streaming (Netflix / Prime Video)
+  activeStreaming: null,
+  setActiveStreaming: (activeStreaming) => set({ activeStreaming }),
+
   // Screen share
   screenShareUserId: null,
   screenShareUserName: null,
@@ -208,6 +216,7 @@ export const useAppStore = create<AppState>((set) => ({
       currentTrackTitle: null,
       isPlaying: false,
       visualizerActive: false,
+      activeStreaming: null,
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,

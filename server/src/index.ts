@@ -30,7 +30,24 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABAS
 const supabase = (rawServerUrl && supabaseKey) ? createClient(rawServerUrl, supabaseKey) : null;
 
 // ─── MIDDLEWARE ────────────────────────────────────────────────────
-app.use(cors({ origin: CLIENT_URL, credentials: true }));
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      origin === CLIENT_URL ||
+      origin.startsWith('http://localhost') ||
+      origin.startsWith('http://127.0.0.1') ||
+      origin.includes('vercel.app')
+    ) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Allow during local testing
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Serve static files from public folder
@@ -41,7 +58,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
   httpServer,
   {
     cors: {
-      origin: CLIENT_URL,
+      origin: (origin, callback) => callback(null, true),
       methods: ['GET', 'POST'],
       credentials: true,
     },
