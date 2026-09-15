@@ -321,3 +321,205 @@
   .addBtn { padding: 9px 14px; font-size: 13px; }
   .queueList { max-height: 180px; }
 }
+
+/* ─── Platform Selector ─────────────────────────────────────────── */
+
+.platformSelector {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.platformTab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 4px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.platformTab:hover:not(.platformTabActive) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+/* YouTube active tab */
+.platformTabActive.platformTab_youtube {
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.25), rgba(200, 0, 0, 0.15));
+  border: 1px solid rgba(255, 60, 60, 0.35);
+  color: #FF5252;
+  box-shadow: 0 2px 10px rgba(255, 0, 0, 0.15);
+}
+
+/* Netflix active tab */
+.platformTabActive.platformTab_netflix {
+  background: linear-gradient(135deg, rgba(229, 9, 20, 0.3), rgba(180, 0, 10, 0.15));
+  border: 1px solid rgba(229, 9, 20, 0.45);
+  color: #E50914;
+  box-shadow: 0 2px 10px rgba(229, 9, 20, 0.2);
+}
+
+/* Prime Video active tab */
+.platformTabActive.platformTab_prime {
+  background: linear-gradient(135deg, rgba(0, 168, 225, 0.25), rgba(0, 120, 180, 0.15));
+  border: 1px solid rgba(0, 168, 225, 0.4);
+  color: #00A8E1;
+  box-shadow: 0 2px 10px rgba(0, 168, 225, 0.15);
+}
+
+.platformTabIcon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.platformTabLabel {
+  display: block;
+}
+
+/* ─── Streaming Section ──────────────────────────────────────────── */
+
+.streamingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ─── Desktop-Only Warning Banner ───────────────────────────────── */
+
+.desktopOnlyBanner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 20px 16px;
+  background: linear-gradient(160deg, rgba(124, 58, 237, 0.08), rgba(79, 70, 229, 0.05));
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 12px;
+  animation: fadeInUp 0.3s ease;
+}
+
+.desktopOnlyIcon {
+  color: rgba(124, 58, 237, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: rgba(124, 58, 237, 0.1);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.desktopOnlyTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  line-height: 1.4;
+}
+
+.desktopOnlyDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.downloadAppBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #7C3AED, #4F46E5);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
+  margin-top: 4px;
+}
+
+.downloadAppBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.55);
+  color: white;
+  text-decoration: none;
+}
+
+.downloadAppBtn:active {
+  transform: translateY(0);
+}
+
+/* ─── Coming Soon Banner (Desktop) ──────────────────────────────── */
+
+.comingSoonBanner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 20px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  animation: fadeInUp 0.3s ease;
+}
+
+.comingSoonIcon {
+  color: rgba(255, 255, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.comingSoonTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.comingSoonDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.6;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
