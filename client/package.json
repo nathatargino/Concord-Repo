@@ -55,6 +55,7 @@
         "mirror": "https://github.com/castlabs/electron-releases/releases/download/"
       }
     },
+    "afterPack": "./build/afterPack.cjs",
     "win": {
       "artifactName": "Concord-Setup.exe"
     },

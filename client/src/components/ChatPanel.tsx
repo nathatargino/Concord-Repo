@@ -1173,85 +1173,110 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
               {/* Streaming View for Netflix & Prime Video */}
               {activeStreaming ? (
-                <div style={{
-                  width: '100%',
-                  height: '100%',
-                  flex: 1,
-                  minHeight: 0,
-                  position: 'relative',
-                  borderRadius: '16px',
-                  overflow: 'hidden',
-                  background: '#090912',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  boxShadow: '0 0 0 1px rgba(124, 58, 237, 0.3), 0 12px 40px rgba(0, 0, 0, 0.7), 0 0 80px rgba(124, 58, 237, 0.15)'
-                }}>
-                  <div
-                    id="streaming-host"
-                    ref={streamingHostRef}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      flex: 1,
-                      minHeight: 0,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: '#090912'
-                    }}
-                  >
-                    <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
-                      <div style={{
-                        width: '36px',
-                        height: '36px',
-                        borderRadius: '50%',
-                        border: '3px solid rgba(255, 255, 255, 0.1)',
-                        borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
-                        margin: '0 auto 14px'
-                      }} />
-                      <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-                        Carregando {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
-                      </p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
-                        Iniciando navegador com Widevine DRM ativo
-                      </p>
+                <>
+                  <div className={styles.videoSlotWrapper} style={{ position: 'relative', overflow: 'hidden' }}>
+                    <div
+                      id="streaming-host"
+                      ref={streamingHostRef}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        background: '#090912',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '16px',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '50%',
+                          border: '3px solid rgba(255, 255, 255, 0.1)',
+                          borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
+                          margin: '0 auto 14px'
+                        }} />
+                        <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                          Carregando {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
+                        </p>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
+                          Iniciando navegador com Widevine DRM ativo
+                        </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Top bar controls */}
-                  <div style={{
-                    position: 'absolute',
-                    top: 12,
-                    right: 12,
-                    zIndex: 1000,
-                    display: 'flex',
-                    gap: 8,
-                    pointerEvents: 'auto'
-                  }}>
-                    <button
-                      onClick={() => {
-                        (window as any).electron?.closeStreamingView?.();
-                        setActiveStreaming(null);
-                      }}
-                      style={{
-                        background: 'rgba(20, 20, 30, 0.85)',
-                        color: '#f87171',
-                        border: '1px solid rgba(248, 113, 113, 0.3)',
-                        borderRadius: '7px',
-                        padding: '6px 14px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        backdropFilter: 'blur(8px)',
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
-                      }}
-                      title="Fechar Streaming"
-                    >
-                      ✕ Fechar Player
-                    </button>
+                  {/* Controles no mesmo padrão do YouTube */}
+                  <div className={styles.videoShortcutWrapper}>
+                    <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
+                    <div className={styles.videoShortcutGrid}>
+                      <button
+                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
+                        onClick={() => {
+                          const electron = (window as any).electron;
+                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('play');
+                          else if (electron?.streamingCommand) electron.streamingCommand('play');
+                        }}
+                        title="Reproduzir vídeo"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                        <span>/play</span>
+                        <small>Reproduzir</small>
+                      </button>
+
+                      <button
+                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
+                        onClick={() => {
+                          const electron = (window as any).electron;
+                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('pause');
+                          else if (electron?.streamingCommand) electron.streamingCommand('pause');
+                        }}
+                        title="Pausar vídeo"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                        <span>/pause</span>
+                        <small>Pausar</small>
+                      </button>
+
+                      <button
+                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
+                        onClick={() => {
+                          const electron = (window as any).electron;
+                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('skip');
+                          else if (electron?.streamingCommand) electron.streamingCommand('skip');
+                        }}
+                        title="Pular (abertura / 10s / próximo episódio)"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                        <span>/skip</span>
+                        <small>Pular</small>
+                      </button>
+
+                      <button
+                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                        onClick={() => {
+                          (window as any).electron?.closeStreamingView?.();
+                          setActiveStreaming(null);
+                          setShowVideoPlayer(false);
+                        }}
+                        title="Sair do Streaming"
+                      >
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                          <polyline points="16 17 21 12 16 7" />
+                          <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                        <span>Sair</span>
+                        <small>Fechar</small>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </>
               ) : (
                 <>
                   {/* Player area */}

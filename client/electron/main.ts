@@ -694,13 +694,9 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     const partition = 'persist:streaming-session';
     const streamingSession = session.fromPartition(partition);
     
-    // Netflix enforces Windows VMP (Verified Media Path) PE checks when UA is Windows Chrome.
-    // In dev mode (unsigned binary), Netflix denies license key with Error E100 (tvq-pb-101).
-    // Using ChromeOS UA tells Netflix to use standard Widevine L3 EME decryption without VMP checks.
-    const NETFLIX_UA = 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-    const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-    const activeUA = options.service === 'netflix' ? NETFLIX_UA : DEFAULT_UA;
-    streamingSession.setUserAgent(activeUA);
+    // Modern Windows Chrome UA matching Castlabs Chromium engine
+    const WINDOWS_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    streamingSession.setUserAgent(WINDOWS_CHROME_UA);
 
     if (options.service === 'netflix') {
         try {
@@ -708,14 +704,22 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         } catch (e) {}
     }
 
-    // Automatically allow media and DRM permissions for the streaming session
+    // Explicitly allow mediaKeySystem (EME / Widevine DRM) and media permissions
+    streamingSession.setPermissionCheckHandler((_webContents, permission) => {
+        if (permission === 'mediaKeySystem' || permission === 'media' || permission === 'display-capture') {
+            return true;
+        }
+        return true;
+    });
+
     streamingSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-        const allowed = ['media', 'display-capture', 'encrypted-media', 'autoplay'];
+        const allowed = ['media', 'display-capture', 'mediaKeySystem', 'encrypted-media', 'autoplay'];
         callback(allowed.includes(permission) || true);
     });
 
     streamingView = new BrowserView({
         webPreferences: {
+            session: streamingSession,
             partition,
             nodeIntegration: false,
             contextIsolation: true,
@@ -748,8 +752,8 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
             : 'https://www.primevideo.com';
     }
 
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${activeUA.substring(0, 35)}...)\n`);
-    await streamingView.webContents.loadURL(targetUrl, { userAgent: activeUA });
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${WINDOWS_CHROME_UA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl, { userAgent: WINDOWS_CHROME_UA });
 
     streamingView.webContents.on('did-finish-load', () => {
         if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
@@ -804,6 +808,10 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             (function() {
                 const v = document.querySelector('video');
                 if (v && v.paused) v.play();
+                const playBtn = document.querySelector('[data-uia="control-play-pause-play"]') ||
+                                document.querySelector('.button-nfplayerPlay') ||
+                                document.querySelector('.play-icon');
+                if (playBtn) playBtn.click();
             })()
         `).catch(() => {});
     } else if (command === 'pause') {
@@ -811,6 +819,49 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             (function() {
                 const v = document.querySelector('video');
                 if (v && !v.paused) v.pause();
+                const pauseBtn = document.querySelector('[data-uia="control-play-pause-pause"]') ||
+                                 document.querySelector('.button-nfplayerPause') ||
+                                 document.querySelector('.pause-icon');
+                if (pauseBtn) pauseBtn.click();
+            })()
+        `).catch(() => {});
+    } else if (command === 'skip') {
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                // 1. Skip intro or recap
+                const skipIntro = document.querySelector('[data-uia="player-skip-intro"]') ||
+                                  document.querySelector('[data-uia="player-skip-recap"]') ||
+                                  document.querySelector('.skip-credits') ||
+                                  document.querySelector('.skip-credits a') ||
+                                  document.querySelector('.atvwebplayersdk-skipelement-button') ||
+                                  document.querySelector('[aria-label*="Pular"]') ||
+                                  document.querySelector('[aria-label*="Skip"]');
+                if (skipIntro) {
+                    skipIntro.click();
+                    return;
+                }
+                // 2. Next episode button
+                const nextEp = document.querySelector('[data-uia="control-next"]') ||
+                               document.querySelector('.button-nfplayerNextEpisode') ||
+                               document.querySelector('.next-episode-button') ||
+                               document.querySelector('[aria-label*="Próximo"]') ||
+                               document.querySelector('[aria-label*="Next episode"]');
+                if (nextEp) {
+                    nextEp.click();
+                    return;
+                }
+                // 3. Fast forward 10s
+                const ff10 = document.querySelector('[data-uia="control-fastforward-10"]') ||
+                             document.querySelector('.button-nfplayerFastForward10');
+                if (ff10) {
+                    ff10.click();
+                    return;
+                }
+                // 4. Seek video forward 10s
+                const v = document.querySelector('video');
+                if (v) {
+                    v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10);
+                }
             })()
         `).catch(() => {});
     } else if (command === 'seek' && typeof payload?.time === 'number') {

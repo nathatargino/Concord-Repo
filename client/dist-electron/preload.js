@@ -53,6 +53,7 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     resizeStreamingView: (bounds) => electron_1.ipcRenderer.send('resize-streaming-view', bounds),
     closeStreamingView: () => electron_1.ipcRenderer.send('close-streaming-view'),
     sendStreamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
+    streamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
     onStreamingEvent: (callback) => {
         const subscription = (_event, data) => callback(data);
         electron_1.ipcRenderer.on('streaming-event', subscription);

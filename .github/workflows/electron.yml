@@ -47,7 +47,18 @@ jobs:
             });
           "
 
+      - name: Setup Python for Widevine VMP Signing
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Castlabs EVS Tool
+        run: pip install castlabs-evs
+
       - name: Build Electron App (no publish)
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
         run: pnpm --filter client run electron:ci
 
       - name: List release artifacts
