@@ -704,17 +704,13 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         } catch (e) {}
     }
 
-    // Explicitly allow mediaKeySystem (EME / Widevine DRM) and media permissions
-    streamingSession.setPermissionCheckHandler((_webContents, permission) => {
-        if (permission === 'mediaKeySystem' || permission === 'media' || permission === 'display-capture') {
-            return true;
-        }
+    // Explicitly allow mediaKeySystem (EME / Widevine DRM) and all media permissions
+    streamingSession.setPermissionCheckHandler((_webContents, _permission: any) => {
         return true;
     });
 
-    streamingSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-        const allowed = ['media', 'display-capture', 'mediaKeySystem', 'encrypted-media', 'autoplay'];
-        callback(allowed.includes(permission) || true);
+    streamingSession.setPermissionRequestHandler((_webContents, _permission: any, callback) => {
+        callback(true);
     });
 
     streamingView = new BrowserView({

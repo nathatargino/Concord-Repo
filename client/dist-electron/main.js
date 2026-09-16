@@ -681,15 +681,11 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         }
         catch (e) { }
     }
-    streamingSession.setPermissionCheckHandler((_webContents, permission) => {
-        if (permission === 'mediaKeySystem' || permission === 'media' || permission === 'display-capture') {
-            return true;
-        }
+    streamingSession.setPermissionCheckHandler((_webContents, _permission) => {
         return true;
     });
-    streamingSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-        const allowed = ['media', 'display-capture', 'mediaKeySystem', 'encrypted-media', 'autoplay'];
-        callback(allowed.includes(permission) || true);
+    streamingSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+        callback(true);
     });
     streamingView = new electron_1.BrowserView({
         webPreferences: {
