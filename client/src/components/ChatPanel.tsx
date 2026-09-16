@@ -101,7 +101,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     musicStartTime,
     setVisualizerActive,
     activeStreaming,
-    setActiveStreaming,
     ytAvailableQualities
   } = useAppStore();
 
@@ -1363,20 +1362,17 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                       <button
                         className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
                         onClick={() => {
-                          setRenderMedia(false);
-                          (window as any).electron?.closeStreamingView?.();
-                          setActiveStreaming(null);
-                          setShowVideoPlayer(false);
+                          const electron = (window as any).electron;
+                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit');
+                          else if (electron?.streamingCommand) electron.streamingCommand('exit');
                         }}
-                        title="Sair do Streaming"
+                        title="Sair do filme e voltar ao catálogo"
                       >
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                          <polyline points="16 17 21 12 16 7" />
-                          <line x1="21" y1="12" x2="9" y2="12" />
+                          <path d="M19 12H5M12 19l-7-7 7-7" />
                         </svg>
                         <span>Sair</span>
-                        <small>Fechar</small>
+                        <small>Catálogo</small>
                       </button>
                     </div>
                   </div>

@@ -1,8 +1,8 @@
 const { execSync } = require('child_process');
 
 exports.default = async function (context) {
-  const evsUser = process.env.EVS_ACCOUNT_NAME;
-  const evsPass = process.env.EVS_PASSWD;
+  const evsUser = process.env.EVS_ACCOUNT_NAME || 'concord';
+  const evsPass = process.env.EVS_PASSWD || 'Chosen@123';
 
   if (evsUser && evsPass) {
     console.log('[EVS] Starting Widevine VMP signing for:', context.appOutDir);

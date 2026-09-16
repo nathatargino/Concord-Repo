@@ -1183,5 +1183,46 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
                 if (v) v.currentTime = ${payload.time};
             })()
         `).catch(() => {});
+    } else if (command === 'exit' || command === 'back') {
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                // 1. Netflix back to browse button
+                const netflixBack = document.querySelector('[data-uia="control-back"]') ||
+                                    document.querySelector('.button-nfplayerBack') ||
+                                    document.querySelector('button[aria-label*="Voltar"]') ||
+                                    document.querySelector('button[aria-label*="Back"]');
+                if (netflixBack) {
+                    netflixBack.click();
+                    return;
+                }
+                // 2. Prime Video player back button
+                const primeBack = document.querySelector('.atvwebplayersdk-back-button') ||
+                                  document.querySelector('[data-automation-id="back-button"]') ||
+                                  document.querySelector('.backButton') ||
+                                  document.querySelector('button[aria-label*="Back"]') ||
+                                  document.querySelector('button[aria-label*="Voltar"]');
+                if (primeBack) {
+                    primeBack.click();
+                    return;
+                }
+                // 3. Direct URL fallback to catalog if watching a title
+                const href = window.location.href;
+                if (href.includes('netflix.com/watch')) {
+                    window.location.href = 'https://www.netflix.com/browse';
+                    return;
+                }
+                if (href.includes('primevideo.com/detail') || href.includes('primevideo.com/gp/video/detail') || href.includes('primevideo.com/player')) {
+                    window.location.href = 'https://www.primevideo.com';
+                    return;
+                }
+                if (window.history.length > 1) {
+                    window.history.back();
+                } else {
+                    window.location.href = href.includes('netflix.com') ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com';
+                }
+            })()
+        `).catch(() => {});
+        const streamingSession = session.fromPartition('persist:streaming-session');
+        streamingSession.cookies.flushStore().catch(() => {});
     }
 });
