@@ -442,15 +442,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                     <p className={styles.streamingHint}>
                       🔒 Faça login com sua conta da {platformName}. Sua sessão e cookies ficam salvos com segurança no Concord.
                     </p>
-
-                    <button
-                      type="button"
-                      className={styles.testDrmBtn}
-                      onClick={() => handleOpenStreaming(selectedPlatform, 'https://bitmovin.com/demos/drm')}
-                      title="Testar reprodução de vídeo protegido por Widevine DRM (Bitmovin)"
-                    >
-                      🧪 Testar Widevine DRM (Bitmovin Demo)
-                    </button>
                   </>
                 )}
               </div>

@@ -17,6 +17,7 @@ interface CacheEntry {
 }
 const searchCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
 
 export function getStoredYouTubeApiKey(): string {
   try {
@@ -114,7 +115,7 @@ export async function searchYouTube(
 
   // 1st Priority: Concord Backend InnerTube Endpoint (fast, official PT-BR results, direct YouTube CDN thumbnails)
   try {
-    const backendRes = await fetch(`/api/youtube/search?q=${encodeURIComponent(q)}`, { signal });
+    const backendRes = await fetch(`${SERVER_URL}/api/youtube/search?q=${encodeURIComponent(q)}`, { signal });
     if (backendRes.ok) {
       const items: YouTubeSearchResult[] = await backendRes.json();
       if (Array.isArray(items) && items.length > 0) {

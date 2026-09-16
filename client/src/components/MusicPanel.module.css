@@ -686,27 +686,6 @@
   border-radius: 7px;
 }
 
-.testDrmBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.15);
-  color: var(--text-muted);
-  font-size: 11px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.testDrmBtn:hover {
-  border-color: rgba(255, 255, 255, 0.3);
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.03);
-}
-
 @keyframes fadeInUp {
   from {
     opacity: 0;

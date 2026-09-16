@@ -123,12 +123,9 @@ export interface SocketCallbacks {
   onScreenShareStopped?: (userId: string) => void;
 }
 
-const isLocalhost = typeof window !== 'undefined' && (
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === '127.0.0.1' ||
-  !import.meta.env.PROD
-);
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (isLocalhost ? 'http://localhost:3001' : 'https://concord-repo.onrender.com');
+// In production (both web and Electron packaged app), always connect to the Render cloud backend.
+// In local development (Vite dev server), connect to localhost:3001 unless VITE_SERVER_URL is specified.
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
 
 export function useSocket(callbacks: SocketCallbacks) {
   const socketRef = useRef<ConcordSocket | null>(null);
@@ -140,14 +137,17 @@ export function useSocket(callbacks: SocketCallbacks) {
   useEffect(() => {
     const socket: ConcordSocket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1500,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
 
     socketRef.current = socket;
     (window as any).__concord_socket = socket;
 
     socket.on('connect', () => {
+      console.log('[Socket] Conectado ao servidor:', SOCKET_URL, 'ID:', socket.id);
       store.setConnected(true);
       store.setMyId(socket.id ?? '');
 
@@ -176,7 +176,13 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
+      console.warn('[Socket] Desconectado do servidor:', reason);
+      store.setConnected(false);
+    });
+
+    socket.on('connect_error', (err) => {
+      console.warn('[Socket] Erro de conexão com o servidor:', err.message);
       store.setConnected(false);
     });
 
@@ -377,7 +383,7 @@ export function useSocket(callbacks: SocketCallbacks) {
 
   const emit = useCallback(
     (event: keyof ClientToServerEvents, ...args: any[]) => {
-      if (socketRef.current?.connected) {
+      if (socketRef.current) {
         (socketRef.current.emit as any)(event, ...args);
       }
     },
