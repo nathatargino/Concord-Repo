@@ -19,17 +19,10 @@ import { autoUpdater } from 'electron-updater';
 const path = require('path');
 const isDev = !app.isPackaged;
 
-// Widevine CDM configuration for Castlabs ECS
-app.commandLine.appendSwitch('no-verify-widevine-cdm');
-
 // Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
-// Disable web security restrictions that block YouTube iframe audio
-app.commandLine.appendSwitch('disable-web-security');
-app.commandLine.appendSwitch('allow-running-insecure-content');
-app.commandLine.appendSwitch('disable-site-isolation-trials');
 // Ensure audio is not silenced by the renderer
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -744,14 +737,13 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     const partition = 'persist:streaming-session';
     const streamingSession = session.fromPartition(partition);
     
-    // Modern Windows Chrome UA matching Castlabs Chromium engine
-    const WINDOWS_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-    streamingSession.setUserAgent(WINDOWS_CHROME_UA);
-
-    if (options.service === 'netflix') {
-        try {
-            await streamingSession.clearCache();
-        } catch (e) {}
+    // Natural Chrome UA without Electron tokens matching the actual Chromium engine version
+    const cleanChromeUA = (streamingSession.getUserAgent() || app.userAgentFallback || '')
+        .replace(/Electron\/\S+\s*/gi, '')
+        .replace(/concord\/\S+\s*/gi, '')
+        .trim();
+    if (cleanChromeUA) {
+        streamingSession.setUserAgent(cleanChromeUA);
     }
 
     // Explicitly allow mediaKeySystem (EME / Widevine DRM) and all media permissions
@@ -770,6 +762,7 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
             nodeIntegration: false,
             contextIsolation: true,
             plugins: true,
+            webSecurity: true,
             autoplayPolicy: 'no-user-gesture-required'
         }
     });
@@ -798,8 +791,8 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
             : 'https://www.primevideo.com';
     }
 
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${WINDOWS_CHROME_UA.substring(0, 35)}...)\n`);
-    await streamingView.webContents.loadURL(targetUrl, { userAgent: WINDOWS_CHROME_UA });
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl);
 
     streamingView.webContents.on('did-finish-load', () => {
         if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
