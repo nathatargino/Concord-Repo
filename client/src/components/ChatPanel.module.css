@@ -692,6 +692,11 @@
   display: flex;
   flex-direction: column;
   -webkit-app-region: no-drag;
+  /* Promote to its own compositor layer immediately so the GPU can flip it without repaints */
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .flipCardBack {
@@ -705,13 +710,16 @@
   pointer-events: none;
   visibility: hidden;
   opacity: 0;
+  /* Promote to its own compositor layer immediately so the GPU can flip it without repaints */
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0) rotateY(180deg);
 }
 
 .flipCard.flipped .flipCardFront {
   position: absolute;
   inset: 0;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   pointer-events: none;
 }
 
@@ -719,11 +727,46 @@
   display: flex;
   visibility: visible;
   opacity: 1;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
   pointer-events: auto;
-  transform: rotateY(180deg);
   background: linear-gradient(145deg, #0c0c1a 0%, #10101e 40%, #0d0d1c 100%);
+}
+
+/* ═══════════════════════════════════════════════
+   ── STREAMING SKELETON LOADER ──
+   Lightweight placeholder shown while the 3D flip
+   animation is running (before renderMedia = true)
+═══════════════════════════════════════════════ */
+.streamingSkeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+}
+
+.skeletonSpinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  /* borderTopColor is set inline per service */
+  animation: skeletonSpin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes skeletonSpin {
+  to { transform: rotate(360deg); }
+}
+
+.skeletonLabel {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* ═══════════════════════════════════════════════

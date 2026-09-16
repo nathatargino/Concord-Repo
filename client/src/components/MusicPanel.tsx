@@ -69,14 +69,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     setIsOpeningStreaming(true);
     try {
       setActiveStreaming({ service, url: targetUrl });
-      const electron = (window as any).electron;
-      if (electron?.openStreamingView) {
-        await electron.openStreamingView({
-          service,
-          url: targetUrl,
-          bounds: { x: 320, y: 40, width: 850, height: 650 }
-        });
-      }
     } finally {
       setIsOpeningStreaming(false);
     }

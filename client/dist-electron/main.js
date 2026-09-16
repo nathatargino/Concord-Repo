@@ -47,13 +47,11 @@ const electron_updater_1 = require("electron-updater");
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
 const isDev = !electron_1.app.isPackaged;
-// Widevine CDM configuration for Castlabs ECS
-electron_1.app.commandLine.appendSwitch('no-verify-widevine-cdm');
 // Allow autoplay without user gesture for YouTube and streaming
 electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 electron_1.app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 electron_1.app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
-// Disable web security restrictions that block YouTube iframe audio
+// Disable web security restrictions that block YouTube iframe audio and media streaming
 electron_1.app.commandLine.appendSwitch('disable-web-security');
 electron_1.app.commandLine.appendSwitch('allow-running-insecure-content');
 electron_1.app.commandLine.appendSwitch('disable-site-isolation-trials');
@@ -122,11 +120,12 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#0e0e18',
-        show: false,
+        show: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
+            webSecurity: false,
             autoplayPolicy: 'no-user-gesture-required'
         },
         frame: false,
@@ -138,6 +137,21 @@ function createWindow() {
     const url = isDev
         ? process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
         : `http://127.0.0.1:${localServerPort}`;
+    mainWindow.once('ready-to-show', () => {
+        fs.appendFileSync(logFile, 'ready-to-show fired!\n');
+        mainWindow?.show();
+        mainWindow?.focus();
+        if (pendingDeepLink) {
+            mainWindow?.webContents.send('deep-link', pendingDeepLink);
+            pendingDeepLink = null;
+        }
+        if (process.platform === 'win32' || process.platform === 'linux') {
+            const deepLinkUrl = process.argv.find(arg => arg.startsWith('concord://'));
+            if (deepLinkUrl) {
+                mainWindow?.webContents.send('deep-link', deepLinkUrl);
+            }
+        }
+    });
     if (isDev) {
         mainWindow.loadURL(url);
         mainWindow.webContents.openDevTools();
@@ -145,19 +159,6 @@ function createWindow() {
     else {
         mainWindow.loadURL(url);
     }
-    mainWindow.once('ready-to-show', () => {
-        mainWindow.show();
-        if (pendingDeepLink) {
-            mainWindow.webContents.send('deep-link', pendingDeepLink);
-            pendingDeepLink = null;
-        }
-        if (process.platform === 'win32' || process.platform === 'linux') {
-            const url = process.argv.find(arg => arg.startsWith('concord://'));
-            if (url) {
-                mainWindow.webContents.send('deep-link', url);
-            }
-        }
-    });
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
     });
@@ -335,7 +336,7 @@ electron_1.app.whenReady().then(async () => {
         callback({ requestHeaders: details.requestHeaders });
     });
     // Strip YouTube response headers that block iframe audio/autoplay in Electron
-    electron_1.session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] }, (details, callback) => {
+    electron_1.session.defaultSession.webRequest.onHeadersReceived({ urls: ['https://*.youtube.com/*', 'https://*.youtube-nocookie.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] }, (details, callback) => {
         const headers = { ...details.responseHeaders };
         // Remove X-Frame-Options so the YT iframe embeds without restriction
         delete headers['x-frame-options'];
@@ -343,8 +344,20 @@ electron_1.app.whenReady().then(async () => {
         // Remove CSP that blocks autoplay / media
         delete headers['content-security-policy'];
         delete headers['Content-Security-Policy'];
-        // Allow cross-origin so audio can be piped
-        headers['access-control-allow-origin'] = ['*'];
+        if (details.url.includes('googlevideo.com')) {
+            // googlevideo sets its own Access-Control-Allow-Origin matching the request origin with credentials: 'include'.
+            // Overriding it with wildcard '*' violates CORS specifications and causes Chromium to block video/audio streaming chunks!
+            const origin = details.referrer && details.referrer.includes('youtube-nocookie.com')
+                ? 'https://www.youtube-nocookie.com'
+                : 'https://www.youtube.com';
+            if (!headers['access-control-allow-origin'] || headers['access-control-allow-origin'].includes('*')) {
+                headers['access-control-allow-origin'] = [origin];
+                headers['access-control-allow-credentials'] = ['true'];
+            }
+        }
+        else {
+            headers['access-control-allow-origin'] = ['*'];
+        }
         callback({ responseHeaders: headers });
     });
     if (!isDev) {
@@ -418,6 +431,7 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            webSecurity: false,
             preload: path.join(__dirname, 'preload.js'),
             autoplayPolicy: 'no-user-gesture-required'
         }
@@ -722,14 +736,13 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     }
     const partition = 'persist:streaming-session';
     const streamingSession = electron_1.session.fromPartition(partition);
-    // Modern Windows Chrome UA matching Castlabs Chromium engine
-    const WINDOWS_CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-    streamingSession.setUserAgent(WINDOWS_CHROME_UA);
-    if (options.service === 'netflix') {
-        try {
-            await streamingSession.clearCache();
-        }
-        catch (e) { }
+    // Natural Chrome UA without Electron tokens matching the actual Chromium engine version
+    const cleanChromeUA = (streamingSession.getUserAgent() || electron_1.app.userAgentFallback || '')
+        .replace(/Electron\/\S+\s*/gi, '')
+        .replace(/concord\/\S+\s*/gi, '')
+        .trim();
+    if (cleanChromeUA) {
+        streamingSession.setUserAgent(cleanChromeUA);
     }
     // Explicitly allow mediaKeySystem (EME / Widevine DRM) and all media permissions
     streamingSession.setPermissionCheckHandler((_webContents, _permission) => {
@@ -745,6 +758,7 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             nodeIntegration: false,
             contextIsolation: true,
             plugins: true,
+            webSecurity: true,
             autoplayPolicy: 'no-user-gesture-required'
         }
     });
@@ -768,8 +782,8 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             ? 'https://www.netflix.com/browse'
             : 'https://www.primevideo.com';
     }
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${WINDOWS_CHROME_UA.substring(0, 35)}...)\n`);
-    await streamingView.webContents.loadURL(targetUrl, { userAgent: WINDOWS_CHROME_UA });
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl);
     streamingView.webContents.on('did-finish-load', () => {
         if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
             streamingView?.webContents.executeJavaScript(`

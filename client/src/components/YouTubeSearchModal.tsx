@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { searchYouTube, getStoredYouTubeApiKey, setStoredYouTubeApiKey, type YouTubeSearchResult } from '../services/youtubeSearch';
+import { searchYouTube, type YouTubeSearchResult } from '../services/youtubeSearch';
 import styles from './YouTubeSearchModal.module.css';
 
 interface Props {
@@ -19,8 +19,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [showApiKeyConfig, setShowApiKeyConfig] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState(() => getStoredYouTubeApiKey());
+
   
   const searchTimeoutRef = useRef<any>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -107,11 +106,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
     executeSearch(query);
   };
 
-  const handleSaveApiKey = () => {
-    setStoredYouTubeApiKey(apiKeyInput);
-    setShowApiKeyConfig(false);
-    if (query.trim()) executeSearch(query);
-  };
+
 
   const handlePickResult = (item: YouTubeSearchResult) => {
     onSelectVideo(item.videoId, item.title);
@@ -136,39 +131,13 @@ export const YouTubeSearchModal: React.FC<Props> = ({
           </div>
 
           <div className={styles.headerActions}>
-            <button
-              className={styles.keyToggleBtn}
-              onClick={() => setShowApiKeyConfig(!showApiKeyConfig)}
-              title="Configurar chave da API do Google (opcional)"
-            >
-              ⚙️ {getStoredYouTubeApiKey() ? 'API Key Salva' : 'Configurar API'}
-            </button>
             <button className={styles.closeBtn} onClick={onClose} title="Fechar">
               ✕
             </button>
           </div>
         </div>
 
-        {/* API Key Drawer */}
-        {showApiKeyConfig && (
-          <div className={styles.apiKeyDrawer}>
-            <label className={styles.apiKeyLabel}>
-              Chave da YouTube Data API v3 (Google Cloud):
-            </label>
-            <div className={styles.apiKeyInputRow}>
-              <input
-                type="password"
-                className={styles.apiKeyInput}
-                placeholder="Cole sua API Key (ex: AIzaSy...)"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-              />
-              <button className={styles.apiKeySaveBtn} onClick={handleSaveApiKey}>
-                Salvar
-              </button>
-            </div>
-          </div>
-        )}
+
 
         {/* Search Bar */}
         <div className={styles.searchBarWrapper}>

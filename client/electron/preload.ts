@@ -28,7 +28,7 @@ declare global {
             setYouTubeQuality?: (quality: string) => Promise<boolean>;
             getYouTubeQualities?: () => Promise<string[]>;
             /** Widevine Streaming (Netflix / Prime Video) */
-            openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => Promise<void>;
+            openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
             resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
             closeStreamingView?: () => void;
             sendStreamingCommand?: (command: string, payload?: any) => void;

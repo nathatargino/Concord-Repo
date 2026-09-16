@@ -120,56 +120,99 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
+  const [renderMedia, setRenderMedia] = useState(false);
   const streamingHostRef = useRef<HTMLDivElement>(null);
 
-  // Auto flip when streaming is opened
+  // Auto flip when streaming is opened; reset renderMedia so skeleton shows during spin
   useEffect(() => {
     if (activeStreaming) {
-      setShowVideoPlayer(true);
+      if (showVideoPlayer) {
+        setRenderMedia(true);
+      } else {
+        setRenderMedia(false);
+        setShowVideoPlayer(true);
+      }
+    } else {
+      setRenderMedia(false);
     }
   }, [activeStreaming]);
 
-  // Synchronize Electron BrowserView bounds with #streaming-host
+  // Fallback timer: if onTransitionEnd fails to fire within 850ms, ensure media mounts
   useEffect(() => {
-    if (!activeStreaming || !showVideoPlayer) {
-      (window as any).electron?.resizeStreamingView?.({ x: 0, y: 0, width: 0, height: 0 });
+    if (showVideoPlayer && activeStreaming) {
+      const timer = setTimeout(() => {
+        setRenderMedia(true);
+      }, 850);
+      return () => clearTimeout(timer);
+    } else if (!showVideoPlayer) {
+      setRenderMedia(false);
+    }
+  }, [showVideoPlayer, activeStreaming]);
+
+  // Synchronize Electron WebContentsView / BrowserView.
+  // Mounts/opens ONLY once renderMedia is true (i.e. after the flip animation finishes).
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (!activeStreaming || !renderMedia) {
+      if (electron?.closeStreamingView) {
+        electron.closeStreamingView();
+      }
       return;
     }
 
-    const updateBounds = () => {
-      if (streamingHostRef.current && (window as any).electron?.resizeStreamingView) {
-        const rect = streamingHostRef.current.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          (window as any).electron.resizeStreamingView({
-            x: Math.round(rect.left),
-            y: Math.round(rect.top),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
-          });
-        }
+    let isCancelled = false;
+
+    const mountAndSyncView = async () => {
+      if (!streamingHostRef.current || !electron) return;
+      const rect = streamingHostRef.current.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const bounds = {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+
+      if (electron.openStreamingView) {
+        await electron.openStreamingView({
+          service: activeStreaming.service,
+          url: activeStreaming.url,
+          bounds,
+          borderRadius: 16,
+        });
       }
     };
 
-    // Update repeatedly during the flip transition to lock in exact final dimensions
-    updateBounds();
-    const t1 = setTimeout(updateBounds, 60);
-    const t2 = setTimeout(updateBounds, 180);
-    const t3 = setTimeout(updateBounds, 360);
-    const t4 = setTimeout(updateBounds, 600);
+    mountAndSyncView();
+
+    const updateBounds = () => {
+      if (isCancelled || !streamingHostRef.current || !electron?.resizeStreamingView) return;
+      const rect = streamingHostRef.current.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        electron.resizeStreamingView({
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          width: Math.round(rect.width),
+          height: Math.round(rect.height),
+        });
+      }
+    };
 
     window.addEventListener('resize', updateBounds);
     const ro = new ResizeObserver(updateBounds);
     if (streamingHostRef.current) ro.observe(streamingHostRef.current);
 
     return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(t4);
+      isCancelled = true;
       window.removeEventListener('resize', updateBounds);
       ro.disconnect();
+      if (electron?.closeStreamingView) {
+        electron.closeStreamingView();
+      }
     };
-  }, [activeStreaming, showVideoPlayer]);
+  }, [activeStreaming, renderMedia]);
 
   // ── Video Settings Menu ──
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -808,7 +851,12 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           {(currentVideoId || showVideoPlayer || activeStreaming) && (
             <button
               className={`${styles.videoToggleBtn} ${showVideoPlayer ? styles.videoToggleBtnActive : ''} ${(isPlaying || activeStreaming) ? styles.videoToggleBtnPlaying : ''}`}
-              onClick={() => setShowVideoPlayer(v => !v)}
+              onClick={() => {
+                // When closing the player, immediately hide media; when opening, skeleton
+                // shows during the flip and renderMedia is set by onTransitionEnd.
+                setRenderMedia(false);
+                setShowVideoPlayer(v => !v);
+              }}
               title={showVideoPlayer ? 'Voltar ao Chat' : (activeStreaming ? `Assistir ${activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}` : 'Assistir Vídeo')}
             >
               {showVideoPlayer ? <IconArrowLeft /> : <IconVideo />}
@@ -820,7 +868,15 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
       {/* ── FLIP CARD CONTAINER ── */}
       <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''}`}>
-        <div className={styles.flipCardInner}>
+        <div
+          className={styles.flipCardInner}
+          onTransitionEnd={(e) => {
+            // Only react to the rotateY transition on this exact element
+            if (e.propertyName === 'transform' && e.target === e.currentTarget && showVideoPlayer) {
+              setRenderMedia(true);
+            }
+          }}
+        >
 
           {/* ══ FACE FRENTE: Chat normal ══ */}
           <div className={styles.flipCardFront}>
@@ -1186,41 +1242,53 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               {/* Streaming View for Netflix & Prime Video */}
               {activeStreaming ? (
                 <>
-                  <div className={styles.videoSlotWrapper} style={{ position: 'relative', overflow: 'hidden' }}>
-                    <div
-                      id="streaming-host"
-                      ref={streamingHostRef}
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        width: '100%',
-                        height: '100%',
-                        background: '#090912',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: '16px',
-                        overflow: 'hidden'
-                      }}
-                    >
+                  <div
+                    ref={streamingHostRef}
+                    id="streaming-host"
+                    className={styles.videoSlotWrapper}
+                    style={{
+                      position: 'relative',
+                      overflow: 'hidden',
+                      flex: 1,
+                      minHeight: 0,
+                      borderRadius: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#090912',
+                    }}
+                  >
+                    {!renderMedia ? (
+                      <div className={styles.streamingSkeleton}>
+                        <div
+                          className={styles.skeletonSpinner}
+                          style={{ borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1' }}
+                        />
+                        <p className={styles.skeletonLabel}>
+                          {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
+                        </p>
+                      </div>
+                    ) : (
                       <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
-                        <div style={{
-                          width: '36px',
-                          height: '36px',
-                          borderRadius: '50%',
-                          border: '3px solid rgba(255, 255, 255, 0.1)',
-                          borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
-                          margin: '0 auto 14px'
-                        }} />
+                        <div
+                          style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            border: '3px solid rgba(255, 255, 255, 0.1)',
+                            borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
+                            margin: '0 auto 14px',
+                            animation: 'spin 1s linear infinite',
+                          }}
+                        />
                         <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-                          Carregando {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
+                          Conectando ao {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
                         </p>
                         <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
                           Iniciando navegador com Widevine DRM ativo
                         </p>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Controles no mesmo padrão do YouTube */}
@@ -1272,6 +1340,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                       <button
                         className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
                         onClick={() => {
+                          setRenderMedia(false);
                           (window as any).electron?.closeStreamingView?.();
                           setActiveStreaming(null);
                           setShowVideoPlayer(false);

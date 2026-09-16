@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net, BrowserView } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net, BrowserView, WebContentsView } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
@@ -23,6 +23,10 @@ const isDev = !app.isPackaged;
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
 app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+// Disable web security restrictions that block YouTube iframe audio and media streaming
+app.commandLine.appendSwitch('disable-web-security');
+app.commandLine.appendSwitch('allow-running-insecure-content');
+app.commandLine.appendSwitch('disable-site-isolation-trials');
 // Ensure audio is not silenced by the renderer
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
@@ -88,11 +92,12 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#0e0e18',
-        show: false,
+        show: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
+            webSecurity: false,
             autoplayPolicy: 'no-user-gesture-required'
         },
         frame: false,
@@ -107,28 +112,30 @@ function createWindow() {
         ? process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'
         : `http://127.0.0.1:${localServerPort}`;
 
-    if (isDev) {
-        mainWindow!.loadURL(url);
-        mainWindow!.webContents.openDevTools();
-    } else {
-        mainWindow!.loadURL(url);
-    }
-
     mainWindow.once('ready-to-show', () => {
-        mainWindow!.show();
+        fs.appendFileSync(logFile, 'ready-to-show fired!\n');
+        mainWindow?.show();
+        mainWindow?.focus();
         
         if (pendingDeepLink) {
-            mainWindow!.webContents.send('deep-link', pendingDeepLink);
+            mainWindow?.webContents.send('deep-link', pendingDeepLink);
             pendingDeepLink = null;
         }
         
         if (process.platform === 'win32' || process.platform === 'linux') {
-            const url = process.argv.find(arg => arg.startsWith('concord://'));
-            if (url) {
-                mainWindow!.webContents.send('deep-link', url);
+            const deepLinkUrl = process.argv.find(arg => arg.startsWith('concord://'));
+            if (deepLinkUrl) {
+                mainWindow?.webContents.send('deep-link', deepLinkUrl);
             }
         }
     });
+
+    if (isDev) {
+        mainWindow.loadURL(url);
+        mainWindow.webContents.openDevTools();
+    } else {
+        mainWindow.loadURL(url);
+    }
 
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
@@ -145,7 +152,12 @@ function createWindow() {
 
     mainWindow!.on('closed', () => {
         if (streamingView) {
-            try { (streamingView.webContents as any).destroy?.(); } catch (e) {}
+            try {
+                if (mainWindow && (mainWindow as any).contentView && typeof (mainWindow as any).contentView.removeChildView === 'function') {
+                    (mainWindow as any).contentView.removeChildView(streamingView);
+                }
+                (streamingView.webContents as any).destroy?.();
+            } catch (e) {}
             streamingView = null;
         }
         mainWindow = null;
@@ -326,7 +338,7 @@ app.whenReady().then(async () => {
 
     // Strip YouTube response headers that block iframe audio/autoplay in Electron
     session.defaultSession.webRequest.onHeadersReceived(
-        { urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] },
+        { urls: ['https://*.youtube.com/*', 'https://*.youtube-nocookie.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] },
         (details, callback) => {
             const headers = { ...details.responseHeaders };
             // Remove X-Frame-Options so the YT iframe embeds without restriction
@@ -335,8 +347,20 @@ app.whenReady().then(async () => {
             // Remove CSP that blocks autoplay / media
             delete headers['content-security-policy'];
             delete headers['Content-Security-Policy'];
-            // Allow cross-origin so audio can be piped
-            headers['access-control-allow-origin'] = ['*'];
+
+            if (details.url.includes('googlevideo.com')) {
+                // googlevideo sets its own Access-Control-Allow-Origin matching the request origin with credentials: 'include'.
+                // Overriding it with wildcard '*' violates CORS specifications and causes Chromium to block video/audio streaming chunks!
+                const origin = details.referrer && details.referrer.includes('youtube-nocookie.com')
+                    ? 'https://www.youtube-nocookie.com'
+                    : 'https://www.youtube.com';
+                if (!headers['access-control-allow-origin'] || headers['access-control-allow-origin'].includes('*')) {
+                    headers['access-control-allow-origin'] = [origin];
+                    headers['access-control-allow-credentials'] = ['true'];
+                }
+            } else {
+                headers['access-control-allow-origin'] = ['*'];
+            }
             callback({ responseHeaders: headers });
         }
     );
@@ -417,6 +441,7 @@ ipcMain.on('open-pip-window', (event, initialState) => {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
+            webSecurity: false,
             preload: path.join(__dirname, 'preload.js'),
             autoplayPolicy: 'no-user-gesture-required'
         }
@@ -718,17 +743,21 @@ ipcMain.handle('yt-get-qualities', async () => {
 });
 
 // ==========================================
-// Widevine Streaming BrowserView Management
+// Widevine Streaming View Management (WebContentsView / BrowserView)
 // ==========================================
-let streamingView: BrowserView | null = null;
+let streamingView: any = null;
 let streamingBounds: { x: number; y: number; width: number; height: number } | null = null;
 
-ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => {
+ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     if (streamingView) {
         try {
-            mainWindow.removeBrowserView(streamingView);
+            if ((mainWindow as any).contentView && typeof (mainWindow as any).contentView.removeChildView === 'function') {
+                (mainWindow as any).contentView.removeChildView(streamingView);
+            } else if (typeof (mainWindow as any).removeBrowserView === 'function') {
+                (mainWindow as any).removeBrowserView(streamingView);
+            }
             (streamingView.webContents as any).destroy?.();
         } catch (e) {}
         streamingView = null;
@@ -755,23 +784,35 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         callback(true);
     });
 
-    streamingView = new BrowserView({
-        webPreferences: {
-            session: streamingSession,
-            partition,
-            nodeIntegration: false,
-            contextIsolation: true,
-            plugins: true,
-            webSecurity: true,
-            autoplayPolicy: 'no-user-gesture-required'
-        }
-    });
+    const webPrefs = {
+        session: streamingSession,
+        partition,
+        nodeIntegration: false,
+        contextIsolation: true,
+        plugins: true,
+        webSecurity: true,
+        autoplayPolicy: 'no-user-gesture-required' as const
+    };
 
-    streamingView.setBackgroundColor('#000000');
-    mainWindow.addBrowserView(streamingView);
+    const radius = options.borderRadius ?? 16;
+
+    if (typeof WebContentsView === 'function' && (mainWindow as any).contentView && typeof (mainWindow as any).contentView.addChildView === 'function') {
+        const view = new WebContentsView({ webPreferences: webPrefs });
+        view.setBackgroundColor('#000000');
+        if (typeof (view as any).setBorderRadius === 'function') {
+            (view as any).setBorderRadius(radius);
+        }
+        (mainWindow as any).contentView.addChildView(view);
+        streamingView = view;
+    } else {
+        const view = new BrowserView({ webPreferences: webPrefs });
+        view.setBackgroundColor('#000000');
+        (mainWindow as any).addBrowserView(view);
+        streamingView = view;
+    }
 
     // Forward streaming view console logs to concord-debug.log for diagnostics
-    streamingView.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
+    streamingView.webContents.on('console-message', (_event: any, _level: any, message: string, line: number, sourceId: string) => {
         fs.appendFileSync(logFile, `[Streaming Console] ${message} (${sourceId}:${line})\n`);
     });
 
@@ -784,17 +825,47 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     streamingBounds = safeBounds;
     streamingView.setBounds(safeBounds);
 
-    let targetUrl = options.url?.trim();
-    if (!targetUrl) {
-        targetUrl = options.service === 'netflix'
-            ? 'https://www.netflix.com/browse'
-            : 'https://www.primevideo.com';
-    }
+    const applyStyling = () => {
+        if (!streamingView || streamingView.webContents.isDestroyed()) return;
+        // Inject styles to hide all scrollbars and clip content to rounded edges
+        streamingView.webContents.insertCSS(`
+            * {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+            }
+            *::-webkit-scrollbar,
+            ::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                background: transparent !important;
+            }
+            :root, html, body {
+                overflow-x: hidden !important;
+                scrollbar-width: none !important;
+                border-radius: ${radius}px !important;
+            }
+        `, { cssOrigin: 'user' }).catch(() => {});
 
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
-    await streamingView.webContents.loadURL(targetUrl);
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                try {
+                    var style = document.getElementById('concord-streaming-style');
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = 'concord-streaming-style';
+                        style.textContent = '* { scrollbar-width: none !important; -ms-overflow-style: none !important; } *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; } :root, html, body { overflow-x: hidden !important; border-radius: ${radius}px !important; }';
+                        document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+                    }
+                } catch(e) {}
+            })()
+        `).catch(() => {});
+    };
 
+    streamingView.webContents.on('dom-ready', applyStyling);
     streamingView.webContents.on('did-finish-load', () => {
+        applyStyling();
+
         if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
             streamingView?.webContents.executeJavaScript(`
                 setTimeout(() => {
@@ -809,29 +880,53 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         }
     });
 
-    streamingView.webContents.on('did-navigate', (_e, navUrl) => {
+    streamingView.webContents.on('did-navigate', (_e: any, navUrl: string) => {
+        applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', url: navUrl });
         }
     });
+
+    let targetUrl = options.url?.trim();
+    if (!targetUrl) {
+        targetUrl = options.service === 'netflix'
+            ? 'https://www.netflix.com/browse'
+            : 'https://www.primevideo.com';
+    }
+
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl);
 });
 
 ipcMain.on('resize-streaming-view', (_event, bounds: { x: number; y: number; width: number; height: number }) => {
     if (!streamingView || !mainWindow || mainWindow.isDestroyed()) return;
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        if (typeof (streamingView as any).setVisible === 'function') {
+            (streamingView as any).setVisible(false);
+        }
+        return;
+    }
     const safeBounds = {
         x: Math.max(0, Math.round(bounds.x)),
         y: Math.max(0, Math.round(bounds.y)),
-        width: Math.max(10, Math.round(bounds.width)),
-        height: Math.max(10, Math.round(bounds.height)),
+        width: Math.max(1, Math.round(bounds.width)),
+        height: Math.max(1, Math.round(bounds.height)),
     };
     streamingBounds = safeBounds;
     streamingView.setBounds(safeBounds);
+    if (typeof (streamingView as any).setVisible === 'function') {
+        (streamingView as any).setVisible(true);
+    }
 });
 
 ipcMain.on('close-streaming-view', () => {
     if (streamingView && mainWindow && !mainWindow.isDestroyed()) {
         try {
-            mainWindow.removeBrowserView(streamingView);
+            if ((mainWindow as any).contentView && typeof (mainWindow as any).contentView.removeChildView === 'function') {
+                (mainWindow as any).contentView.removeChildView(streamingView);
+            } else if (typeof (mainWindow as any).removeBrowserView === 'function') {
+                (mainWindow as any).removeBrowserView(streamingView);
+            }
             (streamingView.webContents as any).destroy?.();
         } catch (e) {}
         streamingView = null;
