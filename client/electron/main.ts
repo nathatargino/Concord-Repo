@@ -22,7 +22,7 @@ const isDev = !app.isPackaged;
 // Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService');
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi');
 // Disable web security restrictions that block YouTube iframe audio and media streaming
 app.commandLine.appendSwitch('disable-web-security');
 app.commandLine.appendSwitch('allow-running-insecure-content');
@@ -775,15 +775,23 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         streamingSession.setUserAgent(cleanChromeUA);
     }
 
-    // Explicitly allow mediaKeySystem (EME / Widevine DRM) and all media permissions
-    streamingSession.setPermissionCheckHandler((_webContents, _permission: any) => {
+    // Explicitly allow mediaKeySystem (EME / Widevine DRM), but block USB / HID security keys that trigger Windows Hello prompts
+    streamingSession.setPermissionCheckHandler((_webContents, permission: any) => {
+        if (permission === 'usb' || permission === 'hid' || permission === 'serial') {
+            return false;
+        }
         return true;
     });
 
-    streamingSession.setPermissionRequestHandler((_webContents, _permission: any, callback) => {
+    streamingSession.setPermissionRequestHandler((_webContents, permission: any, callback) => {
+        if (permission === 'usb' || permission === 'hid' || permission === 'serial') {
+            callback(false);
+            return;
+        }
         callback(true);
     });
 
+    const streamingPreloadPath = path.join(__dirname, 'streaming-preload.js');
     const webPrefs = {
         session: streamingSession,
         partition,
@@ -791,6 +799,7 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         contextIsolation: true,
         plugins: true,
         webSecurity: true,
+        preload: fs.existsSync(streamingPreloadPath) ? streamingPreloadPath : undefined,
         autoplayPolicy: 'no-user-gesture-required' as const
     };
 
@@ -861,6 +870,32 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         streamingView.webContents.executeJavaScript(`
             (function() {
                 try {
+                    // Neutralize WebAuthn / Passkeys in DOM to prevent Windows Security prompts
+                    if (typeof window.PublicKeyCredential !== 'undefined') {
+                        window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = function() { return Promise.resolve(false); };
+                        if (typeof window.PublicKeyCredential.isConditionalMediationAvailable === 'function') {
+                            window.PublicKeyCredential.isConditionalMediationAvailable = function() { return Promise.resolve(false); };
+                        }
+                    }
+                    if (navigator.credentials) {
+                        var origGet = navigator.credentials.get ? navigator.credentials.get.bind(navigator.credentials) : null;
+                        navigator.credentials.get = function(options) {
+                            if (options && (options.publicKey || options.mediation === 'conditional')) {
+                                return Promise.reject(new DOMException("Passkeys are disabled in Concord streaming view", "NotSupportedError"));
+                            }
+                            return origGet ? origGet(options) : Promise.reject(new DOMException("Not supported", "NotSupportedError"));
+                        };
+                        var origCreate = navigator.credentials.create ? navigator.credentials.create.bind(navigator.credentials) : null;
+                        navigator.credentials.create = function(options) {
+                            if (options && options.publicKey) {
+                                return Promise.reject(new DOMException("Passkeys are disabled in Concord streaming view", "NotSupportedError"));
+                            }
+                            return origCreate ? origCreate(options) : Promise.reject(new DOMException("Not supported", "NotSupportedError"));
+                        };
+                    }
+                    if (navigator.usb) { try { Object.defineProperty(navigator, 'usb', { get: function() { return undefined; } }); } catch(e) {} }
+                    if (navigator.hid) { try { Object.defineProperty(navigator, 'hid', { get: function() { return undefined; } }); } catch(e) {} }
+
                     var style = document.getElementById('concord-streaming-style');
                     if (!style) {
                         style = document.createElement('style');

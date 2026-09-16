@@ -12,7 +12,10 @@ export default defineConfig({
         entry: 'electron/main.ts',
       },
       preload: {
-        input: 'electron/preload.ts',
+        input: {
+          preload: 'electron/preload.ts',
+          'streaming-preload': 'electron/streaming-preload.ts',
+        },
       }
     }) : null,
   ],
