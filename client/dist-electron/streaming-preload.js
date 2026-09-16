@@ -37,6 +37,38 @@ electron_1.webFrame.executeJavaScript(`
       if (navigator.hid) {
         try { Object.defineProperty(navigator, 'hid', { get: function() { return undefined; } }); } catch(e) {}
       }
+
+      // Ensure userAgentData reports modern Chrome 150 for streaming sites like Prime Video
+      if (navigator.userAgentData) {
+        try {
+          var brands = [
+            { brand: 'Google Chrome', version: '150' },
+            { brand: 'Chromium', version: '150' },
+            { brand: 'Not_A Brand', version: '24' }
+          ];
+          Object.defineProperty(navigator, 'userAgentData', {
+            get: function() {
+              return {
+                brands: brands,
+                mobile: false,
+                platform: 'Windows',
+                getHighEntropyValues: function() {
+                  return Promise.resolve({
+                    architecture: 'x86',
+                    bitness: '64',
+                    brands: brands,
+                    mobile: false,
+                    model: '',
+                    platform: 'Windows',
+                    platformVersion: '10.0.0',
+                    uaFullVersion: '150.0.7871.250'
+                  });
+                }
+              };
+            }
+          });
+        } catch(e) {}
+      }
     } catch(e) {}
   })();
 `);

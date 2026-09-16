@@ -46,7 +46,96 @@ const electron_updater_1 = require("electron-updater");
 // removed url import
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
+electron_1.app.name = 'Concord';
 const isDev = !electron_1.app.isPackaged;
+function cleanOldWidevineVersions(baseDir, currentVersion) {
+    try {
+        if (!fs.existsSync(baseDir))
+            return;
+        const entries = fs.readdirSync(baseDir);
+        for (const entry of entries) {
+            if (entry !== currentVersion) {
+                const p = path.join(baseDir, entry);
+                if (fs.statSync(p).isDirectory()) {
+                    fs.rmSync(p, { recursive: true, force: true });
+                    fs.appendFileSync(logFile, `[Widevine] Removed obsolete Widevine version: ${entry}\n`);
+                }
+            }
+        }
+    }
+    catch (e) { }
+}
+function copyRecursive(src, dest) {
+    if (!fs.existsSync(src))
+        return;
+    const stats = fs.statSync(src);
+    if (stats.isDirectory()) {
+        fs.mkdirSync(dest, { recursive: true });
+        for (const child of fs.readdirSync(src)) {
+            copyRecursive(path.join(src, child), path.join(dest, child));
+        }
+    }
+    else {
+        fs.copyFileSync(src, dest);
+    }
+}
+function ensureWidevineCdm() {
+    try {
+        const userData = electron_1.app.getPath('userData');
+        const widevineTargetBase = path.join(userData, 'WidevineCdm');
+        const targetVersion = '4.10.3112.0';
+        const targetVersionDir = path.join(widevineTargetBase, targetVersion);
+        const targetDll = path.join(targetVersionDir, '_platform_specific', 'win_x64', 'widevinecdm.dll');
+        if (fs.existsSync(targetDll)) {
+            cleanOldWidevineVersions(widevineTargetBase, targetVersion);
+            return;
+        }
+        const candidateSources = [
+            path.join(__dirname, '../build/WidevineCdm', targetVersion),
+            path.join(process.resourcesPath || '', 'WidevineCdm', targetVersion),
+            path.join(electron_1.app.getAppPath(), 'build/WidevineCdm', targetVersion),
+        ];
+        const chromeDir = 'C:\\Program Files\\Google\\Chrome\\Application';
+        if (fs.existsSync(chromeDir)) {
+            try {
+                for (const sd of fs.readdirSync(chromeDir)) {
+                    const chromeWidevine = path.join(chromeDir, sd, 'WidevineCdm');
+                    if (fs.existsSync(path.join(chromeWidevine, '_platform_specific', 'win_x64', 'widevinecdm.dll'))) {
+                        candidateSources.push(chromeWidevine);
+                        break;
+                    }
+                }
+            }
+            catch (e) { }
+        }
+        const edgeDir = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application';
+        if (fs.existsSync(edgeDir)) {
+            try {
+                for (const sd of fs.readdirSync(edgeDir)) {
+                    const edgeWidevine = path.join(edgeDir, sd, 'WidevineCdm');
+                    if (fs.existsSync(path.join(edgeWidevine, '_platform_specific', 'win_x64', 'widevinecdm.dll'))) {
+                        candidateSources.push(edgeWidevine);
+                        break;
+                    }
+                }
+            }
+            catch (e) { }
+        }
+        for (const src of candidateSources) {
+            const srcDll = path.join(src, '_platform_specific', 'win_x64', 'widevinecdm.dll');
+            if (fs.existsSync(srcDll)) {
+                fs.mkdirSync(path.join(targetVersionDir, '_platform_specific', 'win_x64'), { recursive: true });
+                copyRecursive(src, targetVersionDir);
+                fs.appendFileSync(logFile, `[Widevine] Provisioned Widevine ${targetVersion} from: ${src}\n`);
+                cleanOldWidevineVersions(widevineTargetBase, targetVersion);
+                break;
+            }
+        }
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[Widevine] Provisioning error: ${err}\n`);
+    }
+}
 // Allow autoplay without user gesture for YouTube and streaming
 electron_1.app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 electron_1.app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
@@ -278,11 +367,13 @@ fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 let pipWindow = null;
 electron_1.app.whenReady().then(async () => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
+    ensureWidevineCdm();
     try {
         const { components } = require('electron');
         if (components && typeof components.whenReady === 'function') {
             await components.whenReady();
-            fs.appendFileSync(logFile, '[Widevine] components.whenReady() resolved!\n');
+            const status = typeof components.status === 'function' ? JSON.stringify(components.status()) : 'ready';
+            fs.appendFileSync(logFile, `[Widevine] components.whenReady() resolved! Status: ${status}\n`);
         }
     }
     catch (wvErr) {
@@ -316,11 +407,12 @@ electron_1.app.whenReady().then(async () => {
             callback({ video: null, audio: null });
         });
     });
-    const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+    const chromeVer = process.versions.chrome || '150.0.7871.250';
+    const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`;
     // Override UA globally for the entire session so ALL requests (including YouTube
     // iframe sub-frames) look like Chrome, never Electron.
     electron_1.session.defaultSession.setUserAgent(CHROME_UA);
-    fs.appendFileSync(logFile, `[Main] Session UA set to Chrome\n`);
+    fs.appendFileSync(logFile, `[Main] Session UA set to: ${CHROME_UA}\n`);
     // Fix CORS/Origin for YouTube iframes
     // Electron sends requests with Origin: http://127.0.0.1:PORT which YouTube blocks/mutes.
     // We spoof it to the production URL so YouTube treats the embed as legitimate.
@@ -745,13 +837,19 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     const partition = 'persist:streaming-session';
     const streamingSession = electron_1.session.fromPartition(partition);
     // Natural Chrome UA without Electron tokens matching the actual Chromium engine version
-    const cleanChromeUA = (streamingSession.getUserAgent() || electron_1.app.userAgentFallback || '')
-        .replace(/Electron\/\S+\s*/gi, '')
-        .replace(/concord\/\S+\s*/gi, '')
-        .trim();
-    if (cleanChromeUA) {
-        streamingSession.setUserAgent(cleanChromeUA);
-    }
+    const chromeVer = process.versions.chrome || '150.0.7871.250';
+    const chromeMajor = chromeVer.split('.')[0] || '150';
+    const cleanChromeUA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`;
+    streamingSession.setUserAgent(cleanChromeUA);
+    // Set modern Client Hints and clean UA for all streaming requests
+    streamingSession.webRequest.onBeforeSendHeaders((details, callback) => {
+        const headers = { ...details.requestHeaders };
+        headers['User-Agent'] = cleanChromeUA;
+        headers['sec-ch-ua'] = `"Google Chrome";v="${chromeMajor}", "Chromium";v="${chromeMajor}", "Not_A Brand";v="24"`;
+        headers['sec-ch-ua-mobile'] = '?0';
+        headers['sec-ch-ua-platform'] = '"Windows"';
+        callback({ requestHeaders: headers });
+    });
     // Explicitly allow mediaKeySystem (EME / Widevine DRM), but block USB / HID security keys that trigger Windows Hello prompts
     streamingSession.setPermissionCheckHandler((_webContents, permission) => {
         if (permission === 'usb' || permission === 'hid' || permission === 'serial') {
@@ -866,6 +964,37 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
                     if (navigator.usb) { try { Object.defineProperty(navigator, 'usb', { get: function() { return undefined; } }); } catch(e) {} }
                     if (navigator.hid) { try { Object.defineProperty(navigator, 'hid', { get: function() { return undefined; } }); } catch(e) {} }
 
+                    if (navigator.userAgentData) {
+                        try {
+                            var brands = [
+                                { brand: 'Google Chrome', version: '150' },
+                                { brand: 'Chromium', version: '150' },
+                                { brand: 'Not_A Brand', version: '24' }
+                            ];
+                            Object.defineProperty(navigator, 'userAgentData', {
+                                get: function() {
+                                    return {
+                                        brands: brands,
+                                        mobile: false,
+                                        platform: 'Windows',
+                                        getHighEntropyValues: function() {
+                                            return Promise.resolve({
+                                                architecture: 'x86',
+                                                bitness: '64',
+                                                brands: brands,
+                                                mobile: false,
+                                                model: '',
+                                                platform: 'Windows',
+                                                platformVersion: '10.0.0',
+                                                uaFullVersion: '150.0.7871.250'
+                                            });
+                                        }
+                                    };
+                                }
+                            });
+                        } catch(e) {}
+                    }
+
                     var style = document.getElementById('concord-streaming-style');
                     if (!style) {
                         style = document.createElement('style');
@@ -905,7 +1034,7 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             ? 'https://www.netflix.com/browse'
             : 'https://www.primevideo.com';
     }
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA})\n`);
     await streamingView.webContents.loadURL(targetUrl);
 });
 electron_1.ipcMain.on('resize-streaming-view', (_event, bounds) => {
