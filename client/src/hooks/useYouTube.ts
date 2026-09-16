@@ -61,6 +61,34 @@ function loadYTApiForWindow(win: Window, doc: Document): Promise<any> {
 }
 
 
+const QUALITY_ORDER = [
+  'auto',
+  'highres',
+  'hd2880',
+  'hd2160',
+  'hd1440',
+  'hd1080',
+  'hd720',
+  'large',
+  'medium',
+  'small',
+  'tiny'
+];
+
+export function sortYouTubeQualities(qualities: string[]): string[] {
+  const unique = Array.from(new Set(qualities.filter(q => Boolean(q) && q !== 'default')));
+  const withoutAuto = unique.filter(q => q !== 'auto');
+  withoutAuto.sort((a, b) => {
+    const indexA = QUALITY_ORDER.indexOf(a);
+    const indexB = QUALITY_ORDER.indexOf(b);
+    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+    if (indexA !== -1) return -1;
+    if (indexB !== -1) return 1;
+    return 0;
+  });
+  return ['auto', ...withoutAuto];
+}
+
 export function useYouTube(
   onMusicEnded: (token: number) => void
 ) {
@@ -72,7 +100,7 @@ export function useYouTube(
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCCEnabledRef = useRef<boolean>(false);
   const targetQualityRef = useRef<string>('auto');
-  const availableQualitiesRef = useRef<string[]>(['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny']);
+  const availableQualitiesRef = useRef<string[]>(['auto']);
 
   const postYTCommand = useCallback((func: string, args: any[] = []) => {
     try {
@@ -145,35 +173,95 @@ export function useYouTube(
   }, [applyCCState]);
 
   const refreshAvailableQualities = useCallback(async () => {
+    let rawQualities: string[] = [];
+
+    // 1. Electron IPC (reads movie_player directly inside YouTube iframe)
     const electronGetQualities = (window as any).electron?.getYouTubeQualities;
     if (typeof electronGetQualities === 'function') {
       try {
         const levels = await electronGetQualities();
         if (Array.isArray(levels) && levels.length > 0) {
-          const unique = Array.from(new Set(['auto', ...levels]));
-          availableQualitiesRef.current = unique;
-          return unique;
+          rawQualities = levels;
         }
       } catch {}
     }
-    return availableQualitiesRef.current;
+
+    // 2. YouTube IFrame API instance method
+    if (rawQualities.length === 0 && playerRef.current) {
+      try {
+        const p = playerRef.current as any;
+        if (typeof p.getAvailableQualityLevels === 'function') {
+          const levels = p.getAvailableQualityLevels();
+          if (Array.isArray(levels) && levels.length > 0) {
+            rawQualities = levels;
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Direct frame movie_player access (when accessible)
+    if (rawQualities.length === 0 && playerRef.current) {
+      try {
+        const iframe = (playerRef.current as any)?.getIframe?.() as HTMLIFrameElement | null;
+        const win = iframe?.contentWindow as any;
+        if (win) {
+          const mp = win.document?.getElementById('movie_player') ||
+                     win.document?.querySelector('.html5-video-player');
+          if (mp && typeof mp.getAvailableQualityLevels === 'function') {
+            const levels = mp.getAvailableQualityLevels();
+            if (Array.isArray(levels) && levels.length > 0) {
+              rawQualities = levels;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (rawQualities.length > 0) {
+      const sorted = sortYouTubeQualities(rawQualities);
+      const current = useAppStore.getState().ytAvailableQualities;
+      if (current.join(',') !== sorted.join(',')) {
+        console.log('[YT] Native available qualities refreshed:', sorted);
+        useAppStore.getState().setYtAvailableQualities(sorted);
+        availableQualitiesRef.current = sorted;
+      }
+      return sorted;
+    }
+
+    return useAppStore.getState().ytAvailableQualities;
   }, []);
 
-  /** Force quality on the internal YouTube player — targets the sub-frame directly via Electron IPC
-   * without interrupting video playback or buffer (avoids black screen / flickering). */
+  /** Attempt to force quality on the YouTube player using all available strategies:
+   * 1. Electron IPC executeJavaScript (most reliable on desktop)
+   * 2. IFrame API setPlaybackQuality / setPlaybackQualityRange
+   * 3. postMessage commands to the iframe
+   * 4. Direct movie_player access (cross-origin guarded)
+   * Quality switching in YouTube IFrame API for web is restricted but we try all paths. */
   const forceQualityOnPlayer = useCallback((q: string) => {
     if (!playerRef.current) return;
     const p = playerRef.current as any;
     const isDefault = q === 'default' || q === 'auto';
+    const ytQuality = isDefault ? 'auto' : q;
 
-    // 1. [Electron only] Ask the main process to run executeJavaScript directly
-    //    inside the YouTube sub-frame — bypasses all cross-origin restrictions.
+    // 1. [Electron] executeJavaScript inside YT sub-frame (bypasses cross-origin restrictions)
     const electronSetQuality = (window as any).electron?.setYouTubeQuality;
     if (typeof electronSetQuality === 'function') {
-      electronSetQuality(isDefault ? 'auto' : q).catch(() => {});
+      electronSetQuality(ytQuality).catch(() => {});
     }
 
-    // 2. Try the internal movie_player object via renderer (works when disable-web-security is on)
+    // 2. IFrame API instance methods (works when YouTube honours the API)
+    try {
+      if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(ytQuality, ytQuality);
+      if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(isDefault ? 'default' : ytQuality);
+      if (typeof p.setOption === 'function') p.setOption('playbackQuality', isDefault ? 'default' : ytQuality);
+    } catch {}
+
+    // 3. postMessage commands to the iframe
+    postYTCommand('setPlaybackQuality', [isDefault ? 'default' : ytQuality]);
+    postYTCommand('setPlaybackQualityRange', [ytQuality, ytQuality]);
+    postYTCommand('setOption', ['playbackQuality', isDefault ? 'default' : ytQuality]);
+
+    // 4. Direct movie_player access (works in Electron with --disable-web-security)
     try {
       const iframe = p?.getIframe?.() as HTMLIFrameElement | null;
       const win = iframe?.contentWindow as any;
@@ -181,46 +269,50 @@ export function useYouTube(
         const mp = win.document?.getElementById('movie_player') ||
                    win.document?.querySelector('.html5-video-player');
         if (mp) {
-          if (typeof mp.setPlaybackQualityRange === 'function') {
-            mp.setPlaybackQualityRange(isDefault ? 'auto' : q, isDefault ? 'auto' : q);
-          }
-          if (typeof mp.setPlaybackQuality === 'function') {
-            mp.setPlaybackQuality(isDefault ? 'default' : q);
-          }
+          if (typeof mp.setPlaybackQualityRange === 'function') mp.setPlaybackQualityRange(ytQuality, ytQuality);
+          if (typeof mp.setPlaybackQuality === 'function') mp.setPlaybackQuality(isDefault ? 'default' : ytQuality);
+          if (typeof mp.setOption === 'function') mp.setOption('playbackQuality', isDefault ? 'default' : ytQuality);
         }
       }
     } catch {/* cross-origin: silent */}
 
-    // 3. IFrame API instance methods (fallback)
+    // 5. Store in localStorage as a hint for YouTube player
     try {
-      if (typeof p.setPlaybackQualityRange === 'function') p.setPlaybackQualityRange(isDefault ? 'auto' : q, isDefault ? 'auto' : q);
-      if (typeof p.setPlaybackQuality === 'function') p.setPlaybackQuality(isDefault ? 'default' : q);
+      if (isDefault) {
+        localStorage.removeItem('yt-player-quality');
+        localStorage.removeItem('yt-player-quality-cap');
+      } else {
+        const resMap: Record<string, number> = {
+          hd2160: 2160, hd1440: 1440, hd1080: 1080, hd720: 720,
+          large: 480, medium: 360, small: 240, tiny: 144
+        };
+        const num = resMap[ytQuality] || 720;
+        const payload = JSON.stringify({
+          data: JSON.stringify({ quality: num, previousQuality: num }),
+          expiration: Date.now() + 31536000000,
+          creation: Date.now()
+        });
+        localStorage.setItem('yt-player-quality', payload);
+        localStorage.setItem('yt-player-quality-cap', payload);
+      }
     } catch {}
-
-    // 4. postMessage to iframe
-    postYTCommand('setPlaybackQuality', [isDefault ? 'default' : q]);
-    postYTCommand('setPlaybackQualityRange', [isDefault ? 'auto' : q, isDefault ? 'auto' : q]);
   }, [postYTCommand]);
 
   const setQuality = useCallback((quality: string) => {
     targetQualityRef.current = quality;
     if (!playerRef.current) return;
 
-    const q = (quality === 'auto' || quality === 'default') ? 'default' : quality;
-    console.log('[YT] Setting quality to:', q);
+    const isAuto = quality === 'auto' || quality === 'default';
+    const q = isAuto ? 'default' : quality;
+    console.log('[YT] setQuality called with:', quality, '→ normalized:', q);
 
-    // Apply quality directly without seeking (prevents black screen and buffer loops)
+    // Apply quality directly across all available paths (no reload, smooth transition)
     forceQualityOnPlayer(q);
-
-    // Gentle retry to ensure DASH ABR selection applies seamlessly
-    setTimeout(() => {
-      if (targetQualityRef.current === quality) {
-        forceQualityOnPlayer(q);
-      }
-    }, 600);
   }, [forceQualityOnPlayer]);
 
   const getAvailableQualities = useCallback(() => {
+    const fromStore = useAppStore.getState().ytAvailableQualities;
+    if (fromStore && fromStore.length > 0) return fromStore;
     return availableQualitiesRef.current;
   }, []);
 
@@ -261,7 +353,6 @@ export function useYouTube(
       container.appendChild(div);
 
       const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
-
       // Always pass the current window's origin to YouTube so it knows where to send postMessages.
       const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
@@ -273,7 +364,7 @@ export function useYouTube(
         videoId: 'jNQXAC9IVRw', // Provide a valid placeholder ID to prevent Error 2 on init
         playerVars: {
           autoplay: 0,
-          controls: 0, // Hide YouTube native controls — Concord overlay handles all UI
+          controls: 0, // Always 0 (Concord custom overlay)
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
@@ -307,6 +398,9 @@ export function useYouTube(
              // Apply initial CC state (off by default)
              applyCCState(isCCEnabledRef.current);
              
+             // Refresh available qualities right on player ready
+             refreshAvailableQualities();
+
              const { ytVol, callMuted } = useAudioStore.getState();
              const targetVol = callMuted ? 0 : ytVol;
              // Force-unmute at the Electron audio pipeline level immediately on ready
@@ -322,6 +416,10 @@ export function useYouTube(
           onError: (event: any) => {
             console.error('[YT] Player error:', event.data);
           },
+          onPlaybackQualityChange: (event: any) => {
+            console.log('[YT] onPlaybackQualityChange fired:', event.data);
+            refreshAvailableQualities();
+          },
           onStateChange: (event: any) => {
             console.log('[YT] State changed:', event.data);
             
@@ -335,15 +433,10 @@ export function useYouTube(
               // Ensure CC state matches preference on play start
               applyCCState(isCCEnabledRef.current);
 
-              // Query available resolutions from player
+              // Query available resolutions from player immediately and after stream stabilizes
               refreshAvailableQualities();
-
-              // Re-apply quality when playback starts if user set a preference
-              const tq = targetQualityRef.current;
-              if (tq && tq !== 'auto') {
-                const q = tq === 'default' ? 'default' : tq;
-                forceQualityOnPlayer(q);
-              }
+              setTimeout(refreshAvailableQualities, 1000);
+              setTimeout(refreshAvailableQualities, 2500);
 
               // Force volume repeatedly for 3 seconds to beat YouTube's auto-mute
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
@@ -393,10 +486,19 @@ export function useYouTube(
       currentTokenRef.current = token;
       suppressEndedRef.current = false;
 
+      // Sempre que um novo vídeo for reproduzido, pré-selecionar qualidade automática
+      targetQualityRef.current = 'auto';
+      availableQualitiesRef.current = ['auto'];
+      useAppStore.getState().setYtAvailableQualities(['auto']);
+
       // Force-unmute Electron audio pipeline before loading so audio isn't blocked
       if (typeof (window as any).electron?.forceUnmute === 'function') {
         (window as any).electron.forceUnmute();
       }
+
+      useAppStore.getState().setCurrentVideoId(videoId);
+      useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
+      useAppStore.getState().setIsPlaying(true);
 
       const player = await ensurePlayer();
       try {
@@ -408,43 +510,44 @@ export function useYouTube(
         }
       } catch {}
 
-      player.loadVideoById(videoId, Math.floor(startSeconds));
+      try {
+        (player as any).loadVideoById({
+          videoId,
+          startSeconds: Math.floor(startSeconds),
+          suggestedQuality: 'default'
+        });
+      } catch {
+        player.loadVideoById(videoId, Math.floor(startSeconds));
+      }
       applyCCState(isCCEnabledRef.current);
 
-      // Apply quality after player has had time to initialize the stream
-      const tq = targetQualityRef.current;
-      if (tq && tq !== 'auto') {
-        const q = tq === 'default' ? 'default' : tq;
-        [350, 800, 1500, 2500].forEach(ms => {
-          setTimeout(() => {
-            if (targetQualityRef.current === tq) forceQualityOnPlayer(q);
-          }, ms);
-        });
-      }
+      // Pré-selecionar qualidade automática no stream recém-carregado
+      setTimeout(() => {
+        forceQualityOnPlayer('default');
+      }, 500);
 
       const { ytVol, callMuted } = useAudioStore.getState();
       const { isPiPActive } = useAppStore.getState();
       const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
       player.setVolume(targetVol);
       if (targetVol > 0) player.unMute();
-      
-      useAppStore.getState().setCurrentVideoId(videoId);
-      useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
-      useAppStore.getState().setIsPlaying(true);
     },
     [ensurePlayer, applyCCState, forceQualityOnPlayer]
   );
 
   const stopYouTube = useCallback(async () => {
     suppressEndedRef.current = true;
+    targetQualityRef.current = 'auto';
     if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
     try {
-      playerRef.current?.stopVideo();
-      const iframe = playerRef.current?.getIframe?.();
-      if (iframe) {
-        iframe.style.display = 'none';
-        iframe.style.opacity = '0';
-        iframe.style.visibility = 'hidden';
+      if (playerRef.current) {
+        playerRef.current.pauseVideo?.();
+        playerRef.current.seekTo?.(0, true);
+        const iframe = playerRef.current.getIframe?.();
+        if (iframe) {
+          iframe.style.visibility = 'hidden';
+          iframe.style.opacity = '0';
+        }
       }
     } catch {}
     useAppStore.getState().setCurrentVideoId(null);
@@ -523,6 +626,34 @@ export function useYouTube(
     ensurePlayer().catch(() => {});
   }, [ensurePlayer]);
 
+  // Passively listen for YouTube postMessage 'infoDelivery' events which broadcast available resolutions
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        let data = e.data;
+        if (typeof data === 'string') {
+          if (!data.includes('infoDelivery') && !data.includes('availableQualityLevels')) return;
+          data = JSON.parse(data);
+        }
+        if (data?.event === 'infoDelivery' && data?.info) {
+          const levels = data.info.availableQualityLevels;
+          if (Array.isArray(levels) && levels.length > 0) {
+            const sorted = sortYouTubeQualities(levels);
+            const current = useAppStore.getState().ytAvailableQualities;
+            if (current.join(',') !== sorted.join(',')) {
+              console.log('[YT] Native qualities via infoDelivery:', sorted);
+              useAppStore.getState().setYtAvailableQualities(sorted);
+              availableQualitiesRef.current = sorted;
+            }
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   useEffect(() => {
     // When pipWindow changes, re-init the player after React has portaled the #yt-host div
     const timer = setTimeout(() => {
@@ -537,7 +668,7 @@ export function useYouTube(
   }, [pipWindow, playYouTube]);
 
   return useMemo(() => ({ 
-    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality
-  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality]);
+    playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality, refreshAvailableQualities
+  }), [playYouTube, stopYouTube, pauseYouTube, resumeYouTube, applyYTVolume, seekTo, unlock, prewarm, getCurrentTime, getDuration, setCC, setQuality, getAvailableQualities, getQuality, refreshAvailableQualities]);
 }
 

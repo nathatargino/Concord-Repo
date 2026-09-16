@@ -103,6 +103,71 @@ app.get('/api/turn/credentials', async (_req, res) => {
   res.json({ iceServers });
 });
 
+// ─── YOUTUBE SEARCH ENDPOINT ──────────────────────────────────────
+app.get('/api/youtube/search', async (req, res) => {
+  const q = (req.query.q as string || '').trim();
+  if (!q) return res.json([]);
+
+  try {
+    const body = {
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20231201.00.00',
+          hl: 'pt',
+          gl: 'BR'
+        }
+      },
+      query: q
+    };
+
+    const response = await fetch('https://www.youtube.com/youtubei/v1/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      return res.json([]);
+    }
+
+    const data: any = await response.json();
+    const sectionList = data.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer?.contents || [];
+    const items: Array<{
+      videoId: string;
+      title: string;
+      thumbnailUrl: string;
+      channelTitle: string;
+      duration?: string;
+      publishedTime?: string;
+      viewCount?: string;
+    }> = [];
+
+    for (const s of sectionList) {
+      const contents = s.itemSectionRenderer?.contents || [];
+      for (const item of contents) {
+        if (item.videoRenderer && item.videoRenderer.videoId) {
+          const v = item.videoRenderer;
+          items.push({
+            videoId: v.videoId,
+            title: v.title?.runs?.[0]?.text || v.title?.simpleText || '',
+            thumbnailUrl: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
+            channelTitle: v.ownerText?.runs?.[0]?.text || 'YouTube',
+            duration: v.lengthText?.simpleText || '',
+            publishedTime: v.publishedTimeText?.simpleText || '',
+            viewCount: v.shortViewCountText?.simpleText || v.viewCountText?.simpleText || ''
+          });
+        }
+      }
+    }
+
+    return res.json(items);
+  } catch (err) {
+    console.error('[YouTube Search API Error]', err);
+    return res.json([]);
+  }
+});
+
 // ─── IMAGE UPLOAD ─────────────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {

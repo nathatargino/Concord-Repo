@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
+import { YouTubeSearchModal } from './YouTubeSearchModal';
 import styles from './MusicPanel.module.css';
 
 const DESKTOP_DOWNLOAD_URL = 'https://github.com/nathatargino/Concord-Repo/releases/latest/download/Concord-Setup.exe';
@@ -44,7 +45,7 @@ const PLATFORMS: PlatformConfig[] = [
 ];
 
 interface Props {
-  onRequestMusic: (url: string) => void;
+  onRequestMusic: (url: string, title?: string) => void;
   onRemoveFromQueue: (token: number) => void;
   onReorderQueue: (oldIndex: number, newIndex: number) => void;
   inVoice: boolean;
@@ -58,6 +59,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>('youtube');
   const [streamingUrl, setStreamingUrl] = useState('');
   const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const { musicQueue, currentVideoId, isPlaying, activeStreaming, setActiveStreaming } = useAppStore();
 
   // Detect if running inside Electron
@@ -140,6 +142,10 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     setUrl('');
   };
 
+  const handleSelectSearchVideo = (videoId: string, title?: string) => {
+    onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title);
+  };
+
   const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
   const activeTitle = trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
 
@@ -216,6 +222,28 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                 </div>
               </div>
             )}
+
+            {/* Search on YouTube button */}
+            <button
+              type="button"
+              id="btnBuscarYouTube"
+              className={styles.searchTriggerBtn}
+              onClick={() => setIsSearchModalOpen(true)}
+              disabled={!inVoice}
+              title={!inVoice ? 'Entre na call para buscar e adicionar músicas' : 'Buscar músicas e vídeos no YouTube'}
+            >
+              <span className={styles.searchTriggerBtnIcon}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </span>
+              <span>Buscar no YouTube</span>
+            </button>
+
+            <div className={styles.orDivider}>
+              <span>ou cole o link</span>
+            </div>
 
             {/* Add music form */}
             <form onSubmit={handleAdd} className={styles.form}>
@@ -431,6 +459,14 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
         )}
 
       </div>
+
+      {/* YouTube Search & Enqueue Modal */}
+      <YouTubeSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectVideo={handleSelectSearchVideo}
+        isCurrentlyPlaying={isPlaying}
+      />
     </div>
   );
 };

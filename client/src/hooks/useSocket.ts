@@ -75,7 +75,7 @@ interface ClientToServerEvents {
   delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
-  request_music: (url: string) => void;
+  request_music: (url: string, title?: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   music_seek: (time: number) => void;
   remove_from_queue: (token: number) => void;

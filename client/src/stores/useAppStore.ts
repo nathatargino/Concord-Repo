@@ -72,6 +72,8 @@ interface AppState {
   setPipWindow: (w: Window | null) => void;
   isPiPActive: boolean;
   setPiPActive: (v: boolean) => void;
+  ytAvailableQualities: string[];
+  setYtAvailableQualities: (qualities: string[]) => void;
 
   // Streaming (Netflix / Prime Video)
   activeStreaming: { service: 'netflix' | 'prime'; url?: string } | null;
@@ -182,6 +184,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPipWindow: (pipWindow) => set({ pipWindow }),
   isPiPActive: false,
   setPiPActive: (isPiPActive) => set({ isPiPActive }),
+  ytAvailableQualities: ['auto'],
+  setYtAvailableQualities: (ytAvailableQualities) => set({ ytAvailableQualities }),
 
   // Streaming (Netflix / Prime Video)
   activeStreaming: null,

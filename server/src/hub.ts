@@ -188,6 +188,10 @@ export function toRoomInfo(room: RoomState): RoomInfo {
 // ─── HELPERS ───────────────────────────────────────────────────────────────────
 
 function extractVideoId(url: string): string | null {
+  const trimmed = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed;
+  }
   const patterns = [
     /(?:v=)([a-zA-Z0-9_-]{11})/,
     /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
@@ -195,7 +199,7 @@ function extractVideoId(url: string): string | null {
     /(?:shorts\/)([a-zA-Z0-9_-]{11})/,
   ];
   for (const pattern of patterns) {
-    const match = url.match(pattern);
+    const match = trimmed.match(pattern);
     if (match) return match[1];
   }
   return null;
@@ -781,7 +785,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
-    socket.on('request_music', async (url: string) => {
+    socket.on('request_music', async (url: string, suggestedTitle?: string) => {
       const room = getCurrentRoom();
       if (!room) return;
 
@@ -791,13 +795,15 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         return;
       }
 
-      let title = videoId;
-      try {
-        const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
-        const data = await res.json();
-        if (data.title) title = data.title;
-      } catch {
-        // Fallback to videoId
+      let title = (suggestedTitle && suggestedTitle.trim()) || videoId;
+      if (!suggestedTitle || !suggestedTitle.trim()) {
+        try {
+          const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+          const data = await res.json();
+          if (data.title) title = data.title;
+        } catch {
+          // Fallback to videoId
+        }
       }
 
       const token = Date.now();

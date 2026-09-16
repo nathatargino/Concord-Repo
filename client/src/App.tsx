@@ -565,7 +565,7 @@ export default function App() {
 
         <div className={styles.sidePanels} style={{ display: 'flex' }}>
           <MusicPanel
-            onRequestMusic={(url) => socket.emit('request_music', url)}
+            onRequestMusic={(url, title) => socket.emit('request_music', url, title)}
             onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
             onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
             inVoice={store.inVoice}

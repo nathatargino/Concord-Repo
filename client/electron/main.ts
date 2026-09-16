@@ -574,6 +574,9 @@ ipcMain.handle('yt-set-quality', async (_event, quality: string) => {
                  document.querySelector('.html5-video-player');
         if (!mp) { return 'no-player'; }
 
+        var targetQ = '${q}';
+        var targetQRange = '${qRange}';
+
         var resMap = {
           'hd2160': 2160,
           'hd1440': 1440,
@@ -588,43 +591,89 @@ ipcMain.handle('yt-set-quality', async (_event, quality: string) => {
         try {
           if (${isDefault}) {
             localStorage.removeItem('yt-player-quality');
+            localStorage.removeItem('yt-player-quality-cap');
           } else {
-            var num = resMap['${q}'];
-            if (num) {
-              localStorage.setItem('yt-player-quality', JSON.stringify({
-                data: JSON.stringify({ quality: num, previousQuality: num }),
-                expiration: Date.now() + 31536000000,
-                creation: Date.now()
-              }));
-            }
+            var num = resMap[targetQ] || 720;
+            var payload = { data: JSON.stringify({ quality: num, previousQuality: num }), expiration: Date.now() + 31536000000, creation: Date.now() };
+            localStorage.setItem('yt-player-quality', JSON.stringify(payload));
+            localStorage.setItem('yt-player-quality-cap', JSON.stringify(payload));
           }
-        } catch (e) {}
+        } catch(e) {}
 
         var applied = [];
-        if (typeof mp.setPlaybackQualityRange === 'function') {
-          mp.setPlaybackQualityRange('${qRange}', '${qRange}');
-          applied.push('setPlaybackQualityRange');
-        }
-        if (typeof mp.setPlaybackQuality === 'function') {
-          mp.setPlaybackQuality('${q}');
-          applied.push('setPlaybackQuality');
+
+        // 1. Direct movie_player methods
+        try {
+          if (typeof mp.setPlaybackQualityRange === 'function') {
+            mp.setPlaybackQualityRange(targetQRange, targetQRange);
+            applied.push('sqr');
+          }
+        } catch(e) {
+          applied.push('sqr_err:' + (e && e.message));
         }
 
-        return applied.join(',') || 'no-methods';
+        try {
+          if (typeof mp.setPlaybackQuality === 'function') {
+            mp.setPlaybackQuality(targetQ);
+            applied.push('spq');
+          }
+        } catch(e) {
+          applied.push('spq_err:' + (e && e.message));
+        }
+
+        try {
+          if (typeof mp.setOption === 'function') {
+            mp.setOption('playbackQuality', targetQ);
+            applied.push('so');
+          }
+        } catch(e) {
+          applied.push('so_err:' + (e && e.message));
+        }
+
+        // 2. Walk internal properties to find adaptive quality controller
+        function walkObj(obj, depth) {
+          if (!obj || depth > 2) return;
+          var keys = Object.keys(obj);
+          for (var i = 0; i < keys.length; i++) {
+            try {
+              var val = obj[keys[i]];
+              if (val && typeof val === 'object' && !Array.isArray(val)) {
+                if (typeof val.setQuality === 'function') { try { val.setQuality(targetQRange); applied.push('wk.setQuality'); } catch(e) {} }
+                if (typeof val.setMaxQuality === 'function') { try { val.setMaxQuality(targetQRange); applied.push('wk.setMaxQuality'); } catch(e) {} }
+                if (typeof val.handleQualityChange === 'function') { try { val.handleQualityChange({quality: targetQRange}); applied.push('wk.handleQualityChange'); } catch(e) {} }
+                if (typeof val.updatePlaybackQuality === 'function') { try { val.updatePlaybackQuality(targetQRange, targetQRange); applied.push('wk.updatePlaybackQuality'); } catch(e) {} }
+                walkObj(val, depth + 1);
+              }
+            } catch(e2) {}
+          }
+        }
+        walkObj(mp, 0);
+
+        var curQ = typeof mp.getPlaybackQuality === 'function' ? mp.getPlaybackQuality() : 'unknown';
+        var avail = typeof mp.getAvailableQualityLevels === 'function' ? mp.getAvailableQualityLevels() : [];
+
+        return 'applied:[' + applied.join(',') + '] cur:' + curQ + ' avail:[' + avail.join(',') + ']';
       })()
     `;
+
+    fs.appendFileSync(logFile, `[YT-quality] IPC called with quality='${quality}'\n`);
 
     // Iterate over all web contents and their subframes to find the YouTube iframe
     const { webContents } = require('electron');
     let found = false;
+    let totalFrames = 0;
     for (const wc of webContents.getAllWebContents()) {
         const frames = wc.mainFrame ? wc.mainFrame.framesInSubtree : [];
         for (const frame of frames) {
             try {
                 const url = frame.url;
+                totalFrames++;
+                // Log ALL frame URLs for diagnostics
+                fs.appendFileSync(logFile, `[YT-quality] frame[${totalFrames}] url=${url.substring(0,80)}\n`);
                 if (url && (url.includes('youtube.com/embed') || url.includes('youtube-nocookie.com/embed'))) {
+                    fs.appendFileSync(logFile, `[YT-quality] FOUND YT frame → running script\n`);
                     const result = await frame.executeJavaScript(script);
-                    fs.appendFileSync(logFile, `[YT-quality] frame url=${url.substring(0,60)} result=${result}\n`);
+                    fs.appendFileSync(logFile, `[YT-quality] result=${result}\n`);
                     found = true;
                 }
             } catch (e) {
@@ -632,6 +681,7 @@ ipcMain.handle('yt-set-quality', async (_event, quality: string) => {
             }
         }
     }
+    fs.appendFileSync(logFile, `[YT-quality] Done. found=${found}, totalFrames=${totalFrames}\n`);
     return found;
 });
 

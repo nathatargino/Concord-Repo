@@ -695,7 +695,7 @@
 }
 
 .flipCardBack {
-  display: none;
+  display: flex;
   position: absolute;
   inset: 0;
   width: 100%;
@@ -703,6 +703,8 @@
   overflow: hidden;
   flex-direction: column;
   pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
 }
 
 .flipCard.flipped .flipCardFront {
@@ -715,6 +717,8 @@
 
 .flipCard.flipped .flipCardBack {
   display: flex;
+  visibility: visible;
+  opacity: 1;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   pointer-events: auto;
@@ -1311,7 +1315,6 @@
 }
 
 .hiddenSlot {
-  display: none !important;
   visibility: hidden !important;
   position: absolute !important;
   left: -10000px !important;
@@ -1324,6 +1327,24 @@
 }
 
 .ytHostSeeking {
+  opacity: 0 !important;
+}
+
+.audioOnlyMode {
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  position: absolute !important;
+  left: -9999px !important;
+}
+
+.audioOnlyMode iframe {
+  width: 1px !important;
+  height: 1px !important;
+  visibility: hidden !important;
   opacity: 0 !important;
 }
 
@@ -1634,4 +1655,5 @@
   background: rgba(16, 185, 129, 0.2);
   color: #34d399;
 }
+
 

@@ -101,7 +101,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     musicStartTime,
     setVisualizerActive,
     activeStreaming,
-    setActiveStreaming
+    setActiveStreaming,
+    ytAvailableQualities
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -115,6 +116,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [imageZoom, setImageZoom] = useState<number>(1);
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
@@ -193,6 +195,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   const formatQualityLabel = (q: string) => {
     switch (q) {
+      case 'highres': return 'Alta Definição (Original)';
+      case 'hd2880': return '2880p (5K)';
       case 'hd2160': return '2160p (4K)';
       case 'hd1440': return '1440p (2K)';
       case 'hd1080': return '1080p (HD)';
@@ -222,6 +226,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       }
     }
   }, [currentVideoId, showVideoPlayer, activeStreaming]);
+
+  // Sempre que for colocado um novo vídeo de reprodução, pré-selecionar a opção de qualidade automática
+  useEffect(() => {
+    if (currentVideoId) {
+      setSelectedQuality('auto');
+      onSetQuality?.('auto');
+    }
+  }, [currentVideoId, onSetQuality]);
 
   // ── Slash command autocomplete ──
   const SLASH_COMMANDS = [
@@ -1283,9 +1295,17 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   {(() => {
                     const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
-                    {/* Global YT Host - always stays in main window */}
-                    <div style={{ display: (isPiPActive || !currentVideoId || !!activeStreaming) ? 'none' : 'block', width: '100%', height: '100%' }}>
-                      <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''}`} />
+                    {/* Global YT Host - stays visible only when on video player tab */}
+                    <div
+                      style={{
+                        display: (isPiPActive || !currentVideoId || !!activeStreaming) ? 'none' : 'block',
+                        visibility: showVideoPlayer ? 'visible' : 'hidden',
+                        pointerEvents: showVideoPlayer ? 'auto' : 'none',
+                        width: '100%',
+                        height: '100%'
+                      }}
+                    >
+                      <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''} ${!showVideoPlayer ? styles.audioOnlyMode : ''}`} />
                     </div>
                     {isPiPActive && currentVideoId && (
                       <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -1314,197 +1334,206 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                         </button>
 
                         <div className={styles.videoOverlayBottom}>
-                          <span className={styles.timeText}>{formatTime(isDraggingSeek ? seekValue : currentTime)}</span>
+                            <span className={styles.timeText}>{formatTime(isDraggingSeek ? seekValue : currentTime)}</span>
 
-                          <div className={styles.seekContainer}>
-                            <input
-                              type="range"
-                              min={0}
-                              max={duration || 100}
-                              step={0.1}
-                              value={isDraggingSeek ? seekValue : currentTime}
-                              className={styles.seekBar}
-                              onMouseDown={() => {
-                                setIsDraggingSeek(true);
-                                setSeekValue(currentTime);
-                              }}
-                              onTouchStart={() => {
-                                setIsDraggingSeek(true);
-                                setSeekValue(currentTime);
-                              }}
-                              onChange={(e) => setSeekValue(parseFloat(e.target.value))}
-                              onMouseUp={(e) => {
-                                setIsDraggingSeek(false);
-                                const targetTime = parseFloat((e.target as HTMLInputElement).value);
-                                seekLockRef.current = Date.now() + 1000;
-                                setIsSeekingLocked(true);
-                                setTimeout(() => setIsSeekingLocked(false), 1000);
-                                onMusicSeek?.(targetTime);
-                              }}
-                              onTouchEnd={(e) => {
-                                setIsDraggingSeek(false);
-                                const targetTime = parseFloat((e.target as HTMLInputElement).value);
-                                seekLockRef.current = Date.now() + 1000;
-                                setIsSeekingLocked(true);
-                                setTimeout(() => setIsSeekingLocked(false), 1000);
-                                onMusicSeek?.(targetTime);
-                              }}
-                            />
-                            <div className={styles.seekTrack}>
-                              <div
-                                className={styles.seekFill}
-                                style={{ width: `${Math.min(100, (((isDraggingSeek ? seekValue : currentTime) / (duration || 1)) * 100))}%` }}
+                            <div className={styles.seekContainer}>
+                              <input
+                                type="range"
+                                min={0}
+                                max={duration || 100}
+                                step={0.1}
+                                value={isDraggingSeek ? seekValue : currentTime}
+                                className={styles.seekBar}
+                                onMouseDown={() => {
+                                  setIsDraggingSeek(true);
+                                  setSeekValue(currentTime);
+                                }}
+                                onTouchStart={() => {
+                                  setIsDraggingSeek(true);
+                                  setSeekValue(currentTime);
+                                }}
+                                onChange={(e) => setSeekValue(parseFloat(e.target.value))}
+                                onMouseUp={(e) => {
+                                  setIsDraggingSeek(false);
+                                  const targetTime = parseFloat((e.target as HTMLInputElement).value);
+                                  seekLockRef.current = Date.now() + 1000;
+                                  setIsSeekingLocked(true);
+                                  setTimeout(() => setIsSeekingLocked(false), 1000);
+                                  onMusicSeek?.(targetTime);
+                                }}
+                                onTouchEnd={(e) => {
+                                  setIsDraggingSeek(false);
+                                  const targetTime = parseFloat((e.target as HTMLInputElement).value);
+                                  seekLockRef.current = Date.now() + 1000;
+                                  setIsSeekingLocked(true);
+                                  setTimeout(() => setIsSeekingLocked(false), 1000);
+                                  onMusicSeek?.(targetTime);
+                                }}
+                              />
+                              <div className={styles.seekTrack}>
+                                <div
+                                  className={styles.seekFill}
+                                  style={{ width: `${Math.min(100, (((isDraggingSeek ? seekValue : currentTime) / (duration || 1)) * 100))}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <span className={styles.timeText}>{formatTime(duration)}</span>
+
+                            <div className={styles.volumeContainer}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                {ytVol === 0 || callMuted ? (
+                                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                                ) : ytVol < 50 ? (
+                                  <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" />
+                                ) : (
+                                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                                )}
+                              </svg>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={ytVol}
+                                onChange={(e) => setYtVol(parseInt(e.target.value))}
+                                className={styles.volumeSlider}
+                                title="Volume"
                               />
                             </div>
-                          </div>
 
-                          <span className={styles.timeText}>{formatTime(duration)}</span>
+                            {(() => {
+                              return (
+                                <div className={styles.pipButtonWrapper}>
+                                  <button
+                                    className={`${styles.overlayControlBtn} ${useAppStore.getState().isPiPActive ? styles.btnActive : ''}`}
+                                    onClick={togglePiP}
+                                    title={isElectron ? (useAppStore.getState().isPiPActive ? "Fechar PiP" : "Picture-in-Picture") : undefined}
+                                    style={!isElectron ? { cursor: 'not-allowed' } : undefined}
+                                  >
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>
+                                  </button>
+                                  {!isElectron && (
+                                    <div className={styles.pipWebTooltip}>
+                                      Apenas para <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">Desktop</a>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
-                          <div className={styles.volumeContainer}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                              <path d="M11 5L6 9H2v6h4l5 4V5z"></path>
-                              <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                            </svg>
-                            <input
-                              type="range"
-                              min="0"
-                              max="100"
-                              value={ytVol}
-                              onChange={(e) => setYtVol(parseInt(e.target.value))}
-                              className={styles.volumeSlider}
-                              title="Volume"
-                            />
-                          </div>
+                            {/* Botão de Engrenagem (Configurações de Legenda e Qualidade) */}
+                            <div className={styles.settingsWrapper} ref={settingsMenuRef}>
+                              <button
+                                className={`${styles.overlayControlBtn} ${showSettingsMenu ? styles.btnActive : ''}`}
+                                onClick={() => {
+                                  if (!showSettingsMenu) {
+                                    setSettingsSubMenu('main');
+                                    if (getYtQuality) setSelectedQuality(getYtQuality());
+                                  }
+                                  setShowSettingsMenu(prev => !prev);
+                                }}
+                                title="Configurações (Legendas e Qualidade)"
+                              >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <circle cx="12" cy="12" r="3"></circle>
+                                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                                </svg>
+                              </button>
 
-                          {(() => {
-                            const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-                            return (
-                              <div className={styles.pipButtonWrapper}>
-                                <button
-                                  className={`${styles.overlayControlBtn} ${useAppStore.getState().isPiPActive ? styles.btnActive : ''}`}
-                                  onClick={togglePiP}
-                                  title={isElectron ? (useAppStore.getState().isPiPActive ? "Fechar PiP" : "Picture-in-Picture") : undefined}
-                                  style={!isElectron ? { cursor: 'not-allowed' } : undefined}
-                                >
-                                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>
-                                </button>
-                                {!isElectron && (
-                                  <div className={styles.pipWebTooltip}>
-                                    Apenas para <a href="https://github.com/nathatargino/Concord-Repo/releases/latest" target="_blank" rel="noopener noreferrer">Desktop</a>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
+                              {showSettingsMenu && (
+                                <div className={styles.settingsMenuOverlay}>
+                                  {settingsSubMenu === 'main' ? (
+                                    <div className={styles.settingsMenuList}>
+                                      {/* Item Legendas */}
+                                      <button
+                                        className={styles.settingsMenuItem}
+                                        onClick={() => {
+                                          const nextState = !isCCActive;
+                                          setIsCCActive(nextState);
+                                          onSetCC?.(nextState);
+                                        }}
+                                      >
+                                        <div className={styles.settingsItemLeft}>
+                                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <rect x="2" y="4" width="20" height="16" rx="2" />
+                                            <path d="M7 15h4M13 15h4M7 11h10" />
+                                          </svg>
+                                          <span>Legendas</span>
+                                        </div>
+                                        <span className={`${styles.settingsBadge} ${isCCActive ? styles.badgeActive : ''}`}>
+                                          {isCCActive ? 'Ativadas' : 'Desativadas'}
+                                        </span>
+                                      </button>
 
-                          {/* Botão de Engrenagem (Configurações de Legenda e Qualidade) */}
-                          <div className={styles.settingsWrapper} ref={settingsMenuRef}>
-                            <button
-                              className={`${styles.overlayControlBtn} ${showSettingsMenu ? styles.btnActive : ''}`}
-                              onClick={() => {
-                                if (!showSettingsMenu) {
-                                  setSettingsSubMenu('main');
-                                  if (getYtQuality) setSelectedQuality(getYtQuality());
-                                }
-                                setShowSettingsMenu(prev => !prev);
-                              }}
-                              title="Configurações (Legendas e Qualidade)"
-                            >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="3"></circle>
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                              </svg>
-                            </button>
-
-                            {showSettingsMenu && (
-                              <div className={styles.settingsMenuOverlay}>
-                                {settingsSubMenu === 'main' ? (
-                                  <div className={styles.settingsMenuList}>
-                                    {/* Item Legendas */}
-                                    <button
-                                      className={styles.settingsMenuItem}
-                                      onClick={() => {
-                                        const nextState = !isCCActive;
-                                        setIsCCActive(nextState);
-                                        onSetCC?.(nextState);
-                                      }}
-                                    >
-                                      <div className={styles.settingsItemLeft}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                          <rect x="2" y="4" width="20" height="16" rx="2" />
-                                          <path d="M7 15h4M13 15h4M7 11h10" />
-                                        </svg>
-                                        <span>Legendas</span>
-                                      </div>
-                                      <span className={`${styles.settingsBadge} ${isCCActive ? styles.badgeActive : ''}`}>
-                                        {isCCActive ? 'Ativadas' : 'Desativadas'}
-                                      </span>
-                                    </button>
-
-                                    {/* Item Qualidade */}
-                                    <button
-                                      className={styles.settingsMenuItem}
-                                      onClick={() => setSettingsSubMenu('quality')}
-                                    >
-                                      <div className={styles.settingsItemLeft}>
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                                        </svg>
+                                      {/* Item Qualidade */}
+                                      <button
+                                        className={styles.settingsMenuItem}
+                                        onClick={() => {
+                                          setSettingsSubMenu('quality');
+                                          getYtAvailableQualities?.();
+                                        }}
+                                      >
+                                        <div className={styles.settingsItemLeft}>
+                                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                          </svg>
+                                          <span>Qualidade</span>
+                                        </div>
+                                        <div className={styles.settingsItemRight}>
+                                          <span className={styles.settingsValueText}>{formatQualityLabel(selectedQuality)}</span>
+                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                                        </div>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className={styles.settingsMenuList}>
+                                      {/* Header Submenu Qualidade */}
+                                      <button
+                                        className={styles.settingsSubHeader}
+                                        onClick={() => setSettingsSubMenu('main')}
+                                      >
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
                                         <span>Qualidade</span>
-                                      </div>
-                                      <div className={styles.settingsItemRight}>
-                                        <span className={styles.settingsValueText}>{formatQualityLabel(selectedQuality)}</span>
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
-                                      </div>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className={styles.settingsMenuList}>
-                                    {/* Header Submenu Qualidade */}
-                                    <button
-                                      className={styles.settingsSubHeader}
-                                      onClick={() => setSettingsSubMenu('main')}
-                                    >
-                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-                                      <span>Qualidade</span>
-                                    </button>
+                                      </button>
 
-                                    {/* Opções de Qualidade */}
-                                    {(() => {
-                                      const qualities = getYtAvailableQualities ? getYtAvailableQualities() : ['auto', 'hd1080', 'hd720', 'large', 'medium', 'small', 'tiny'];
-                                      const allQualities = Array.from(new Set(['auto', ...qualities]));
-                                      return allQualities.map((q) => (
-                                        <button
-                                          key={q}
-                                          className={`${styles.settingsMenuItem} ${selectedQuality === q ? styles.menuItemActive : ''}`}
-                                          onClick={() => {
-                                            setSelectedQuality(q);
-                                            onSetQuality?.(q);
-                                            setShowSettingsMenu(false);
-                                            setSettingsSubMenu('main');
-                                          }}
-                                        >
-                                          <span>{formatQualityLabel(q)}</span>
-                                          {selectedQuality === q && (
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                                          )}
-                                        </button>
-                                      ));
-                                    })()}
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                      {/* Opções de Qualidade Nativas do YouTube */}
+                                      {(() => {
+                                        const storeQualities = ytAvailableQualities && ytAvailableQualities.length > 0 ? ytAvailableQualities : [];
+                                        const hookQualities = getYtAvailableQualities ? getYtAvailableQualities() : [];
+                                        const rawList = storeQualities.length > 0 ? storeQualities : (hookQualities.length > 0 ? hookQualities : ['auto']);
+                                        const allQualities = Array.from(new Set(['auto', ...rawList]));
+                                        return allQualities.map((q) => (
+                                          <button
+                                            key={q}
+                                            className={`${styles.settingsMenuItem} ${selectedQuality === q ? styles.menuItemActive : ''}`}
+                                            onClick={() => {
+                                              setSelectedQuality(q);
+                                              onSetQuality?.(q);
+                                              setShowSettingsMenu(false);
+                                              setSettingsSubMenu('main');
+                                            }}
+                                          >
+                                            <span>{formatQualityLabel(q)}</span>
+                                            {selectedQuality === q && (
+                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                            )}
+                                          </button>
+                                        ));
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            <button
+                              className={styles.overlayControlBtn}
+                              onClick={toggleFullscreen}
+                              title="Tela Cheia"
+                            >
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                            </button>
                           </div>
-
-                          <button
-                            className={styles.overlayControlBtn}
-                            onClick={toggleFullscreen}
-                            title="Tela Cheia"
-                          >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
-                          </button>
-                        </div>
                       </div>
                     )}
                   </div>

@@ -129,6 +129,72 @@
   color: var(--text-primary);
 }
 
+.searchTriggerBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.18), rgba(185, 28, 28, 0.28));
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Space Grotesk', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.2);
+}
+
+.searchTriggerBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.32), rgba(185, 28, 28, 0.45));
+  border-color: rgba(239, 68, 68, 0.6);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
+}
+
+.searchTriggerBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.searchTriggerBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.searchTriggerBtnIcon {
+  display: flex;
+  align-items: center;
+  color: #F87171;
+}
+
+.orDivider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--text-muted, #71717A);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  margin: 1px 0;
+}
+
+.orDivider::before,
+.orDivider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.orDivider span {
+  padding: 0 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
 .form {
   display: flex;
   gap: 8px;

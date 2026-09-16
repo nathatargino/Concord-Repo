@@ -2,5 +2,6 @@ packages:
   - 'server'
   - 'client'
 allowBuilds:
+  core-js: false
   electron-winstaller: false
   esbuild: true
