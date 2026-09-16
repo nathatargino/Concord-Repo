@@ -173,6 +173,9 @@ function createWindow() {
     mainWindow.on('closed', () => {
         if (streamingView) {
             try {
+                if (mainWindow && mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+                    mainWindow.contentView.removeChildView(streamingView);
+                }
                 streamingView.webContents.destroy?.();
             }
             catch (e) { }
@@ -719,7 +722,7 @@ electron_1.ipcMain.handle('yt-get-qualities', async () => {
     return [];
 });
 // ==========================================
-// Widevine Streaming BrowserView Management
+// Widevine Streaming View Management (WebContentsView / BrowserView)
 // ==========================================
 let streamingView = null;
 let streamingBounds = null;
@@ -728,7 +731,12 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         return;
     if (streamingView) {
         try {
-            mainWindow.removeBrowserView(streamingView);
+            if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+                mainWindow.contentView.removeChildView(streamingView);
+            }
+            else if (typeof mainWindow.removeBrowserView === 'function') {
+                mainWindow.removeBrowserView(streamingView);
+            }
             streamingView.webContents.destroy?.();
         }
         catch (e) { }
@@ -751,19 +759,31 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     streamingSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
         callback(true);
     });
-    streamingView = new electron_1.BrowserView({
-        webPreferences: {
-            session: streamingSession,
-            partition,
-            nodeIntegration: false,
-            contextIsolation: true,
-            plugins: true,
-            webSecurity: true,
-            autoplayPolicy: 'no-user-gesture-required'
+    const webPrefs = {
+        session: streamingSession,
+        partition,
+        nodeIntegration: false,
+        contextIsolation: true,
+        plugins: true,
+        webSecurity: true,
+        autoplayPolicy: 'no-user-gesture-required'
+    };
+    const radius = options.borderRadius ?? 16;
+    if (typeof electron_1.WebContentsView === 'function' && mainWindow.contentView && typeof mainWindow.contentView.addChildView === 'function') {
+        const view = new electron_1.WebContentsView({ webPreferences: webPrefs });
+        view.setBackgroundColor('#000000');
+        if (typeof view.setBorderRadius === 'function') {
+            view.setBorderRadius(radius);
         }
-    });
-    streamingView.setBackgroundColor('#000000');
-    mainWindow.addBrowserView(streamingView);
+        mainWindow.contentView.addChildView(view);
+        streamingView = view;
+    }
+    else {
+        const view = new electron_1.BrowserView({ webPreferences: webPrefs });
+        view.setBackgroundColor('#000000');
+        mainWindow.addBrowserView(view);
+        streamingView = view;
+    }
     // Forward streaming view console logs to concord-debug.log for diagnostics
     streamingView.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Streaming Console] ${message} (${sourceId}:${line})\n`);
@@ -776,15 +796,55 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     };
     streamingBounds = safeBounds;
     streamingView.setBounds(safeBounds);
-    let targetUrl = options.url?.trim();
-    if (!targetUrl) {
-        targetUrl = options.service === 'netflix'
-            ? 'https://www.netflix.com/browse'
-            : 'https://www.primevideo.com';
-    }
-    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
-    await streamingView.webContents.loadURL(targetUrl);
+    const applyStyling = () => {
+        if (!streamingView || streamingView.webContents.isDestroyed())
+            return;
+        // Inject styles: thin 6px dark purple custom scrollbar and rounded container clipping
+        const customScrollbarCss = `
+            * {
+                scrollbar-width: thin !important;
+                scrollbar-color: rgba(124, 58, 237, 0.45) rgba(10, 10, 20, 0.6) !important;
+            }
+            ::-webkit-scrollbar {
+                width: 6px !important;
+                height: 6px !important;
+            }
+            ::-webkit-scrollbar-track {
+                background: rgba(10, 10, 20, 0.6) !important;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: rgba(124, 58, 237, 0.45) !important;
+                border-radius: 4px !important;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: rgba(124, 58, 237, 0.75) !important;
+            }
+            ::-webkit-scrollbar-corner {
+                background: transparent !important;
+            }
+            :root, html, body {
+                overflow-x: hidden !important;
+                border-radius: ${radius}px !important;
+            }
+        `;
+        streamingView.webContents.insertCSS(customScrollbarCss, { cssOrigin: 'user' }).catch(() => { });
+        streamingView.webContents.executeJavaScript(`
+            (function() {
+                try {
+                    var style = document.getElementById('concord-streaming-style');
+                    if (!style) {
+                        style = document.createElement('style');
+                        style.id = 'concord-streaming-style';
+                        style.textContent = ${JSON.stringify(customScrollbarCss)};
+                        document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
+                    }
+                } catch(e) {}
+            })()
+        `).catch(() => { });
+    };
+    streamingView.webContents.on('dom-ready', applyStyling);
     streamingView.webContents.on('did-finish-load', () => {
+        applyStyling();
         if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
             streamingView?.webContents.executeJavaScript(`
                 setTimeout(() => {
@@ -799,27 +859,50 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         }
     });
     streamingView.webContents.on('did-navigate', (_e, navUrl) => {
+        applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', url: navUrl });
         }
     });
+    let targetUrl = options.url?.trim();
+    if (!targetUrl) {
+        targetUrl = options.service === 'netflix'
+            ? 'https://www.netflix.com/browse'
+            : 'https://www.primevideo.com';
+    }
+    fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA.substring(0, 35)}...)\n`);
+    await streamingView.webContents.loadURL(targetUrl);
 });
 electron_1.ipcMain.on('resize-streaming-view', (_event, bounds) => {
     if (!streamingView || !mainWindow || mainWindow.isDestroyed())
         return;
+    if (bounds.width <= 0 || bounds.height <= 0) {
+        if (typeof streamingView.setVisible === 'function') {
+            streamingView.setVisible(false);
+        }
+        return;
+    }
     const safeBounds = {
         x: Math.max(0, Math.round(bounds.x)),
         y: Math.max(0, Math.round(bounds.y)),
-        width: Math.max(10, Math.round(bounds.width)),
-        height: Math.max(10, Math.round(bounds.height)),
+        width: Math.max(1, Math.round(bounds.width)),
+        height: Math.max(1, Math.round(bounds.height)),
     };
     streamingBounds = safeBounds;
     streamingView.setBounds(safeBounds);
+    if (typeof streamingView.setVisible === 'function') {
+        streamingView.setVisible(true);
+    }
 });
 electron_1.ipcMain.on('close-streaming-view', () => {
     if (streamingView && mainWindow && !mainWindow.isDestroyed()) {
         try {
-            mainWindow.removeBrowserView(streamingView);
+            if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+                mainWindow.contentView.removeChildView(streamingView);
+            }
+            else if (typeof mainWindow.removeBrowserView === 'function') {
+                mainWindow.removeBrowserView(streamingView);
+            }
             streamingView.webContents.destroy?.();
         }
         catch (e) { }

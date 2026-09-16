@@ -827,25 +827,36 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
 
     const applyStyling = () => {
         if (!streamingView || streamingView.webContents.isDestroyed()) return;
-        // Inject styles to hide all scrollbars and clip content to rounded edges
-        streamingView.webContents.insertCSS(`
+        // Inject styles: thin 6px dark purple custom scrollbar and rounded container clipping
+        const customScrollbarCss = `
             * {
-                scrollbar-width: none !important;
-                -ms-overflow-style: none !important;
+                scrollbar-width: thin !important;
+                scrollbar-color: rgba(124, 58, 237, 0.45) rgba(10, 10, 20, 0.6) !important;
             }
-            *::-webkit-scrollbar,
             ::-webkit-scrollbar {
-                display: none !important;
-                width: 0 !important;
-                height: 0 !important;
+                width: 6px !important;
+                height: 6px !important;
+            }
+            ::-webkit-scrollbar-track {
+                background: rgba(10, 10, 20, 0.6) !important;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: rgba(124, 58, 237, 0.45) !important;
+                border-radius: 4px !important;
+            }
+            ::-webkit-scrollbar-thumb:hover {
+                background: rgba(124, 58, 237, 0.75) !important;
+            }
+            ::-webkit-scrollbar-corner {
                 background: transparent !important;
             }
             :root, html, body {
                 overflow-x: hidden !important;
-                scrollbar-width: none !important;
                 border-radius: ${radius}px !important;
             }
-        `, { cssOrigin: 'user' }).catch(() => {});
+        `;
+
+        streamingView.webContents.insertCSS(customScrollbarCss, { cssOrigin: 'user' }).catch(() => {});
 
         streamingView.webContents.executeJavaScript(`
             (function() {
@@ -854,7 +865,7 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
                     if (!style) {
                         style = document.createElement('style');
                         style.id = 'concord-streaming-style';
-                        style.textContent = '* { scrollbar-width: none !important; -ms-overflow-style: none !important; } *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; } :root, html, body { overflow-x: hidden !important; border-radius: ${radius}px !important; }';
+                        style.textContent = ${JSON.stringify(customScrollbarCss)};
                         document.head ? document.head.appendChild(style) : document.documentElement.appendChild(style);
                     }
                 } catch(e) {}

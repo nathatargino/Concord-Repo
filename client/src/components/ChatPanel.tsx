@@ -200,6 +200,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       }
     };
 
+    requestAnimationFrame(updateBounds);
     window.addEventListener('resize', updateBounds);
     const ro = new ResizeObserver(updateBounds);
     if (streamingHostRef.current) ro.observe(streamingHostRef.current);
@@ -1243,8 +1244,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               {activeStreaming ? (
                 <>
                   <div
-                    ref={streamingHostRef}
-                    id="streaming-host"
                     className={styles.videoSlotWrapper}
                     style={{
                       position: 'relative',
@@ -1256,39 +1255,63 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                       alignItems: 'center',
                       justifyContent: 'center',
                       background: '#090912',
+                      border: '1px solid rgba(124, 58, 237, 0.4)',
+                      boxShadow: '0 0 24px rgba(124, 58, 237, 0.15)',
                     }}
                   >
-                    {!renderMedia ? (
-                      <div className={styles.streamingSkeleton}>
-                        <div
-                          className={styles.skeletonSpinner}
-                          style={{ borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1' }}
+                    <div
+                      ref={streamingHostRef}
+                      id="streaming-host"
+                      style={{
+                        position: 'relative',
+                        overflow: 'hidden',
+                        width: '100%',
+                        height: '100%',
+                        borderRadius: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      {!isElectron && renderMedia ? (
+                        <iframe
+                          src={activeStreaming.url || (activeStreaming.service === 'netflix' ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com')}
+                          title={activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
+                          className={styles.streamingIframe}
+                          allow="autoplay; encrypted-media; fullscreen"
                         />
-                        <p className={styles.skeletonLabel}>
-                          {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
-                        </p>
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
-                        <div
-                          style={{
-                            width: '36px',
-                            height: '36px',
-                            borderRadius: '50%',
-                            border: '3px solid rgba(255, 255, 255, 0.1)',
-                            borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
-                            margin: '0 auto 14px',
-                            animation: 'spin 1s linear infinite',
-                          }}
-                        />
-                        <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-                          Conectando ao {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
-                        </p>
-                        <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
-                          Iniciando navegador com Widevine DRM ativo
-                        </p>
-                      </div>
-                    )}
+                      ) : !renderMedia ? (
+                        <div className={styles.streamingSkeleton}>
+                          <div
+                            className={styles.skeletonSpinner}
+                            style={{ borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1' }}
+                          />
+                          <p className={styles.skeletonLabel}>
+                            {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '50%',
+                              border: '3px solid rgba(255, 255, 255, 0.1)',
+                              borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
+                              margin: '0 auto 14px',
+                              animation: 'spin 1s linear infinite',
+                            }}
+                          />
+                          <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                            Conectando ao {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
+                          </p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
+                            Iniciando navegador com Widevine DRM ativo
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Controles no mesmo padrão do YouTube */}
