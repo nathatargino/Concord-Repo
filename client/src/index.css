@@ -19,13 +19,20 @@
   padding: 0;
 }
 
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background-color: var(--bg-base);
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
 }
 
 /* Custom Scrollbar */
@@ -60,11 +67,22 @@ input, button, textarea {
   font-weight: 500 !important;
 }
 
-/* Voice Speaking Sensor */
+/* Voice Speaking Sensor (100% Reliable Discord Style Glow) */
+.speaking-glow [class*="avatarImg"],
 .speaking-glow [class*="avatarFallback"] {
-  box-shadow: 0 0 0 2px var(--success-color);
-  border-color: var(--success-color);
+  box-shadow: 0 0 0 2.5px #10b981, 0 0 10px rgba(16, 185, 129, 0.7) !important;
+  border-color: #10b981 !important;
   transition: box-shadow 0.1s ease-in-out;
+}
+
+.speaking-glow [class*="statusBadge"] {
+  background-color: #10b981 !important;
+  box-shadow: 0 0 0 2px #181b24, 0 0 8px #10b981 !important;
+}
+
+.speaking-glow {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
 }
 
 /* CSS Base para Modais Concord */

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { searchYouTube, type YouTubeSearchResult } from '../services/youtubeSearch';
 import styles from './YouTubeSearchModal.module.css';
 
@@ -115,7 +116,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
@@ -254,6 +255,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

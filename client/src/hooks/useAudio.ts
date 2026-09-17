@@ -382,10 +382,16 @@ export function useAudio() {
 // ─── SPEAKING DETECTION ─────────────────────────────────────────────
 
 export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?: AudioContext) {
+  if (speakingAnimations.has(userId)) {
+    const prevRaf = speakingAnimations.get(userId);
+    if (prevRaf) cancelAnimationFrame(prevRaf);
+  }
+
   const ctx = activeCtx || getOrCreateCtx();
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.2;
   source.connect(analyser);
 
   const data = new Uint8Array(analyser.frequencyBinCount);
@@ -395,28 +401,38 @@ export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?:
   let lastSpeakTime = 0;
 
   function tick() {
-    analyser.getByteTimeDomainData(data);
-    let sum = 0;
-    for (const v of data) sum += Math.abs(v - 128);
-    const avg = sum / data.length;
+    const isMe = userId === useAppStore.getState().myId;
+    const isMicMuted = useAudioStore.getState().micMuted;
 
-    // Exponential Moving Average to smooth out peaks
-    smoothedVol = smoothedVol * 0.7 + avg * 0.3;
-
-    // Determine if speaking with a threshold of 5 (more sensitive)
-    if (smoothedVol > 5) {
-      isSpeaking = true;
-      lastSpeakTime = Date.now();
-    } else if (isSpeaking && Date.now() - lastSpeakTime > 300) {
-      // Hold time of 300ms prevents flickering
+    if (isMe && isMicMuted) {
       isSpeaking = false;
+      smoothedVol = 0;
+    } else {
+      analyser.getByteTimeDomainData(data);
+      let sum = 0;
+      for (const v of data) sum += Math.abs(v - 128);
+      const avg = sum / data.length;
+
+      // Exponential Moving Average
+      smoothedVol = smoothedVol * 0.6 + avg * 0.4;
+
+      // Threshold calibrado para 2.5 (alta precisão para voz e headsets)
+      if (smoothedVol > 2.5) {
+        isSpeaking = true;
+        lastSpeakTime = Date.now();
+      } else if (isSpeaking && Date.now() - lastSpeakTime > 250) {
+        isSpeaking = false;
+      }
     }
 
-    const el = document.getElementById(`user-${userId}`);
-    if (el) {
-      if (isSpeaking) el.classList.add('speaking-glow');
-      else el.classList.remove('speaking-glow');
-    }
+    const elements = document.querySelectorAll(`[data-user-id="${userId}"], #user-${userId}`);
+    elements.forEach((el) => {
+      if (isSpeaking) {
+        el.classList.add('speaking-glow');
+      } else {
+        el.classList.remove('speaking-glow');
+      }
+    });
 
     speakingAnimations.set(userId, requestAnimationFrame(tick));
   }
@@ -429,8 +445,8 @@ export function stopSpeaking(userId: string) {
   if (raf) cancelAnimationFrame(raf);
   speakingAnimations.delete(userId);
 
-  const el = document.getElementById(`user-${userId}`);
-  el?.classList.remove('speaking-glow');
+  const elements = document.querySelectorAll(`[data-user-id="${userId}"], #user-${userId}`);
+  elements.forEach((el) => el.classList.remove('speaking-glow'));
 }
 
 export function playChimeSound() {

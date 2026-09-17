@@ -11,20 +11,6 @@ import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
-// SVG Icons para o player de vídeo
-const IconVideo = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="23 7 16 12 23 17 23 7" />
-    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-  </svg>
-);
-
-const IconArrowLeft = () => (
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="19" y1="12" x2="5" y2="12" />
-    <polyline points="12 19 5 12 12 5" />
-  </svg>
-);
 
 const IconNoVideo = () => (
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.3">
@@ -327,10 +313,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // ── Slash command autocomplete ──
   const SLASH_COMMANDS = [
-    { cmd: '/skip', label: 'skip', icon: '⏭️', description: 'Pula para a próxima música da fila' },
-    { cmd: '/play', label: 'play', icon: '▶️', description: 'Retoma a música pausada' },
-    { cmd: '/pause', label: 'pause', icon: '⏸️', description: 'Pausa a música atual' },
-    { cmd: '/clear', label: 'clear', icon: '🗑️', description: 'Limpa toda a fila de músicas' },
+    { cmd: '/skip', label: 'skip', icon: 'fa-solid fa-forward-step', color: '#a78bfa', description: 'Pula para a próxima música da fila' },
+    { cmd: '/play', label: 'play', icon: 'fa-solid fa-play', color: '#4ade80', description: 'Retoma a música pausada' },
+    { cmd: '/pause', label: 'pause', icon: 'fa-solid fa-pause', color: '#facc15', description: 'Pausa a música atual' },
+    { cmd: '/clear', label: 'clear', icon: 'fa-solid fa-trash-can', color: '#f87171', description: 'Limpa toda a fila de músicas' },
   ];
 
   const [showCmdMenu, setShowCmdMenu] = useState(false);
@@ -522,7 +508,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
   // Barra de Pesquisa de Mensagens
   const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -838,80 +823,66 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* ── CABEÇALHO DO CHAT COM NOME DO CANAL E BARRA DE PESQUISA ── */}
+      {/* ── CABEÇALHO DO CHAT (PROTÓTIPO) ── */}
       <div className={styles.chatHeader}>
-        <div className={styles.headerTitle}>
-          {showVideoPlayer ? (
-            <>
-              <span className={styles.headerIcon}>📺</span>
-              <span className={styles.headerChannelName}>Player de Vídeo</span>
-            </>
-          ) : isServer ? (
-            <>
-              <span className={styles.headerHash}>#</span>
-              <span className={styles.headerChannelName}>{activeChannel.name}</span>
-            </>
-          ) : (
-            <>
-              <span className={styles.headerIcon}>💬</span>
-              <span className={styles.headerChannelName}>Chat da Sala</span>
-            </>
-          )}
+        <div className={styles.headerLeft}>
+          <div className={styles.headerTitle}>
+            {showVideoPlayer ? (
+              <>
+                <i className="fa-solid fa-tv" style={{ color: '#7c5cff' }}></i>
+                <span className={styles.headerChannelName}>Player de Vídeo</span>
+              </>
+            ) : isServer ? (
+              <>
+                <i className="fa-solid fa-hashtag" style={{ color: '#7c5cff' }}></i>
+                <span className={styles.headerChannelName}>{activeChannel.name}</span>
+              </>
+            ) : (
+              <>
+                <i className="fa-regular fa-comments" style={{ color: '#7c5cff' }}></i>
+                <span className={styles.headerChannelName}>Chat da Sala</span>
+              </>
+            )}
+          </div>
+          <span className={styles.headerDivider}></span>
+          <span className={styles.headerTopic}>
+            {isServer ? `Canal de bate-papo ${activeChannel.name.toLowerCase()} do servidor` : 'Canal de bate-papo geral da sala'}
+          </span>
         </div>
 
         <div className={styles.headerActions}>
-          {!showVideoPlayer && (
-            <>
-              {showSearch ? (
-                <div className={styles.searchBar}>
-                  <span className={styles.searchIcon}>🔍</span>
-                  <input
-                    type="text"
-                    className={styles.searchInput}
-                    placeholder="Pesquisar mensagens..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    autoFocus
-                  />
-                  {searchQuery && (
-                    <span className={styles.searchResultsBadge}>
-                      {displayedMessages.length} {displayedMessages.length === 1 ? 'resultado' : 'resultados'}
-                    </span>
-                  )}
-                  <button
-                    className={styles.closeSearchBtn}
-                    onClick={() => { setShowSearch(false); setSearchQuery(''); }}
-                    title="Fechar pesquisa"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <button
-                  className={styles.searchToggleBtn}
-                  onClick={() => setShowSearch(true)}
-                  title="Pesquisar mensagens neste chat"
-                >
-                  🔍
-                </button>
-              )}
-            </>
-          )}
+          <div className={styles.searchWrapper}>
+            <i className={`fa-solid fa-magnifying-glass ${styles.searchIcon}`}></i>
+            <input
+              type="text"
+              className={styles.searchInput}
+              placeholder="Buscar..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className={styles.clearSearchBtn}
+                onClick={() => setSearchQuery('')}
+                title="Limpar busca"
+              >
+                ✕
+              </button>
+            )}
+          </div>
 
           {/* Botão só aparece quando há vídeo tocando ou streaming ativo */}
-          {(currentVideoId || showVideoPlayer || activeStreaming || streamingSessions.netflix || streamingSessions.prime) && (
+          {(currentVideoId || showVideoPlayer || activeStreaming || streamingSessions?.netflix || streamingSessions?.prime) && (
             <button
-              className={`${styles.videoToggleBtn} ${showVideoPlayer ? styles.videoToggleBtnActive : ''} ${(isPlaying || activeStreaming || streamingSessions.netflix || streamingSessions.prime) ? styles.videoToggleBtnPlaying : ''}`}
+              className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
-                // When closing the player, immediately hide media; when opening, skeleton
-                // shows during the flip and renderMedia is set by onTransitionEnd.
                 setRenderMedia(false);
-                setShowVideoPlayer(v => !v);
+                setShowVideoPlayer((v) => !v);
               }}
-              title={showVideoPlayer ? 'Voltar ao Chat' : 'Assistir Mídia / Player'}
+              title={showVideoPlayer ? 'Voltar ao Chat' : (activeStreaming ? `Assistir ${activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}` : 'Assistir')}
             >
-              {showVideoPlayer ? <IconArrowLeft /> : <IconVideo />}
-              <span>{showVideoPlayer ? 'Chat' : (activeMediaTab === 'netflix' ? 'Netflix' : activeMediaTab === 'prime' ? 'Prime' : 'Assistir')}</span>
+              <i className={`fa-solid ${showVideoPlayer ? 'fa-arrow-left' : 'fa-tv'}`}></i>
+              <span>{showVideoPlayer ? 'Chat' : (activeStreaming ? (activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime') : 'Assistir')}</span>
             </button>
           )}
         </div>
@@ -961,12 +932,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               ) : (
                 displayedMessages.map((msg) => {
                   const isSystemMsg = Boolean(msg.isSystem || msg.userName === 'Sistema' || (typeof msg.message === 'string' && msg.message.startsWith('O usuário ') && msg.message.includes(' executou o comando /')));
-                  const isMe = !isSystemMsg && msg.userName === myName;
+                  const cleanMyName = (myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
+                  const cleanMsgUser = (msg.userName || '').trim().toLowerCase();
+                  const isMe = !isSystemMsg && Boolean(cleanMyName && cleanMsgUser && cleanMyName === cleanMsgUser);
+                  const displayAvatar = isMe ? (myAvatarUrl || msg.avatarUrl) : msg.avatarUrl;
                   return (
                     <div
                       key={msg.id}
-                      className={`${styles.messageWrapper} ${isSystemMsg ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
-                        }`}
+                      className={isSystemMsg ? styles.systemWrapper : `${styles.messageRow} ${isMe ? styles.messageRowMe : styles.messageRowOther}`}
                     >
                       {isSystemMsg ? (
                         <div className={styles.systemMessage}>
@@ -975,25 +948,30 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                         </div>
                       ) : (
                         <>
-                          {!isMe && (
-                            <div className={styles.avatarWrapper}>
-                              {msg.avatarUrl ? (
-                                <img src={msg.avatarUrl} alt="Avatar" className={styles.avatarImage} />
-                              ) : (
-                                <div className={styles.avatarFallback}>
-                                  {msg.userName.substring(0, 2).toUpperCase()}
-                                </div>
-                              )}
+                          {displayAvatar ? (
+                            <img
+                              src={displayAvatar}
+                              alt={msg.userName}
+                              className={`${styles.messageAvatar} ${isMe ? styles.messageAvatarMe : ''}`}
+                            />
+                          ) : (
+                            <div className={styles.messageAvatarFallback}>
+                              {msg.userName.substring(0, 2).toUpperCase()}
                             </div>
                           )}
-                          <div className={`${styles.messageBubble} ${isMe ? styles.myBubble : styles.otherBubble}`}>
-                            {!isMe && (
-                              <span className={styles.senderName}>{msg.userName}</span>
-                            )}
+
+                          <div className={styles.messageContentCol}>
+                            <div className={styles.messageUserHeader}>
+                              <span className={styles.senderName}>
+                                {msg.userName}
+                                {isMe && <span className={styles.meBadge}>VOCÊ</span>}
+                              </span>
+                              <span className={styles.timestamp}>{msg.timestamp || 'Hoje'}</span>
+                            </div>
 
                             {/* Conteúdo da mensagem */}
                             {msg.type === 'giphy' && msg.url ? (
-                              <div className={styles.gifContainer}>
+                              <div className={styles.gifCard}>
                                 <img
                                   src={msg.url}
                                   alt="GIF"
@@ -1003,24 +981,24 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               </div>
                             ) : msg.type === 'image' && msg.url ? (
                               <>
-                                <div className={styles.imageContainer}>
+                                <div
+                                  className={styles.imageCard}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setViewingImage(msg.url!);
+                                    setImageZoom(1);
+                                  }}
+                                >
                                   <img
                                     src={msg.url}
                                     alt={msg.filename || 'Imagem'}
                                     className={styles.messageImage}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      setViewingImage(msg.url!);
-                                      setImageZoom(1);
-                                    }}
-                                    style={{ cursor: 'pointer' }}
                                     onLoad={() => scrollToBottom(false)}
                                   />
                                 </div>
                                 {msg.message && msg.message !== '📷 Imagem' && (
-                                  <p
-                                    className={styles.messageText}
-                                    style={{ marginTop: '8px' }}
+                                  <div
+                                    className={isMe ? styles.myBubble : styles.otherBubble}
                                     dangerouslySetInnerHTML={{
                                       __html: parseLinks(escapeHtml(msg.message)),
                                     }}
@@ -1031,14 +1009,13 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               <>
                                 <div className={styles.fileContainer}>
                                   <a href={msg.url} target="_blank" rel="noopener noreferrer" className={styles.fileLink}>
-                                    <span className={styles.fileIcon}>📎</span>
+                                    <i className="fa-solid fa-paperclip"></i>
                                     <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
                                   </a>
                                 </div>
                                 {msg.message && msg.message !== '📄 ' + msg.filename && (
-                                  <p
-                                    className={styles.messageText}
-                                    style={{ marginTop: '8px' }}
+                                  <div
+                                    className={isMe ? styles.myBubble : styles.otherBubble}
                                     dangerouslySetInnerHTML={{
                                       __html: parseLinks(escapeHtml(msg.message)),
                                     }}
@@ -1046,27 +1023,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                 )}
                               </>
                             ) : (
-                              <p
-                                className={styles.messageText}
+                              <div
+                                className={isMe ? styles.myBubble : styles.otherBubble}
                                 dangerouslySetInnerHTML={{
                                   __html: parseLinks(escapeHtml(msg.message)),
                                 }}
                               />
                             )}
-
-                            <span className={styles.timestamp}>{msg.timestamp}</span>
                           </div>
-                          {isMe && (
-                            <div className={styles.avatarWrapper}>
-                              {myAvatarUrl ? (
-                                <img src={myAvatarUrl} alt="Avatar" className={styles.avatarImage} />
-                              ) : (
-                                <div className={styles.avatarFallback}>
-                                  {myName.substring(0, 2).toUpperCase()}
-                                </div>
-                              )}
-                            </div>
-                          )}
                         </>
                       )}
                     </div>
@@ -1137,43 +1101,83 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               </div>
             )}
 
-            {/* Chat input */}
+            {/* Chat input matching prototype */}
             <div className={styles.inputContainer}>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                style={{ display: 'none' }}
-              />
-
-              <button
-                type="button"
-                className={styles.actionIconBtn}
-                onClick={() => fileInputRef.current?.click()}
-                title="Enviar Arquivo ou Imagem"
+              <form
+                id="chatForm"
+                className={styles.chatForm}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSend();
+                }}
               >
-                📎
-              </button>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  style={{ display: 'none' }}
+                />
 
-              <button
-                type="button"
-                ref={giphyBtnRef}
-                className={styles.actionIconBtn}
-                onClick={() => setShowGiphy(!showGiphy)}
-                title="Buscar GIF"
-              >
-                🎁
-              </button>
+                <button
+                  type="button"
+                  className={styles.formIconBtn}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Anexar arquivo"
+                >
+                  <i className="fa-solid fa-circle-plus"></i>
+                </button>
 
-              <button
-                type="button"
-                ref={emojiBtnRef}
-                className={styles.actionIconBtn}
-                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                title="Inserir Emoji"
-              >
-                😊
-              </button>
+                <input
+                  type="text"
+                  id="chatInput"
+                  className={styles.chatInput}
+                  placeholder={
+                    isServer
+                      ? `Conversar em #${activeChannel.name}... (digite / para comandos)`
+                      : 'Conversar na sala... (digite / para comandos)'
+                  }
+                  value={input}
+                  onChange={handleInputChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  maxLength={2000}
+                />
+
+                <div className={styles.inputActionsRight}>
+                  <button
+                    type="button"
+                    ref={giphyBtnRef}
+                    className={styles.actionBtnGiphy}
+                    onClick={() => setShowGiphy(!showGiphy)}
+                    title="Presentear Nitro / GIFs"
+                  >
+                    <i className="fa-solid fa-gift text-sm"></i>
+                  </button>
+
+                  <button
+                    type="button"
+                    ref={emojiBtnRef}
+                    className={styles.actionBtnEmoji}
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                    title="Emojis"
+                  >
+                    <i className="fa-solid fa-face-smile text-sm"></i>
+                  </button>
+
+                  <button
+                    type="submit"
+                    className={styles.sendButton}
+                    disabled={(!input.trim() && !stagedFile) || isUploading}
+                    title="Enviar Mensagem (Enter)"
+                  >
+                    {isUploading ? (
+                      <span className={styles.spinner} />
+                    ) : (
+                      <i className="fa-solid fa-paper-plane text-xs"></i>
+                    )}
+                  </button>
+                </div>
+              </form>
 
               {showEmojiPicker && (
                 <div className={styles.emojiPickerContainer} ref={emojiPickerRef}>
@@ -1187,56 +1191,30 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               {showCmdMenu && (
                 <div className={styles.cmdMenu} ref={cmdMenuRef}>
                   <div className={styles.cmdMenuHeader}>
-                    <span>💡 Comandos de Música</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                      <i className="fa-solid fa-music" style={{ color: '#7c5cff' }}></i>
+                      Comandos de Música
+                    </span>
                     <kbd className={styles.cmdKbd}>↑↓ navegar</kbd>
                     <kbd className={styles.cmdKbd}>Enter executar</kbd>
                   </div>
                   {cmdFilter.map((c, i) => (
                     <button
                       key={c.cmd}
+                      type="button"
                       className={`${styles.cmdItem} ${i === cmdHighlight ? styles.cmdItemActive : ''}`}
                       onMouseDown={(e) => { e.preventDefault(); applyCommand(c.cmd); }}
                       onMouseEnter={() => setCmdHighlight(i)}
                     >
-                      <span className={styles.cmdItemIcon}>{c.icon}</span>
+                      <span className={styles.cmdItemIcon}>
+                        <i className={c.icon} style={{ color: c.color }}></i>
+                      </span>
                       <span className={styles.cmdItemName}>{c.cmd}</span>
                       <span className={styles.cmdItemDesc}>{c.description}</span>
                     </button>
                   ))}
                 </div>
               )}
-
-              <input
-                type="text"
-                className={styles.chatInput}
-                placeholder={
-                  isServer
-                    ? `Conversar em #${activeChannel.name}... (/ para comandos)`
-                    : 'Envie uma mensagem... (/ para comandos)'
-                }
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                maxLength={2000}
-              />
-
-              <button
-                type="button"
-                className={styles.sendButton}
-                onClick={handleSend}
-                disabled={(!input.trim() && !stagedFile) || isUploading}
-                title="Enviar (Enter)"
-              >
-                {isUploading ? (
-                  <span className={styles.spinner} />
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M22 2L11 13" />
-                    <path d="M22 2L15 22L11 13L2 9L22 2Z" />
-                  </svg>
-                )}
-              </button>
             </div>
 
             {viewingImage && (

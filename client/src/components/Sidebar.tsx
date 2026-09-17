@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { ProfileModal } from './ProfileModal';
-import { VoicePanel } from './VoicePanel';
 import styles from './Sidebar.module.css';
 import { 
   fetchServerChannels, 
@@ -56,7 +56,6 @@ export const Sidebar: React.FC<Props> = ({
     myAvatarUrl,
     setMyName,
     setMyAvatarUrl,
-    connected, 
     room, 
     isServer, 
     serverName,
@@ -72,9 +71,12 @@ export const Sidebar: React.FC<Props> = ({
     setActiveChannelId,
     serverMembers,
     setServerMembers,
+    inVoice,
+    amSharing,
+    messages,
   } = useAppStore();
 
-  const { localMutedUsers, userVolumes, setUserVolume } = useAudioStore();
+  const { localMutedUsers, userVolumes, setUserVolume, micMuted, callMuted, toggleMicMute, toggleCallMute } = useAudioStore();
 
   const [showOnline, setShowOnline] = useState(true);
   const [showOffline, setShowOffline] = useState(true);
@@ -99,14 +101,29 @@ export const Sidebar: React.FC<Props> = ({
   
   // Modal de Perfil de Usuário
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'server' | 'profile' | 'audio'>('server');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
-  // Cálculo preciso de papéis (Owner, Sub-Owner, Member)
   const myMember = serverMembers.find(m => m.username.toLowerCase() === (myName || '').toLowerCase());
   const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId);
   const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
   const canManageServer = isOwner || isSubOwner;
+
+  // ── CONTROLE DE MENSAGENS NÃO LIDAS POR CANAL ──
+  const [channelReadCounts, setChannelReadCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const currentCh = activeChannelId || 'ch-geral';
+    const totalInCurrent = messages.filter(
+      (m) => (m.channelId || 'ch-geral') === currentCh || (currentCh === 'ch-geral' && !m.channelId)
+    ).length;
+
+    setChannelReadCounts((prev) => {
+      if (prev[currentCh] === totalInCurrent) return prev;
+      return { ...prev, [currentCh]: totalInCurrent };
+    });
+  }, [activeChannelId, messages]);
 
   // Carregar canais e membros do servidor se for servidor permanente
   useEffect(() => {
@@ -225,8 +242,8 @@ export const Sidebar: React.FC<Props> = ({
   }] : []);
 
   const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
-  // Regra de Presença: Online = Conexão ativa presente dentro do servidor
-  const onlineMembers = effectiveUsers;
+  // Regra de Presença: Usuários na call aparecem em "Na Call", outros em "Online"
+  const onlineMembers = effectiveUsers.filter((u) => !u.inVoice);
   
   // Offline = Membro registrado no servidor que não está presente na lista ativa (app fechado ou no lobby)
   const offlineMembers = serverMembers.filter(
@@ -339,9 +356,8 @@ export const Sidebar: React.FC<Props> = ({
 
   // ─── EDIÇÃO DE SERVIDOR (LOGO E NOME) ──────────────────────────────
   const handleOpenSettings = () => {
-    setEditName(room?.name || serverName || '');
-    setEditLogoUrl(serverIconUrl || room?.iconUrl || '');
-    setShowSettingsModal(true);
+    setProfileModalTab('server');
+    setShowProfileModal(true);
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -426,105 +442,158 @@ export const Sidebar: React.FC<Props> = ({
 
   return (
     <aside className={styles.sidebar}>
-      {/* Cabeçalho */}
+      {/* ── SERVER HEADER ── */}
       <div className={styles.header}>
-        <div className={styles.serverName} title={room?.name || serverName || 'Concord'}>
-          <div className={styles.serverLogoWrapper}>
+        <div 
+          className={styles.serverHeaderLeft}
+          onClick={handleOpenSettings}
+          style={{ cursor: 'pointer' }}
+          title="Configurações do Servidor"
+        >
+          <div className={styles.serverAvatarWrapper}>
             {serverIconUrl || room?.iconUrl ? (
-              <img src={serverIconUrl || room?.iconUrl || ''} alt="Logo" className={styles.customServerLogo} />
+              <img src={serverIconUrl || room?.iconUrl || ''} alt="Server Avatar" className={styles.serverAvatarImg} />
             ) : (
-              <img src="/logo.png" alt="Concord Logo" className={styles.logoImage} />
+              <div className={styles.serverAvatarFallback}>
+                {(room?.name || serverName || 'Concord').charAt(0).toUpperCase()}
+              </div>
             )}
+            <span className={styles.serverOnlineBadge} />
           </div>
-          <span className={styles.serverTitleText}>
-            {room?.name || serverName || 'Concord'}
-          </span>
+          <div className={styles.serverInfo}>
+            <h1 className={styles.serverTitle} title={room?.name || serverName || 'Concord'}>
+              <span>{room?.name || serverName || 'Concord'}</span>
+              <i className="fa-solid fa-circle-check" style={{ color: '#7c5cff', fontSize: '12px' }} />
+            </h1>
+            <p className={styles.serverSubtitle}>
+              {users.length} {users.length === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
+            </p>
+          </div>
         </div>
 
-        {isServer && canManageServer && (
-          <button 
-            className={styles.serverSettingsBtn} 
-            onClick={handleOpenSettings}
-            title={isOwner ? "Configurações do Servidor (Nome e Logo)" : "Alterar Logo do Servidor"}
-          >
-            ⚙️
-          </button>
-        )}
-
-        <div className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />
+        <button 
+          className={styles.headerChevronBtn} 
+          onClick={handleOpenSettings}
+          title="Configurações do Servidor"
+        >
+          <i className="fa-solid fa-chevron-down" style={{ fontSize: '12px' }} />
+        </button>
       </div>
 
       <div className={styles.sections}>
-        {/* ── SEÇÃO DE CANAIS DE TEXTO (Para Servidores) ── */}
-        {isServer && (
-          <section className={styles.section}>
-            <div className={styles.sectionLabel}>
-              <div className={styles.sectionLabelLeft}>
-                <span className={styles.sectionIcon}>💬</span>
-                Canais de Texto
-              </div>
-              {canManageServer && (
-                <button 
-                  className={styles.addChannelBtn} 
-                  onClick={() => setShowCreateChannelModal(true)}
-                  title="Criar novo canal de texto"
-                >
-                  ➕
-                </button>
-              )}
+        {/* ── SEÇÃO DE CANAIS DE TEXTO ── */}
+        <section className={styles.section}>
+          <div className={styles.sectionLabel}>
+            <div className={styles.sectionLabelLeft}>
+              <i className="fa-regular fa-comments" style={{ fontSize: '12px' }} />
+              <span>Canais de Texto</span>
             </div>
+            {isServer && canManageServer && (
+              <button 
+                className={styles.addChannelBtn} 
+                onClick={() => setShowCreateChannelModal(true)}
+                title="Criar novo canal de texto"
+              >
+                <i className="fa-solid fa-plus" />
+              </button>
+            )}
+          </div>
 
-            <div className={styles.channelList}>
-              {channels.map((channel) => {
-                const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && (channel.name === 'geral' || channel.name === 'Geral'));
-                const isGeral = channel.name.toLowerCase() === 'geral' || channel.id === 'ch-geral';
-                return (
-                  <div key={channel.id} className={styles.channelRow}>
-                    <button
-                      className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
-                      onClick={() => setActiveChannelId(channel.id)}
-                    >
-                      <span className={styles.channelHash}>#</span>
+          <div className={styles.channelList}>
+            {(channels.length > 0 ? channels : [{ id: 'ch-geral', name: 'geral' }]).map((channel) => {
+              const isActive = (activeChannelId || 'ch-geral') === channel.id || (activeChannelId === 'ch-geral' && (channel.name.toLowerCase() === 'geral'));
+              const isGeral = channel.name.toLowerCase() === 'geral' || channel.id === 'ch-geral';
+              const chId = channel.id || 'ch-geral';
+              const totalInCh = messages.filter(
+                (m) => (m.channelId || 'ch-geral') === chId || (chId === 'ch-geral' && !m.channelId)
+              ).length;
+              const readInCh = channelReadCounts[chId] ?? (isActive ? totalInCh : 0);
+              const unreadCount = isActive ? 0 : Math.max(0, totalInCh - readInCh);
+
+              return (
+                <div key={channel.id} className={styles.channelRow}>
+                  <button
+                    className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
+                    onClick={() => setActiveChannelId(channel.id)}
+                  >
+                    <span className={styles.channelItemLeft}>
+                      <i className="fa-solid fa-hashtag" style={{ color: isActive ? '#7c5cff' : '#6b7280' }} />
                       <span className={styles.channelName}>{channel.name}</span>
-                    </button>
-                    {!isGeral && (
-                      <div className={styles.channelActions}>
-                        {canManageServer && (
-                          <button
-                            className={styles.channelActionBtn}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingChannel(channel);
-                              setEditChannelName(channel.name);
-                              setShowEditChannelModal(true);
-                            }}
-                            title={`Renomear canal #${channel.name}`}
-                          >
-                            ✏️
-                          </button>
-                        )}
-                        {isOwner && (
-                          <button
-                            className={`${styles.channelActionBtn} ${styles.channelActionBtnDanger}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
-                                handleDeleteChannel(channel.id);
-                              }
-                            }}
-                            title={`Excluir canal #${channel.name}`}
-                          >
-                            🗑️
-                          </button>
-                        )}
-                      </div>
+                    </span>
+                    {unreadCount > 0 && (
+                      <span className={styles.channelBadge}>
+                        {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
                     )}
-                  </div>
-                );
-              })}
+                  </button>
+                  {isServer && !isGeral && (
+                    <div className={styles.channelActions}>
+                      {canManageServer && (
+                        <button
+                          className={styles.channelActionBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingChannel(channel);
+                            setEditChannelName(channel.name);
+                            setShowEditChannelModal(true);
+                          }}
+                          title={`Renomear canal #${channel.name}`}
+                        >
+                          <i className="fa-solid fa-pen" />
+                        </button>
+                      )}
+                      {isOwner && (
+                        <button
+                          className={`${styles.channelActionBtn} ${styles.channelActionBtnDanger}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
+                              handleDeleteChannel(channel.id);
+                            }
+                          }}
+                          title={`Excluir canal #${channel.name}`}
+                        >
+                          <i className="fa-solid fa-trash" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ── SEÇÃO DE CANAIS DE VOZ ── */}
+        <section className={styles.section}>
+          <div className={styles.sectionLabel}>
+            <div className={styles.sectionLabelLeft}>
+              <i className="fa-solid fa-headset" style={{ fontSize: '12px' }} />
+              <span>Canais de Voz</span>
             </div>
-          </section>
-        )}
+            {isServer && canManageServer && (
+              <button className={styles.addChannelBtn} title="Criar canal de voz">
+                <i className="fa-solid fa-plus" />
+              </button>
+            )}
+          </div>
+
+          <div className={styles.channelList}>
+            <button
+              className={`${styles.voiceChannelBtn} ${inVoice ? styles.channelActive : ''}`}
+              onClick={() => {
+                if (inVoice) onLeaveVoice();
+                else onJoinVoice();
+              }}
+            >
+              <span className={styles.voiceChannelLeft}>
+                <i className="fa-solid fa-volume-high" style={{ color: inVoice ? '#7c5cff' : '#10b981' }} />
+                <span>Call Geral</span>
+              </span>
+              <span className={styles.voiceCountBadge}>{voiceUsers.length}</span>
+            </button>
+          </div>
+        </section>
 
         {/* ── 1. USUÁRIOS NA CALL ── */}
         <section className={styles.section}>
@@ -533,13 +602,10 @@ export const Sidebar: React.FC<Props> = ({
             onClick={() => setShowVoice(!showVoice)}
           >
             <div className={styles.sectionLabelLeft}>
-              <span className={styles.callBadgeDot}>🔴</span>
-              Na Call — {voiceUsers.length}
+              <span>Na Call — {voiceUsers.length}</span>
             </div>
             <span className={`${styles.chevron} ${showVoice ? styles.chevronOpen : ''}`}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m9 18 6-6-6-6"/>
-              </svg>
+              <i className="fa-solid fa-chevron-right" style={{ fontSize: '10px' }} />
             </span>
           </div>
 
@@ -564,8 +630,8 @@ export const Sidebar: React.FC<Props> = ({
                       isMe={isCurrentUser}
                       inVoice={user.inVoice}
                       screenSharing={user.screenSharing}
-                      micMuted={user.micMuted}
-                      callMuted={user.callMuted}
+                      micMuted={isCurrentUser ? micMuted : user.micMuted}
+                      callMuted={isCurrentUser ? callMuted : user.callMuted}
                       isOwner={isUserOwner}
                       isSubOwner={isUserSubOwner}
                       onScreenShareClick={onScreenShareClick}
@@ -585,13 +651,10 @@ export const Sidebar: React.FC<Props> = ({
             onClick={() => setShowOnline(!showOnline)}
           >
             <div className={styles.sectionLabelLeft}>
-              <span className={styles.onlineBadgeDot}>🟢</span>
-              Online — {onlineMembers.length}
+              <span>Online — {onlineMembers.length}</span>
             </div>
             <span className={`${styles.chevron} ${showOnline ? styles.chevronOpen : ''}`}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m9 18 6-6-6-6"/>
-              </svg>
+              <i className="fa-solid fa-chevron-right" style={{ fontSize: '10px' }} />
             </span>
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
@@ -612,8 +675,8 @@ export const Sidebar: React.FC<Props> = ({
                     isMe={isCurrentUser}
                     inVoice={user.inVoice}
                     screenSharing={user.screenSharing}
-                    micMuted={user.micMuted}
-                    callMuted={user.callMuted}
+                    micMuted={isCurrentUser ? micMuted : user.micMuted}
+                    callMuted={isCurrentUser ? callMuted : user.callMuted}
                     isOwner={isUserOwner}
                     isSubOwner={isUserSubOwner}
                     onScreenShareClick={onScreenShareClick}
@@ -633,13 +696,10 @@ export const Sidebar: React.FC<Props> = ({
               onClick={() => setShowOffline(!showOffline)}
             >
               <div className={styles.sectionLabelLeft}>
-                <span className={styles.offlineBadgeDot}>⚫</span>
-                Offline — {offlineMembers.length}
+                <span>Offline — {offlineMembers.length}</span>
               </div>
               <span className={`${styles.chevron} ${showOffline ? styles.chevronOpen : ''}`}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m9 18 6-6-6-6"/>
-                </svg>
+                <i className="fa-solid fa-chevron-right" style={{ fontSize: '10px' }} />
               </span>
             </div>
             <div className={`${styles.collapsibleWrapper} ${showOffline ? styles.expanded : ''}`}>
@@ -661,9 +721,9 @@ export const Sidebar: React.FC<Props> = ({
                       </div>
                       <span className={styles.offlineUserName}>{member.username}</span>
                       {member.role === 'owner' ? (
-                        <span className={styles.ownerCrown} title="Dono do Servidor">👑</span>
+                        <i className={`fa-solid fa-crown ${styles.ownerCrown}`} title="Dono do Servidor" />
                       ) : member.role === 'sub_owner' ? (
-                        <span className={styles.subOwnerShield} title="Sub Dono">🛡️</span>
+                        <i className={`fa-solid fa-shield ${styles.subOwnerShield}`} title="Sub Dono" />
                       ) : null}
                     </div>
                   ))
@@ -674,37 +734,107 @@ export const Sidebar: React.FC<Props> = ({
         )}
       </div>
 
-      {/* Voice Controls */}
-      <VoicePanel
-        onJoin={onJoinVoice}
-        onLeave={onLeaveVoice}
-        onStartScreenShare={onStartScreenShare}
-        onStopScreenShare={onStopScreenShare}
-      />
-
-      {/* User Profile Footer */}
-      <div className={styles.userFooter}>
-        <div className={styles.userFooterInfo}>
-          <div className={styles.userFooterAvatar}>
-            {myAvatarUrl ? (
-              <img src={myAvatarUrl} alt={myName} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-            ) : (
-              (myName.charAt(0).toUpperCase() || '?')
-            )}
+      {/* ── ACTIVE VOICE CALL FLOATING WIDGET ── */}
+      {inVoice ? (
+        <div className={styles.activeVoiceWidget}>
+          <div className={styles.activeVoiceTop}>
+            <div className={styles.activeVoiceLeft}>
+              <span className={styles.pingDotWrapper}>
+                <span className={styles.pingDotAnimate} />
+                <span className={styles.pingDotSolid} />
+              </span>
+              <div style={{ lineHeight: 1.2 }}>
+                <p className={styles.activeVoiceTitle}>Voz Conectada</p>
+                <p className={styles.activeVoiceSubtitle}>Call Geral / 24ms</p>
+              </div>
+            </div>
+            <button
+              id="hangupBtn"
+              onClick={onLeaveVoice}
+              className={styles.hangupBtn}
+              title="Desconectar da chamada"
+            >
+              <i className="fa-solid fa-phone-slash" style={{ fontSize: '12px' }} />
+            </button>
           </div>
-          <span className={styles.userFooterName}>{myName}</span>
+          <div className={styles.activeVoiceButtons}>
+            <button
+              onClick={onLeaveVoice}
+              className={styles.leaveCallBtn}
+            >
+              <i className="fa-solid fa-power-off" style={{ fontSize: '10px' }} /> Sair Call
+            </button>
+            <button
+              id="screenShareBtn"
+              onClick={amSharing ? onStopScreenShare : onStartScreenShare}
+              className={`${styles.screenBtn} ${amSharing ? styles.screenBtnActive : ''}`}
+            >
+              <i className="fa-solid fa-desktop" style={{ fontSize: '10px' }} /> {amSharing ? 'Parar Tela' : 'Tela'}
+            </button>
+          </div>
         </div>
-        <button 
-          className={styles.userFooterSettingsBtn}
-          onClick={() => setShowProfileModal(true)}
-          title="Configurações de Perfil"
-        >
-          ⚙️
-        </button>
+      ) : (
+        <div className={styles.disconnectedVoiceWidget}>
+          <span className={styles.disconnectedVoiceText}>Voz Desconectada</span>
+          <button className={styles.quickJoinCallBtn} onClick={onJoinVoice}>
+            <i className="fa-solid fa-headset" style={{ fontSize: '11px' }} /> Entrar na Call
+          </button>
+        </div>
+      )}
+
+      {/* ── USER CONTROL BAR (FOOTER) ── */}
+      <div className={styles.userControlFooter}>
+        <div className={styles.userControlLeft}>
+          <div className={styles.myAvatarWrapper}>
+            {myAvatarUrl ? (
+              <img src={myAvatarUrl} alt={myName} className={styles.myAvatarImg} />
+            ) : (
+              <div className={styles.myAvatarFallback}>
+                {(myName ? myName.charAt(0).toUpperCase() : '?')}
+              </div>
+            )}
+            <span className={styles.myStatusDot} />
+          </div>
+          <div className={styles.myInfo}>
+            <div className={styles.myNameText}>{myName || 'Usuário'}</div>
+            <div className={styles.myTagText}>#{myId ? myId.slice(0, 4).toUpperCase() : '9921'}</div>
+          </div>
+        </div>
+        <div className={styles.userControlButtons}>
+          <button 
+            id="micToggleBtn"
+            className={`${styles.controlBtn} ${micMuted ? styles.controlBtnDanger : ''}`}
+            onClick={toggleMicMute}
+            title={micMuted ? "Ativar Microfone" : "Mutar Microfone"}
+          >
+            <i className={`fa-solid ${micMuted ? 'fa-microphone-slash' : 'fa-microphone'}`} style={{ fontSize: '12px' }} />
+          </button>
+          <button 
+            id="deafenToggleBtn"
+            className={`${styles.controlBtn} ${callMuted ? styles.controlBtnDanger : ''}`}
+            onClick={toggleCallMute}
+            title={callMuted ? "Ativar Áudio" : "Ensurdecer"}
+          >
+            <i className={`fa-solid ${callMuted ? 'fa-headphones-simple' : 'fa-headphones'}`} style={{ fontSize: '12px' }} />
+          </button>
+          <button 
+            className={styles.controlBtn}
+            onClick={() => {
+              setProfileModalTab('profile');
+              setShowProfileModal(true);
+            }}
+            title="Configurações de Perfil"
+          >
+            <i className="fa-solid fa-gear" style={{ fontSize: '12px' }} />
+          </button>
+        </div>
       </div>
+
+      <div id="remote-audios" style={{ display: 'none' }} />
 
       {showProfileModal && (
         <ProfileModal 
+          initialTab={profileModalTab}
           onClose={() => setShowProfileModal(false)}
           onUpdate={(newName, newAvatar) => {
             setMyName(newName);
@@ -715,11 +845,12 @@ export const Sidebar: React.FC<Props> = ({
               onUpdateProfile(newName, newAvatar || null);
             }
           }}
+          onUpdateServer={onUpdateServer}
         />
       )}
 
       {/* ── MODAL: CRIAR NOVO CANAL DE TEXTO ── */}
-      {showCreateChannelModal && (
+      {showCreateChannelModal && createPortal(
         <div className={styles.modalOverlay} onClick={() => setShowCreateChannelModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 className={styles.modalTitle}>Criar Canal de Texto</h3>
@@ -757,11 +888,12 @@ export const Sidebar: React.FC<Props> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL: RENOMEAR / EDITAR CANAL DE TEXTO ── */}
-      {showEditChannelModal && editingChannel && (
+      {showEditChannelModal && editingChannel && createPortal(
         <div className={styles.modalOverlay} onClick={() => setShowEditChannelModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 className={styles.modalTitle}>Renomear Canal de Texto</h3>
@@ -799,11 +931,12 @@ export const Sidebar: React.FC<Props> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── MODAL: CONFIGURAÇÕES DO SERVIDOR (LOGO E NOME) ── */}
-      {showSettingsModal && (
+      {showSettingsModal && createPortal(
         <div className={styles.modalOverlay} onClick={() => setShowSettingsModal(false)}>
           <div className={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <h3 className={styles.modalTitle}>Configurações do Servidor</h3>
@@ -881,11 +1014,12 @@ export const Sidebar: React.FC<Props> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── CONTEXT MENU DO USUÁRIO ── */}
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div 
           className={styles.contextMenu}
           style={{ top: contextMenu.y, left: contextMenu.x }}
@@ -978,7 +1112,8 @@ export const Sidebar: React.FC<Props> = ({
               </button>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   );
@@ -1022,64 +1157,64 @@ const UserCard: React.FC<UserCardProps> = ({
   return (
     <div 
       id={`user-${id}`}
+      data-user-id={id}
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
       onContextMenu={(e) => onContextMenu(e, id)}
     >
-      <div className={styles.avatarWrapper}>
-        {displayAvatar ? (
-          <img src={displayAvatar} alt={name} className={styles.avatarImg} />
-        ) : (
-          <div className={styles.avatarFallback}>{initials}</div>
-        )}
-        <div className={`${styles.statusBadge} ${inVoice ? styles.badgeVoice : styles.badgeOnline}`} />
+      <div className={styles.userCardLeft}>
+        <div className={styles.avatarWrapper}>
+          {displayAvatar ? (
+            <img src={displayAvatar} alt={name} className={styles.avatarImg} />
+          ) : (
+            <div className={styles.avatarFallback}>{initials}</div>
+          )}
+          <span className={`${styles.statusBadge} ${inVoice ? styles.badgeVoice : styles.badgeOnline}`} />
+        </div>
+
+        <div className={styles.userDetails}>
+          <div className={styles.userNameRow}>
+            <span className={styles.userName}>{name}</span>
+            {isMe && <span className={styles.meTag}>VOCÊ</span>}
+            {isOwner ? (
+              <i className={`fa-solid fa-crown ${styles.adminCrown}`} title="Dono do Servidor" />
+            ) : isSubOwner ? (
+              <i className={`fa-solid fa-shield ${styles.subOwnerShield}`} title="Sub Dono" />
+            ) : null}
+          </div>
+          {screenSharing ? (
+            <span className={styles.userSubtitle}>Transmitindo</span>
+          ) : inVoice ? (
+            <span className={styles.userSubtitle}>Na Call</span>
+          ) : (
+            <span className={styles.userGameSubtitle}>Online</span>
+          )}
+        </div>
       </div>
 
-      <div className={styles.userInfo}>
-        <div className={styles.userNameRow}>
-          <span className={styles.userName}>{name}</span>
-          {isMe && <span className={styles.meTag}>você</span>}
-          {isOwner ? (
-            <span className={styles.adminCrown} title="Dono do Servidor">👑</span>
-          ) : isSubOwner ? (
-            <span className={styles.subOwnerShield} title="Sub Dono">🛡️</span>
-          ) : null}
-        </div>
-
-        <div className={styles.userStatusIcons}>
-          {screenSharing && (
-            <button
-              className={styles.screenShareBtn}
-              onClick={() => onScreenShareClick(id)}
-              title="Ver transmissão"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                <line x1="8" y1="21" x2="16" y2="21" />
-                <line x1="12" y1="17" x2="12" y2="21" />
-              </svg>
-            </button>
-          )}
-          {micMuted && (
-            <span className={styles.statusIcon} title="Microfone mutado">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="1" y1="1" x2="23" y2="23"/>
-                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
-                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-            </span>
-          )}
-          {callMuted && (
-            <span className={styles.statusIcon} title="Áudio mutado">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-                <line x1="23" y1="9" x2="17" y2="15"/>
-                <line x1="17" y1="9" x2="23" y2="15"/>
-              </svg>
-            </span>
-          )}
-        </div>
+      <div className={styles.userCardRight}>
+        {screenSharing && (
+          <button
+            className={styles.screenShareBtn}
+            onClick={() => onScreenShareClick(id)}
+            title="Ver transmissão de tela"
+          >
+            <i className="fa-solid fa-desktop" style={{ fontSize: '11px' }} />
+          </button>
+        )}
+        {callMuted && (
+          <span className={styles.statusIcon} title="Áudio da call mutado (Ensurdecido)">
+            <i className="fa-solid fa-headphones" style={{ color: '#f43f5e', fontSize: '13px' }} />
+          </span>
+        )}
+        {micMuted ? (
+          <span className={styles.statusIcon} title="Microfone mutado">
+            <i className="fa-solid fa-microphone-slash" style={{ color: '#f43f5e', fontSize: '13px' }} />
+          </span>
+        ) : inVoice ? (
+          <span className={styles.statusIcon} title="Microfone ativo">
+            <i className="fa-solid fa-microphone" style={{ color: '#10b981', fontSize: '13px' }} />
+          </span>
+        ) : null}
       </div>
     </div>
   );
