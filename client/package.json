@@ -2,7 +2,7 @@
   "name": "client",
   "productName": "Concord",
   "private": true,
-  "version": "1.0.73",
+  "version": "1.0.74",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -56,6 +56,7 @@
       }
     },
     "afterPack": "./build/afterPack.cjs",
+    "afterSign": "./build/afterPack.cjs",
     "win": {
       "artifactName": "Concord-Setup.exe"
     },
