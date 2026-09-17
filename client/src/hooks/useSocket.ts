@@ -339,9 +339,9 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('user_stopped_screen_share', (userId: string) => {
-      playScreenShareStopSound();
       callbacksRef.current.onScreenShareStopped?.(userId);
-      if (useAppStore.getState().screenShareUserId) {
+      if (useAppStore.getState().screenShareUserId === userId) {
+        playScreenShareStopSound();
         store.setScreenShare(null, null);
       }
     });

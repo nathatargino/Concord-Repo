@@ -380,32 +380,76 @@ electron_1.app.whenReady().then(async () => {
         fs.appendFileSync(logFile, `[Widevine] components.whenReady() error: ${wvErr}\n`);
     }
     // Handle media permissions for WebRTC
-    electron_1.session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-        const allowedPermissions = ['media', 'display-capture', 'microphone', 'camera'];
-        if (allowedPermissions.includes(permission)) {
-            callback(true);
+    electron_1.session.defaultSession.setPermissionCheckHandler((_webContents, _permission) => {
+        return true;
+    });
+    electron_1.session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+        callback(true);
+    });
+    let selectedScreenSource = null;
+    electron_1.ipcMain.handle('get-screen-sources', async () => {
+        try {
+            const sources = await electron_1.desktopCapturer.getSources({
+                types: ['screen', 'window'],
+                thumbnailSize: { width: 320, height: 180 },
+                fetchWindowIcons: true,
+            });
+            return sources.map((s) => ({
+                id: s.id,
+                name: s.name,
+                thumbnail: s.thumbnail ? s.thumbnail.toDataURL() : '',
+                appIcon: s.appIcon ? s.appIcon.toDataURL() : undefined,
+                isScreen: s.id.startsWith('screen:'),
+            }));
         }
-        else {
-            callback(false);
+        catch (err) {
+            console.error('[Main] Error getting screen sources:', err);
+            return [];
         }
     });
+    electron_1.ipcMain.handle('select-screen-source', (_event, data) => {
+        fs.appendFileSync(logFile, `[ScreenShare-Main] select-screen-source received: ${JSON.stringify(data)}\n`);
+        selectedScreenSource = { ...data, timestamp: Date.now() };
+        return true;
+    });
     // Handle screen share requests natively
-    // Pass audio: 'loopback' so the system audio is captured alongside the screen video.
-    // Without this, getDisplayMedia({ audio: true }) from the renderer gets no audio track.
-    electron_1.session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
-        electron_1.desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
-            if (!sources.length) {
-                console.error('No desktop sources found');
-                // @ts-ignore – Electron types don't allow null but it's the documented way to reject
-                callback({ video: null, audio: null });
+    // Uses the user-selected screen/window source and audio preference from the picker modal
+    electron_1.session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+        try {
+            const isRecent = selectedScreenSource && (Date.now() - selectedScreenSource.timestamp < 15000);
+            const targetId = isRecent ? selectedScreenSource?.sourceId : null;
+            const wantAudio = (isRecent && selectedScreenSource ? selectedScreenSource.withAudio : true) && request.audioRequested;
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Handler invoked: audioRequested=${request.audioRequested}, isRecent=${isRecent}, targetId=${targetId}, wantAudio=${wantAudio}\n`);
+            const sources = await electron_1.desktopCapturer.getSources({ types: ['screen', 'window'] });
+            let chosen = targetId ? sources.find((s) => s.id === targetId) : null;
+            if (!chosen) {
+                // Fallback to screen if not found or not specified
+                chosen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
+            }
+            if (!chosen) {
+                console.error('[Main] No desktop sources found');
+                fs.appendFileSync(logFile, `[ScreenShare-Main] No desktop sources found!\n`);
+                // @ts-ignore
+                callback({});
                 return;
             }
-            callback({ video: sources[0], audio: 'loopback' });
-        }).catch((err) => {
-            console.error('Error getting desktop sources:', err);
+            // In Chromium on Windows, system audio loopback is supported for screen sources.
+            // Individual windows do not support system loopback and passing it causes capture to fail.
+            const isScreen = chosen.id.startsWith('screen:');
+            const audioStream = (wantAudio && isScreen) ? 'loopback' : undefined;
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), isScreen=${isScreen}, audio=${audioStream}\n`);
             // @ts-ignore
-            callback({ video: null, audio: null });
-        });
+            callback({
+                video: chosen,
+                audio: audioStream,
+            });
+        }
+        catch (err) {
+            console.error('[Main] Error in setDisplayMediaRequestHandler:', err);
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Handler exception: ${err}\n`);
+            // @ts-ignore
+            callback({});
+        }
     });
     const chromeVer = process.versions.chrome || '150.0.7871.250';
     const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVer} Safari/537.36`;

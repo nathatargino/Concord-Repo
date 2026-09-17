@@ -59,4 +59,6 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
         electron_1.ipcRenderer.on('streaming-event', subscription);
         return () => electron_1.ipcRenderer.removeListener('streaming-event', subscription);
     },
+    getScreenSources: () => electron_1.ipcRenderer.invoke('get-screen-sources'),
+    selectScreenSource: (data) => electron_1.ipcRenderer.invoke('select-screen-source', data),
 });

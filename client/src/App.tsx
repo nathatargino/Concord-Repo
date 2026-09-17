@@ -20,6 +20,7 @@ import { MusicPanel } from './components/MusicPanel';
 import { AudioControls } from './components/AudioControls';
 import { BroadcasterScreenPanel } from './components/BroadcasterScreenPanel';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
+import { ScreenPickerModal } from './components/ScreenPickerModal';
 import { StatusBar } from './components/StatusBar';
 import { AccountModals } from './components/AccountModals';
 
@@ -517,6 +518,11 @@ export default function App() {
         onScreenShareClick={(id) => {
           const u = store.users.find(x => x.id === id);
           store.setScreenShare(id, u?.name);
+          setTimeout(() => {
+            document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
+              a.play().catch(() => {});
+            });
+          }, 50);
         }}
         onJoinVoice={handleJoinVoice}
         onLeaveVoice={handleLeaveVoice}
@@ -590,6 +596,12 @@ export default function App() {
       </div>
 
       <AccountModals />
+
+      <ScreenPickerModal
+        isOpen={screenShare.isPickerOpen}
+        onClose={screenShare.closePicker}
+        onConfirm={screenShare.confirmPicker}
+      />
     </div>
   );
 }

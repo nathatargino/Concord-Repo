@@ -94,12 +94,22 @@ export const ScreenSharePanel: React.FC<Props> = ({
   // Calculate default position (top right with 16px margin)
   const defaultPosition = { x: typeof window !== 'undefined' ? window.innerWidth - 496 : 0, y: 16 };
 
+  // Unblock any paused audio element if blocked by browser autoplay
+  const handlePanelClick = () => {
+    document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
+      if (a.paused) {
+        a.play().catch(() => {});
+      }
+    });
+  };
+
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} onClick={handlePanelClick}>
       <Draggable nodeRef={containerRef as any} handle=".drag-handle" bounds="parent" defaultPosition={defaultPosition}>
         <div
           ref={containerRef}
           className={`${styles.panel} ${isFullscreen ? styles.fullscreen : ''}`}
+          onClick={handlePanelClick}
         >
           <div className={`${styles.header} drag-handle`}>
             <div className={styles.titleArea}>

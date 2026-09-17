@@ -33,6 +33,9 @@ declare global {
             closeStreamingView?: () => void;
             sendStreamingCommand?: (command: string, payload?: any) => void;
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
+            /** Screen Share Source Picker */
+            getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
+            selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
         }
     }
 }
@@ -95,4 +98,6 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('streaming-event', subscription);
         return () => ipcRenderer.removeListener('streaming-event', subscription);
     },
+    getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
+    selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
 });
