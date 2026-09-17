@@ -15,6 +15,7 @@ import {
   updateServerLogoInSupabase,
   updateMemberRoleInSupabase,
   findRoomInSupabase,
+  isUuid,
   supabase
 } from '../lib/supabase';
 import type { ServerChannel } from '../types';
@@ -132,13 +133,16 @@ export const Sidebar: React.FC<Props> = ({
     let isMounted = true;
     let memberSub: any = null;
 
-    const loadMembers = async () => {
-      let actualServerId = room.id;
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(room.id)) {
-        const dbRoom = await findRoomInSupabase(room.id);
-        if (dbRoom?.id) actualServerId = dbRoom.id;
+    const cleanupSub = () => {
+      if (memberSub) {
+        try {
+          supabase.removeChannel(memberSub);
+        } catch {}
+        memberSub = null;
       }
+    };
 
+    const loadMembers = async (actualServerId: string) => {
       const mems = await fetchServerMembers(actualServerId);
       if (isMounted && mems) {
         setServerMembers(mems.map(m => ({
@@ -150,15 +154,16 @@ export const Sidebar: React.FC<Props> = ({
           role: m.role as any,
         })));
       }
-      return actualServerId;
     };
 
     const setup = async () => {
       let actualServerId = room.id;
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(room.id)) {
+      if (!isUuid(room.id)) {
         const dbRoom = await findRoomInSupabase(room.id);
-        if (dbRoom?.id) actualServerId = dbRoom.id;
+        if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
       }
+
+      if (!isMounted) return;
 
       // Registrar membro atual com dados completos do servidor
       if (myName) {
@@ -175,44 +180,57 @@ export const Sidebar: React.FC<Props> = ({
         );
       }
 
-      await loadMembers();
+      if (!isMounted) return;
+      await loadMembers(actualServerId);
 
-      // Iniciar listener em tempo real para presença/membros na tabela server_members
-      try {
-        memberSub = supabase
-          .channel(`sidebar_members_${actualServerId}`)
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'server_members',
-              filter: `server_id=eq.${actualServerId}`,
-            },
-            () => {
-              loadMembers();
-            }
-          )
-          .subscribe();
-      } catch (subErr) {
-        console.warn('[Realtime] Erro ao subscrever alterações de membros:', subErr);
+      // Buscar canais usando actualServerId
+      fetchServerChannels(actualServerId).then((chs) => {
+        if (isMounted && chs && chs.length > 0) {
+          setChannels(chs.map(c => ({ id: c.id, name: c.name, serverId: c.server_id })));
+        }
+      });
+
+      // Se actualServerId é UUID válido, iniciar listener em tempo real para presença/membros
+      if (isUuid(actualServerId) && isMounted) {
+        const topicName = `sidebar_members_${actualServerId}`;
+        try {
+          // Limpar qualquer canal anterior existente com este tópico para evitar "cannot add callbacks after subscribe()"
+          const existingChannels = supabase.getChannels();
+          const existing = existingChannels.find(c => c.topic === topicName || c.topic === `realtime:${topicName}`);
+          if (existing) {
+            try {
+              supabase.removeChannel(existing);
+            } catch {}
+          }
+
+          if (!isMounted) return;
+
+          memberSub = supabase
+            .channel(topicName)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'server_members',
+                filter: `server_id=eq.${actualServerId}`,
+              },
+              () => {
+                if (isMounted) loadMembers(actualServerId);
+              }
+            )
+            .subscribe();
+        } catch (subErr) {
+          console.warn('[Realtime] Erro ao subscrever alterações de membros:', subErr);
+        }
       }
     };
 
     setup();
 
-    // Buscar canais
-    fetchServerChannels(room.id).then((chs) => {
-      if (isMounted && chs && chs.length > 0) {
-        setChannels(chs.map(c => ({ id: c.id, name: c.name, serverId: c.server_id })));
-      }
-    });
-
     return () => {
       isMounted = false;
-      if (memberSub) {
-        supabase.removeChannel(memberSub);
-      }
+      cleanupSub();
     };
   }, [room?.id, isServer, myName, isOwner, isSubOwner, setChannels, setServerMembers, serverName, serverIconUrl]);
 

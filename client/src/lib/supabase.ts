@@ -40,6 +40,9 @@ export const supabase = (() => {
   }
 })();
 
+export const isUuid = (val?: string | null): boolean =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()));
+
 // Helper type definitions
 export interface DbRoom {
   id: string;
@@ -337,10 +340,14 @@ export async function updateServerNameInSupabase(serverId: string, newName: stri
   }
 
   try {
-    const { error } = await supabase
-      .from('rooms')
-      .update({ name: trimmed })
-      .eq('id', serverId);
+    let query = supabase.from('rooms').update({ name: trimmed });
+    if (isUuid(serverId)) {
+      query = query.eq('id', serverId);
+    } else {
+      query = query.ilike('code', serverId);
+    }
+
+    const { error } = await query;
 
     if (error) {
       return { success: false, message: error.message };
@@ -362,11 +369,14 @@ export async function updateServerLogoInSupabase(serverId: string, iconUrl: stri
   }
 
   try {
-    const { error } = await supabase
-      .from('rooms')
-      .update({ icon_url: iconUrl })
-      .eq('id', serverId);
+    let query = supabase.from('rooms').update({ icon_url: iconUrl });
+    if (isUuid(serverId)) {
+      query = query.eq('id', serverId);
+    } else {
+      query = query.ilike('code', serverId);
+    }
 
+    const { error } = await query;
     return !error;
   } catch (err) {
     console.warn('[Supabase] Falha ao atualizar logo:', err);
@@ -509,18 +519,37 @@ export async function getMyServers(): Promise<SavedServer[]> {
     
     if (localList.length > 0 && supabaseUrl && supabaseAnonKey) {
       try {
-        const localIds = localList.map(s => s.id);
-        const { data: remoteRooms } = await supabase
-          .from('rooms')
-          .select('id, name, icon_url, code')
-          .in('id', localIds);
+        const validUuids = localList.map(s => s.id).filter(id => isUuid(id));
+        const validCodes = Array.from(new Set(
+          localList
+            .map(s => s.code || (!isUuid(s.id) ? s.id : ''))
+            .filter(Boolean)
+        ));
+
+        let query = supabase.from('rooms').select('id, name, icon_url, code');
+        if (validUuids.length > 0 && validCodes.length > 0) {
+          query = query.or(`id.in.(${validUuids.join(',')}),code.in.(${validCodes.map(c => `"${c}"`).join(',')})`);
+        } else if (validUuids.length > 0) {
+          query = query.in('id', validUuids);
+        } else if (validCodes.length > 0) {
+          query = query.in('code', validCodes);
+        } else {
+          return localList;
+        }
+
+        const { data: remoteRooms, error: remoteErr } = await query;
           
-        if (remoteRooms && remoteRooms.length > 0) {
+        if (!remoteErr && remoteRooms && remoteRooms.length > 0) {
           localList = localList.map(localServer => {
-            const remoteServer = remoteRooms.find(r => r.id === localServer.id);
+            const remoteServer = remoteRooms.find(r => 
+              (localServer.id && r.id === localServer.id) || 
+              (localServer.code && r.code?.toUpperCase() === localServer.code.toUpperCase()) ||
+              (localServer.id && r.code?.toUpperCase() === localServer.id.toUpperCase())
+            );
             if (remoteServer) {
               return {
                 ...localServer,
+                id: remoteServer.id || localServer.id,
                 name: remoteServer.name,
                 icon_url: remoteServer.icon_url,
                 code: remoteServer.code
@@ -560,15 +589,25 @@ export function removeMyServer(serverId: string): void {
 // ==========================================
 
 export async function fetchServerChannels(serverId: string): Promise<DbChannel[]> {
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseUrl || !supabaseAnonKey || !serverId) {
     return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
   }
 
   try {
+    let actualServerId = serverId;
+    if (!isUuid(serverId)) {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id && isUuid(dbRoom.id)) {
+        actualServerId = dbRoom.id;
+      } else {
+        return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
+      }
+    }
+
     const { data, error } = await supabase
       .from('server_channels')
       .select('*')
-      .eq('server_id', serverId)
+      .eq('server_id', actualServerId)
       .order('created_at', { ascending: true });
 
     if (error || !data || data.length === 0) {
@@ -576,8 +615,7 @@ export async function fetchServerChannels(serverId: string): Promise<DbChannel[]
     }
 
     return data as DbChannel[];
-  } catch (err) {
-    console.warn('[Supabase] Erro ao buscar canais do servidor:', err);
+  } catch {
     return [{ id: 'ch-geral', server_id: serverId, name: 'Geral', created_at: new Date().toISOString() }];
   }
 }
@@ -596,24 +634,49 @@ export async function createChannelInSupabase(serverId: string, channelName: str
   }
 
   try {
+    let actualServerId = serverId;
+    if (!isUuid(serverId)) {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id && isUuid(dbRoom.id)) {
+        actualServerId = dbRoom.id;
+      }
+    }
+
+    if (!isUuid(actualServerId)) {
+      return {
+        id: `local-ch-${Date.now()}`,
+        server_id: serverId,
+        name: cleanName,
+        created_at: new Date().toISOString(),
+      };
+    }
+
     const { data, error } = await supabase
       .from('server_channels')
       .insert({
-        server_id: serverId,
+        server_id: actualServerId,
         name: cleanName,
       })
       .select()
       .single();
 
     if (error) {
-      console.error('[Supabase] Erro ao criar canal:', error.message);
-      return null;
+      return {
+        id: `local-ch-${Date.now()}`,
+        server_id: serverId,
+        name: cleanName,
+        created_at: new Date().toISOString(),
+      };
     }
 
     return data as DbChannel;
-  } catch (err) {
-    console.error('[Supabase] Exceção ao criar canal:', err);
-    return null;
+  } catch {
+    return {
+      id: `local-ch-${Date.now()}`,
+      server_id: serverId,
+      name: cleanName,
+      created_at: new Date().toISOString(),
+    };
   }
 }
 
@@ -698,9 +761,10 @@ export async function registerServerMember(
 
   try {
     let actualServerId = serverId;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+    if (!isUuid(serverId)) {
       const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id) actualServerId = dbRoom.id;
+      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
+      else return; // Não é UUID e não está no Supabase
     }
 
     let uid = userId;
@@ -749,8 +813,8 @@ export async function registerServerMember(
           });
       }
     }
-  } catch (err) {
-    console.warn('[Supabase] Falha ao registrar membro:', err);
+  } catch {
+    // Ignora silenciosamente caso tabela server_members ainda não exista no projeto Supabase
   }
 }
 
@@ -773,9 +837,10 @@ export async function leaveServerFromSupabase(
 
   try {
     let actualServerId = serverId;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+    if (!isUuid(serverId)) {
       const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id) actualServerId = dbRoom.id;
+      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
+      else return { success: true, serverDeleted: false };
     }
 
     let uid = userId;
@@ -803,9 +868,8 @@ export async function leaveServerFromSupabase(
     }
 
     return { success: true, serverDeleted: false };
-  } catch (err) {
-    console.error('[Supabase] Erro ao sair do servidor:', err);
-    return { success: false, serverDeleted: false };
+  } catch {
+    return { success: true, serverDeleted: false };
   }
 }
 
@@ -814,9 +878,10 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
 
   try {
     let actualServerId = serverId;
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serverId)) {
+    if (!isUuid(serverId)) {
       const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id) actualServerId = dbRoom.id;
+      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
+      else return [];
     }
 
     const { data, error } = await supabase
@@ -826,19 +891,13 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
       .order('joined_at', { ascending: true });
 
     if (error || !data) {
-      const { data: fallbackData } = await supabase
-        .from('server_members')
-        .select('*')
-        .eq('server_id', actualServerId)
-        .order('joined_at', { ascending: true });
-      return (fallbackData || []) as DbMember[];
+      return [];
     }
     return data.map((m: any) => ({
       ...m,
       avatar_url: m.profiles?.avatar_url || m.avatar_url || null,
     })) as DbMember[];
-  } catch (err) {
-    console.warn('[Supabase] Erro ao buscar membros:', err);
+  } catch {
     return [];
   }
 }
@@ -866,7 +925,7 @@ export async function fetchChannelMessages(roomId: string, channelId?: string | 
     const dbRoom = await findRoomInSupabase(roomId);
     
     // Postgres falhará se passarmos strings comuns (ex: 'CONCORD') para uma coluna UUID
-    const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const isValidUUID = (id: string) => isUuid(id);
     const rawIds = [roomId, dbRoom?.id].filter(Boolean) as string[];
     const roomIdsToMatch = Array.from(new Set(rawIds.filter(isValidUUID)));
 
@@ -879,10 +938,10 @@ export async function fetchChannelMessages(roomId: string, channelId?: string | 
       .select('*')
       .in('room_id', roomIdsToMatch);
 
-    if (channelId && channelId !== 'ch-geral') {
+    if (channelId && isUuid(channelId)) {
       query = query.eq('channel_id', channelId);
     } else {
-      query = query.or('channel_id.is.null,channel_id.eq.ch-geral');
+      query = query.is('channel_id', null);
     }
 
     const { data, error } = await query.order('created_at', { ascending: true }).limit(300);
@@ -919,7 +978,7 @@ export async function saveMessageToSupabase(
   const newMsg: DbMessage = {
     id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     room_id: canonicalRoomId,
-    channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
+    channel_id: (channelId && isUuid(channelId)) ? channelId : null,
     user_id: null,
     sender_name: senderName,
     content,
@@ -940,9 +999,7 @@ export async function saveMessageToSupabase(
 
   if (!supabaseUrl || !supabaseAnonKey) return newMsg;
 
-  const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-  if (!isValidUUID(canonicalRoomId)) {
-    console.warn('[Supabase] Não foi possível salvar mensagem, room_id não é UUID válido:', canonicalRoomId);
+  if (!isUuid(canonicalRoomId)) {
     return newMsg;
   }
 
@@ -953,7 +1010,7 @@ export async function saveMessageToSupabase(
       .from('messages')
       .insert({
         room_id: canonicalRoomId,
-        channel_id: (channelId && channelId !== 'ch-geral') ? channelId : null,
+        channel_id: (channelId && isUuid(channelId)) ? channelId : null,
         user_id: user?.id || null,
         sender_name: senderName,
         content,

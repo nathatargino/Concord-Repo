@@ -82,6 +82,8 @@ interface AppState {
   setStreamingSession: (service: 'netflix' | 'prime', active: boolean) => void;
   activeStreaming: { service: 'netflix' | 'prime'; url?: string } | null;
   setActiveStreaming: (s: { service: 'netflix' | 'prime'; url?: string } | null) => void;
+  showVideoPlayer: boolean;
+  setShowVideoPlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
 
   // Screen share
   screenShareUserId: string | null;
@@ -211,6 +213,11 @@ export const useAppStore = create<AppState>((set) => ({
       set({ activeStreaming });
     }
   },
+  showVideoPlayer: false,
+  setShowVideoPlayer: (v) =>
+    set((state) => ({
+      showVideoPlayer: typeof v === 'function' ? v(state.showVideoPlayer) : v,
+    })),
 
   // Screen share
   screenShareUserId: null,
@@ -244,6 +251,7 @@ export const useAppStore = create<AppState>((set) => ({
       activeMediaTab: 'youtube',
       streamingSessions: { netflix: false, prime: false },
       activeStreaming: null,
+      showVideoPlayer: false,
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,

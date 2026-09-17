@@ -54,6 +54,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [avatarUrl, setAvatarUrl] = useState(initialAvatar);
   const [saving, setSaving] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Áudio & Dispositivos ──
@@ -284,11 +285,8 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     toast.success('Voltando ao Menu Principal...');
   };
 
-  const handleLeaveServer = async () => {
+  const handleConfirmLeave = async () => {
     if (!room) return;
-    if (!window.confirm(room.isServer || isServer ? 'Tem certeza de que deseja sair deste servidor?' : 'Tem certeza de que deseja sair desta sala?')) {
-      return;
-    }
     setIsLeaving(true);
     try {
       if (room.isServer || isServer) {
@@ -303,6 +301,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       console.warn('Erro ao sair do servidor:', err);
     } finally {
       setIsLeaving(false);
+      setShowLeaveConfirmModal(false);
       handleClose();
       useAppStore.getState().setRoom(null);
       navigate('/');
@@ -395,7 +394,8 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   };
 
   return createPortal(
-    <div className={styles.overlay} onClick={handleClose}>
+    <>
+      <div className={styles.overlay} onClick={handleClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         {/* Modal Header matching prototype */}
         <div className={styles.modalHeader}>
@@ -622,7 +622,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
               {/* Sair do Servidor */}
               <button
                 type="button"
-                onClick={handleLeaveServer}
+                onClick={() => setShowLeaveConfirmModal(true)}
                 className={styles.actionBtnDanger}
                 disabled={isLeaving}
               >
@@ -754,7 +754,48 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
           </div>
         )}
       </div>
-    </div>,
-    document.body
-  );
+    </div>
+
+    {/* Confirmation Modal matching modern dark design */}
+    {showLeaveConfirmModal && (
+      <div 
+        className={styles.leaveModalOverlay} 
+        onClick={() => !isLeaving && setShowLeaveConfirmModal(false)}
+      >
+        <div className={styles.leaveModalCard} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.leaveModalHeader}>
+            <i className={`fa-solid fa-triangle-exclamation ${styles.leaveModalWarningIcon}`}></i>
+            <h3 className={styles.leaveModalTitle}>
+              {room?.isServer || isServer ? 'Sair do Servidor?' : 'Sair da Sala?'}
+            </h3>
+          </div>
+          <p className={styles.leaveModalDescription}>
+            {room?.isServer || isServer
+              ? 'Tem certeza de que deseja sair deste servidor? Você deixará de ser membro e precisará de um código ou link de convite para entrar novamente.'
+              : 'Tem certeza de que deseja sair desta sala temporária?'}
+          </p>
+          <div className={styles.leaveModalActions}>
+            <button
+              type="button"
+              className={styles.leaveModalCancelBtn}
+              onClick={() => setShowLeaveConfirmModal(false)}
+              disabled={isLeaving}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className={styles.leaveModalConfirmBtn}
+              onClick={handleConfirmLeave}
+              disabled={isLeaving}
+            >
+              {isLeaving ? 'Saindo...' : (room?.isServer || isServer ? 'Sair do Servidor' : 'Sair da Sala')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>,
+  document.body
+);
 };

@@ -7,7 +7,7 @@ import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
-import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
+import { NetflixIcon } from './MusicPanel';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -92,7 +92,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     setActiveMediaTab,
     streamingSessions,
     setStreamingSession,
-    ytAvailableQualities
+    ytAvailableQualities,
+    showVideoPlayer,
+    setShowVideoPlayer,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -147,36 +149,21 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   }, [setActiveStreaming, setActiveMediaTab, setStreamingSession]);
 
   // ── Video Player Flip ──
-  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
   const [renderMedia, setRenderMedia] = useState(false);
   const streamingHostRef = useRef<HTMLDivElement>(null);
 
-  // Auto flip when streaming is opened or active media tab is a streaming service
+  // Fallback timer: if onTransitionEnd fails to fire within 650ms, ensure media mounts
   useEffect(() => {
-    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
-    if (isStreamingTab) {
-      if (showVideoPlayer) {
-        setRenderMedia(true);
-      } else {
-        setRenderMedia(false);
-        setShowVideoPlayer(true);
-      }
-    }
-  }, [activeMediaTab, showVideoPlayer]);
-
-  // Fallback timer: if onTransitionEnd fails to fire within 850ms, ensure media mounts
-  useEffect(() => {
-    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
-    if (showVideoPlayer && isStreamingTab) {
+    if (showVideoPlayer) {
       const timer = setTimeout(() => {
         setRenderMedia(true);
-      }, 850);
+      }, 650);
       return () => clearTimeout(timer);
-    } else if (!showVideoPlayer) {
+    } else {
       setRenderMedia(false);
     }
-  }, [showVideoPlayer, activeMediaTab]);
+  }, [showVideoPlayer]);
 
   // Synchronize Electron WebContentsView / BrowserView with active tab.
   // Mounts/opens ONLY once renderMedia is true (i.e. after the flip animation finishes).
@@ -871,25 +858,29 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
             )}
           </div>
 
-          {/* Botão só aparece quando há vídeo tocando ou streaming ativo */}
-          {(currentVideoId || showVideoPlayer || activeStreaming || streamingSessions?.netflix || streamingSessions?.prime) && (
+          {/* Botão só aparece quando há vídeo do YouTube tocando ou quando o player já está aberto */}
+          {(Boolean(currentVideoId) || showVideoPlayer) && (
             <button
               className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
-                setRenderMedia(false);
-                setShowVideoPlayer((v) => !v);
+                if (showVideoPlayer) {
+                  setRenderMedia(false);
+                  setShowVideoPlayer(false);
+                } else {
+                  setShowVideoPlayer(true);
+                }
               }}
-              title={showVideoPlayer ? 'Voltar ao Chat' : (activeStreaming ? `Assistir ${activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}` : 'Assistir')}
+              title={showVideoPlayer ? 'Voltar ao Chat' : 'Assistir vídeo na sala'}
             >
               <i className={`fa-solid ${showVideoPlayer ? 'fa-arrow-left' : 'fa-tv'}`}></i>
-              <span>{showVideoPlayer ? 'Chat' : (activeStreaming ? (activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime') : 'Assistir')}</span>
+              <span>{showVideoPlayer ? 'Chat' : 'Assistir'}</span>
             </button>
           )}
         </div>
       </div>
 
       {/* ── FLIP CARD CONTAINER ── */}
-      <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''} ${(showVideoPlayer && renderMedia) ? styles.mediaSettled : ''}`}>
+      <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''}`}>
         <div
           className={styles.flipCardInner}
           onTransitionEnd={(e) => {
@@ -1283,7 +1274,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   }}
                   title="YouTube (Músicas e Vídeos)"
                 >
-                  <YouTubeIcon />
+                  <i className="fa-brands fa-youtube" style={{ color: '#ef4444', fontSize: '13px' }}></i>
                   <span className={styles.mediaTabTitle}>YouTube</span>
                   {currentVideoId && isPlaying && (
                     <span className={styles.mediaTabLiveDot} title="Reproduzindo" />
@@ -1321,7 +1312,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   }}
                   title="Prime Video"
                 >
-                  <PrimeIcon />
+                  <i className="fa-solid fa-play" style={{ color: '#22d3ee', fontSize: '10px' }}></i>
                   <span className={styles.mediaTabTitle}>Prime Video</span>
                   {streamingSessions.prime && (
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
@@ -1348,7 +1339,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     return (
                       <div className={styles.streamingLauncherCard}>
                         <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : styles.streamingLauncherPrime}`}>
-                          {currentService === 'netflix' ? <NetflixIcon /> : <PrimeIcon />}
+                          {currentService === 'netflix' ? <NetflixIcon /> : <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i>}
                         </div>
                         <h3 className={styles.streamingLauncherTitle}>
                           Sessão da {platformLabel} não iniciada
@@ -1387,13 +1378,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          background: '#090912',
-                          border: currentService === 'netflix'
-                            ? '1px solid rgba(229, 9, 20, 0.4)'
-                            : '1px solid rgba(0, 168, 225, 0.4)',
-                          boxShadow: currentService === 'netflix'
-                            ? '0 0 24px rgba(229, 9, 20, 0.15)'
-                            : '0 0 24px rgba(0, 168, 225, 0.15)',
+                          background: '#090a0f',
+                          border: '1px solid rgba(255, 255, 255, 0.08)',
+                          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
                         }}
                       >
                         <div
@@ -1418,8 +1405,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               allow="autoplay; encrypted-media; fullscreen"
                             />
                           ) : !renderMedia ? (
-                            <div className={styles.streamingSkeleton}>
+                            <div key="streaming-skeleton-wrap" className={styles.streamingSkeleton}>
                               <div
+                                key="streaming-skeleton-spinner"
                                 className={styles.skeletonSpinner}
                                 style={{ borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1' }}
                               />
@@ -1428,13 +1416,16 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               </p>
                             </div>
                           ) : (
-                            <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
+                            <div key="streaming-drm-wrap" style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
                               <div
+                                key="streaming-drm-spinner"
                                 style={{
                                   width: '36px',
                                   height: '36px',
                                   borderRadius: '50%',
-                                  border: '3px solid rgba(255, 255, 255, 0.1)',
+                                  borderWidth: '3px',
+                                  borderStyle: 'solid',
+                                  borderColor: 'rgba(255, 255, 255, 0.1)',
                                   borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1',
                                   margin: '0 auto 14px',
                                   animation: 'spin 1s linear infinite',
@@ -1464,9 +1455,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             }}
                             title="Reproduzir vídeo"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                            <i className="fa-solid fa-play"></i>
                             <span>/play</span>
-                            <small>Reproduzir</small>
                           </button>
 
                           <button
@@ -1478,9 +1468,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             }}
                             title="Pausar vídeo"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                            <i className="fa-solid fa-pause"></i>
                             <span>/pause</span>
-                            <small>Pausar</small>
                           </button>
 
                           <button
@@ -1492,9 +1481,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             }}
                             title="Pular 10 segundos para frente"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                            <i className="fa-solid fa-forward-step"></i>
                             <span>/skip</span>
-                            <small>Pular 10s</small>
                           </button>
 
                           <button
@@ -1503,18 +1491,17 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit', { service: currentService });
                               else if (electron?.streamingCommand) electron.streamingCommand('exit', { service: currentService });
+                              setRenderMedia(false);
+                              setShowVideoPlayer(false);
                             }}
-                            title="Sair do filme / fechar transmissão"
+                            title="Sair da transmissão e voltar ao chat"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M19 12H5M12 19l-7-7 7-7" />
-                            </svg>
+                            <i className="fa-solid fa-arrow-left"></i>
                             <span>Sair</span>
-                            <small>Catálogo</small>
                           </button>
 
                           <button
-                            className={styles.videoShortcutBtn}
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
                             onClick={() => {
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('fullscreen', { service: currentService });
@@ -1522,11 +1509,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             }}
                             title="Tela Cheia"
                           >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-                            </svg>
+                            <i className="fa-solid fa-expand"></i>
                             <span>Tela Cheia</span>
-                            <small>Expandir</small>
                           </button>
                         </div>
                       </div>
@@ -1583,11 +1567,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                           }}
                           title={isPlaying ? 'Pausar' : 'Reproduzir'}
                         >
-                          {isPlaying ? (
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-                          ) : (
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                          )}
+                          <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`} style={{ fontSize: '24px' }}></i>
                         </button>
 
                         <div className={styles.videoOverlayBottom}>
@@ -1635,15 +1615,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                             <span className={styles.timeText}>{formatTime(duration)}</span>
 
                             <div className={styles.volumeContainer}>
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                                {ytVol === 0 || callMuted ? (
-                                  <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-                                ) : ytVol < 50 ? (
-                                  <path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z" />
-                                ) : (
-                                  <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                                )}
-                              </svg>
+                              <i className={`fa-solid ${ytVol === 0 || callMuted ? 'fa-volume-xmark' : ytVol < 50 ? 'fa-volume-low' : 'fa-volume-high'}`} style={{ fontSize: '13px', width: '16px', textAlign: 'center' }}></i>
                               <input
                                 type="range"
                                 min={0}
@@ -1664,7 +1636,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                     title={isElectron ? (useAppStore.getState().isPiPActive ? "Fechar PiP" : "Picture-in-Picture") : undefined}
                                     style={!isElectron ? { cursor: 'not-allowed' } : undefined}
                                   >
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg>
+                                    <i className="fa-solid fa-clone" style={{ fontSize: '13px' }}></i>
                                   </button>
                                   {!isElectron && (
                                     <div className={styles.pipWebTooltip}>
@@ -1688,10 +1660,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                 }}
                                 title="Configurações (Legendas e Qualidade)"
                               >
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <circle cx="12" cy="12" r="3"></circle>
-                                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                                </svg>
+                                <i className="fa-solid fa-gear" style={{ fontSize: '13px' }}></i>
                               </button>
 
                               {showSettingsMenu && (
@@ -1784,7 +1753,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               onClick={toggleFullscreen}
                               title="Tela Cheia"
                             >
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+                              <i className="fa-solid fa-expand" style={{ fontSize: '13px' }}></i>
                             </button>
                           </div>
                       </div>
@@ -1820,9 +1789,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     }}
                     title="Retomar música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                    <i className="fa-solid fa-play"></i>
                     <span>/play</span>
-                    <small>Retomar</small>
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
@@ -1832,9 +1800,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     }}
                     title="Pausar música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                    <i className="fa-solid fa-pause"></i>
                     <span>/pause</span>
-                    <small>Pausar</small>
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
@@ -1844,9 +1811,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     }}
                     title="Pular música"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                    <i className="fa-solid fa-forward-step"></i>
                     <span>/skip</span>
-                    <small>Pular</small>
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
@@ -1862,9 +1828,27 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     }}
                     title="Limpar fila"
                   >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>
+                    <i className="fa-solid fa-trash-can"></i>
                     <span>/clear</span>
-                    <small>Limpar fila</small>
+                  </button>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                    onClick={() => {
+                      setRenderMedia(false);
+                      setShowVideoPlayer(false);
+                    }}
+                    title="Voltar ao chat"
+                  >
+                    <i className="fa-solid fa-arrow-left"></i>
+                    <span>Sair</span>
+                  </button>
+                  <button
+                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
+                    onClick={toggleFullscreen}
+                    title="Tela Cheia"
+                  >
+                    <i className="fa-solid fa-expand"></i>
+                    <span>Tela Cheia</span>
                   </button>
                 </div>
               </div>

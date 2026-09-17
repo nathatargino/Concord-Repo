@@ -8,7 +8,7 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
-import { supabase, saveMyServer, findRoomInSupabase } from './lib/supabase';
+import { supabase, saveMyServer, findRoomInSupabase, isUuid } from './lib/supabase';
 import type { UserInfo } from './types';
 
 import { LoginModal } from './components/LoginModal';
@@ -277,7 +277,7 @@ export default function App() {
         if (user && isServer) {
           if (dbRoom?.created_by && user.id === dbRoom.created_by) {
             isOwner = true;
-          } else if (dbRoom?.id) {
+          } else if (dbRoom?.id && isUuid(dbRoom.id)) {
             const { data: mem } = await supabase
               .from('server_members')
               .select('role')

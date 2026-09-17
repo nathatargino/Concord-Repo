@@ -70,18 +70,13 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     activeMediaTab,
     setActiveMediaTab,
     streamingSessions,
-    setStreamingSession
+    setStreamingSession,
+    setShowVideoPlayer,
   } = useAppStore();
 
   const selectedPlatform = activeMediaTab;
   const setSelectedPlatform = (p: Platform) => {
     setActiveMediaTab(p);
-    if (p === 'netflix' || p === 'prime') {
-      setActiveStreaming({ service: p });
-      setStreamingSession(p, true);
-    } else {
-      setActiveStreaming(null);
-    }
     const electron = (window as any).electron;
     if (electron?.setActiveMediaTab) {
       electron.setActiveMediaTab(p);
@@ -96,6 +91,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       setActiveStreaming({ service, url: targetUrl });
       setActiveMediaTab(service);
       setStreamingSession(service, true);
+      setShowVideoPlayer(true);
       const electron = (window as any).electron;
       if (electron?.setActiveMediaTab) {
         electron.setActiveMediaTab(service);
@@ -122,6 +118,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       } else {
         setActiveStreaming(null);
         setActiveMediaTab('youtube');
+        setShowVideoPlayer(false);
         if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
       }
     }
@@ -372,14 +369,24 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                 </div>
 
                 {(streamingSessions[selectedPlatform as 'netflix' | 'prime'] || activeStreaming?.service === selectedPlatform) ? (
-                  <button
-                    type="button"
-                    className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
-                    onClick={handleCloseStreaming}
-                  >
-                    <i className="fa-solid fa-xmark"></i>
-                    <span>Fechar {platformName}</span>
-                  </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      type="button"
+                      className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
+                      onClick={() => setShowVideoPlayer(true)}
+                    >
+                      <i className="fa-solid fa-tv"></i>
+                      <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : 'PRIME'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.closeStreamingBtn}
+                      onClick={handleCloseStreaming}
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                      <span>Fechar {platformName}</span>
+                    </button>
+                  </div>
                 ) : (
                   <button
                     type="button"
@@ -388,7 +395,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                     disabled={isOpeningStreaming}
                   >
                     <i className="fa-solid fa-arrow-up-right-from-square"></i>
-                    <span>{isOpeningStreaming ? 'Iniciando...' : `Abrir ${platformName} no App`}</span>
+                    <span>{isOpeningStreaming ? 'Iniciando...' : (selectedPlatform === 'netflix' ? 'Abrir NETFLIX' : 'Abrir PRIME')}</span>
                   </button>
                 )}
               </>

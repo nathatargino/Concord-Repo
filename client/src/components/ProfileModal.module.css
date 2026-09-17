@@ -534,3 +534,105 @@
   background: rgba(255, 255, 255, 0.1);
   color: #fff;
 }
+
+/* ── Leave Server Confirmation Modal ── */
+.leaveModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.leaveModalCard {
+  width: 90%;
+  max-width: 440px;
+  background: #181b24;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  animation: modalScale 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.leaveModalHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.leaveModalWarningIcon {
+  font-size: 26px;
+  color: #f59e0b; /* Amber warning icon matching prototype */
+}
+
+.leaveModalTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.leaveModalDescription {
+  font-size: 13.5px;
+  color: #9ca3af;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.leaveModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.leaveModalCancelBtn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.leaveModalCancelBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.leaveModalConfirmBtn {
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: #ef4444;
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+}
+
+.leaveModalConfirmBtn:hover:not(:disabled) {
+  background: #dc2626;
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.5);
+}
+
+.leaveModalCancelBtn:disabled,
+.leaveModalConfirmBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
