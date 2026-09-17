@@ -332,7 +332,19 @@ export function useYouTube(
 
       console.log('[YT] API ready, playerRef.current =', !!playerRef.current);
 
-      if (playerRef.current) return resolve(playerRef.current);
+      if (playerRef.current) {
+        try {
+          const iframe = (playerRef.current as any).getIframe?.();
+          if (iframe && iframe.isConnected && doc.contains(iframe)) {
+            return resolve(playerRef.current);
+          } else {
+            console.warn('[YT] playerRef iframe is disconnected from DOM, recreating player...');
+            playerRef.current = null;
+          }
+        } catch {
+          playerRef.current = null;
+        }
+      }
 
       const container = doc.getElementById('yt-host');
       if (!container) {

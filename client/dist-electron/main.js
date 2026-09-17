@@ -259,17 +259,48 @@ function createWindow() {
             electron_1.shell.openExternal(url);
         return { action: 'deny' };
     });
+    mainWindow.on('enter-full-screen', () => {
+        if (isStreamingFullscreen && activeStreamingService) {
+            const inst = streamingInstances.get(activeStreamingService);
+            if (inst && !inst.view.webContents.isDestroyed()) {
+                const b = mainWindow.getContentBounds();
+                inst.view.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+                if (typeof inst.view.setBorderRadius === 'function') {
+                    inst.view.setBorderRadius(0);
+                }
+            }
+        }
+    });
+    mainWindow.on('leave-full-screen', () => {
+        if (isStreamingFullscreen) {
+            leaveStreamingFullscreen();
+        }
+    });
+    mainWindow.on('resize', () => {
+        if (isStreamingFullscreen && activeStreamingService) {
+            const inst = streamingInstances.get(activeStreamingService);
+            if (inst && !inst.view.webContents.isDestroyed()) {
+                const b = mainWindow.getContentBounds();
+                inst.view.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+            }
+        }
+    });
+    mainWindow.webContents.on('before-input-event', (_e, input) => {
+        if (input.key === 'Escape' && isStreamingFullscreen) {
+            leaveStreamingFullscreen();
+        }
+    });
     mainWindow.on('closed', () => {
-        if (streamingView) {
+        for (const inst of streamingInstances.values()) {
             try {
                 if (mainWindow && mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
-                    mainWindow.contentView.removeChildView(streamingView);
+                    mainWindow.contentView.removeChildView(inst.view);
                 }
-                streamingView.webContents.destroy?.();
+                inst.view.webContents.destroy?.();
             }
             catch (e) { }
-            streamingView = null;
         }
+        streamingInstances.clear();
         mainWindow = null;
     });
 }
@@ -857,26 +888,237 @@ electron_1.ipcMain.handle('yt-get-qualities', async () => {
     }
     return [];
 });
-// ==========================================
-// Widevine Streaming View Management (WebContentsView / BrowserView)
-// ==========================================
-let streamingView = null;
-let streamingBounds = null;
+const streamingInstances = new Map();
+let activeStreamingService = null;
+let activeStreamingBounds = null;
+let isStreamingFullscreen = false;
+function getActiveStreamingInstance() {
+    if (activeStreamingService && streamingInstances.has(activeStreamingService)) {
+        return streamingInstances.get(activeStreamingService);
+    }
+    const first = streamingInstances.values().next().value;
+    return first;
+}
+function hideStreamingView(service) {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    const inst = streamingInstances.get(service);
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed())
+        return;
+    try {
+        inst.view.webContents.setAudioMuted(true);
+    }
+    catch (e) { }
+    if (typeof inst.view.setVisible === 'function') {
+        inst.view.setVisible(false);
+    }
+    try {
+        inst.view.setBounds({ x: -20000, y: -20000, width: 1, height: 1 });
+    }
+    catch (e) { }
+    if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+        try {
+            mainWindow.contentView.removeChildView(inst.view);
+        }
+        catch (e) { }
+    }
+    else if (typeof mainWindow.removeBrowserView === 'function') {
+        try {
+            mainWindow.removeBrowserView(inst.view);
+        }
+        catch (e) { }
+    }
+}
+function showStreamingView(service) {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    const inst = streamingInstances.get(service);
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed())
+        return;
+    activeStreamingService = service;
+    for (const [s] of streamingInstances.entries()) {
+        if (s !== service) {
+            hideStreamingView(s);
+        }
+    }
+    if (mainWindow.contentView && typeof mainWindow.contentView.addChildView === 'function') {
+        try {
+            mainWindow.contentView.addChildView(inst.view);
+        }
+        catch (e) { }
+    }
+    else if (typeof mainWindow.addBrowserView === 'function') {
+        try {
+            mainWindow.addBrowserView(inst.view);
+        }
+        catch (e) { }
+    }
+    if (isStreamingFullscreen) {
+        const b = mainWindow.getContentBounds();
+        inst.view.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+        if (typeof inst.view.setBorderRadius === 'function') {
+            inst.view.setBorderRadius(0);
+        }
+    }
+    else if (activeStreamingBounds) {
+        inst.view.setBounds(activeStreamingBounds);
+        if (typeof inst.view.setBorderRadius === 'function') {
+            inst.view.setBorderRadius(16);
+        }
+    }
+    else {
+        const mb = mainWindow.getContentBounds();
+        const fallbackBounds = {
+            x: 280,
+            y: 80,
+            width: Math.max(300, mb.width - 600),
+            height: Math.max(200, mb.height - 180)
+        };
+        inst.view.setBounds(fallbackBounds);
+        if (typeof inst.view.setBorderRadius === 'function') {
+            inst.view.setBorderRadius(16);
+        }
+    }
+    if (typeof inst.view.setVisible === 'function') {
+        inst.view.setVisible(true);
+    }
+    try {
+        inst.view.webContents.setAudioMuted(false);
+    }
+    catch (e) { }
+    try {
+        inst.view.webContents.focus();
+    }
+    catch (e) { }
+}
+function enterStreamingFullscreen(inst) {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    const target = inst || getActiveStreamingInstance();
+    if (!target || !target.view || target.view.webContents.isDestroyed())
+        return;
+    isStreamingFullscreen = true;
+    activeStreamingService = target.service;
+    // Attach to contentView if not already attached
+    if (mainWindow.contentView && typeof mainWindow.contentView.addChildView === 'function') {
+        try {
+            mainWindow.contentView.addChildView(target.view);
+        }
+        catch (e) { }
+    }
+    else if (typeof mainWindow.addBrowserView === 'function') {
+        try {
+            mainWindow.addBrowserView(target.view);
+        }
+        catch (e) { }
+    }
+    if (typeof target.view.setBorderRadius === 'function') {
+        target.view.setBorderRadius(0);
+    }
+    if (typeof target.view.setVisible === 'function') {
+        target.view.setVisible(true);
+    }
+    if (!mainWindow.isFullScreen()) {
+        mainWindow.setFullScreen(true);
+    }
+    const updateBounds = () => {
+        if (!mainWindow || mainWindow.isDestroyed() || !isStreamingFullscreen)
+            return;
+        const b = mainWindow.getContentBounds();
+        target.view.setBounds({ x: 0, y: 0, width: b.width, height: b.height });
+    };
+    updateBounds();
+    setTimeout(updateBounds, 100);
+    setTimeout(updateBounds, 300);
+    // Trigger platform DOM fullscreen button only if not already in HTML5 fullscreen
+    target.view.webContents.executeJavaScript(`
+        (function() {
+            if (!document.fullscreenElement) {
+                const fsBtn = document.querySelector('[data-uia="control-fullscreen-enter"]') ||
+                              document.querySelector('.button-nfplayerFullscreen') ||
+                              document.querySelector('.atvwebplayersdk-fullscreen-button') ||
+                              document.querySelector('[data-automation-id="fullscreen-button"]');
+                if (fsBtn) {
+                    fsBtn.click();
+                }
+            }
+        })()
+    `).catch(() => { });
+}
+function leaveStreamingFullscreen(inst) {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    isStreamingFullscreen = false;
+    if (mainWindow.isFullScreen()) {
+        mainWindow.setFullScreen(false);
+    }
+    const target = inst || getActiveStreamingInstance();
+    if (target && !target.view.webContents.isDestroyed()) {
+        if (typeof target.view.setBorderRadius === 'function') {
+            target.view.setBorderRadius(16);
+        }
+        if (activeStreamingBounds) {
+            target.view.setBounds(activeStreamingBounds);
+        }
+        target.view.webContents.executeJavaScript(`
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            }
+        `).catch(() => { });
+    }
+}
+function closeStreamingInstance(targetService) {
+    const s = targetService || activeStreamingService;
+    if (!s)
+        return;
+    const inst = streamingInstances.get(s);
+    if (inst && mainWindow && !mainWindow.isDestroyed()) {
+        hideStreamingView(s);
+        try {
+            inst.view.webContents.destroy?.();
+        }
+        catch (e) { }
+        streamingInstances.delete(s);
+        if (activeStreamingService === s) {
+            const remaining = Array.from(streamingInstances.keys());
+            activeStreamingService = remaining.length > 0 ? remaining[0] : null;
+            if (activeStreamingService) {
+                showStreamingView(activeStreamingService);
+            }
+        }
+        mainWindow.webContents.send('streaming-event', {
+            type: 'closed',
+            service: s,
+            activeService: activeStreamingService,
+            openServices: Array.from(streamingInstances.keys()),
+        });
+    }
+}
 electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     if (!mainWindow || mainWindow.isDestroyed())
         return;
-    if (streamingView) {
-        try {
-            if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
-                mainWindow.contentView.removeChildView(streamingView);
-            }
-            else if (typeof mainWindow.removeBrowserView === 'function') {
-                mainWindow.removeBrowserView(streamingView);
-            }
-            streamingView.webContents.destroy?.();
+    const safeBounds = {
+        x: Math.max(0, Math.round(options.bounds.x)),
+        y: Math.max(0, Math.round(options.bounds.y)),
+        width: Math.max(10, Math.round(options.bounds.width)),
+        height: Math.max(10, Math.round(options.bounds.height)),
+    };
+    activeStreamingBounds = safeBounds;
+    let targetUrl = options.url?.trim();
+    if (!targetUrl) {
+        targetUrl = options.service === 'netflix'
+            ? 'https://www.netflix.com/browse'
+            : 'https://www.primevideo.com';
+    }
+    // Se já existe uma sessão em memória para este serviço, apenas reexiba e foque
+    const existing = streamingInstances.get(options.service);
+    if (existing && !existing.view.webContents.isDestroyed()) {
+        showStreamingView(options.service);
+        if (options.url?.trim() && existing.currentUrl !== targetUrl) {
+            existing.currentUrl = targetUrl;
+            existing.view.webContents.loadURL(targetUrl).catch(() => { });
         }
-        catch (e) { }
-        streamingView = null;
+        return;
     }
     const partition = 'persist:streaming-session';
     const streamingSession = electron_1.session.fromPartition(partition);
@@ -920,35 +1162,42 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         autoplayPolicy: 'no-user-gesture-required'
     };
     const radius = options.borderRadius ?? 16;
+    let view;
     if (typeof electron_1.WebContentsView === 'function' && mainWindow.contentView && typeof mainWindow.contentView.addChildView === 'function') {
-        const view = new electron_1.WebContentsView({ webPreferences: webPrefs });
+        view = new electron_1.WebContentsView({ webPreferences: webPrefs });
         view.setBackgroundColor('#000000');
         if (typeof view.setBorderRadius === 'function') {
             view.setBorderRadius(radius);
         }
-        mainWindow.contentView.addChildView(view);
-        streamingView = view;
     }
     else {
-        const view = new electron_1.BrowserView({ webPreferences: webPrefs });
+        view = new electron_1.BrowserView({ webPreferences: webPrefs });
         view.setBackgroundColor('#000000');
-        mainWindow.addBrowserView(view);
-        streamingView = view;
     }
     // Forward streaming view console logs to concord-debug.log for diagnostics
-    streamingView.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
+    view.webContents.on('console-message', (_event, _level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Streaming Console] ${message} (${sourceId}:${line})\n`);
     });
-    const safeBounds = {
-        x: Math.max(0, Math.round(options.bounds.x)),
-        y: Math.max(0, Math.round(options.bounds.y)),
-        width: Math.max(10, Math.round(options.bounds.width)),
-        height: Math.max(10, Math.round(options.bounds.height)),
+    const instObj = {
+        service: options.service,
+        view,
+        currentUrl: targetUrl
     };
-    streamingBounds = safeBounds;
-    streamingView.setBounds(safeBounds);
+    // TELA CHEIA REAL: quando o player entra em tela cheia HTML5, expandir para 100% da janela/monitor
+    view.webContents.on('enter-html-full-screen', () => {
+        enterStreamingFullscreen(instObj);
+    });
+    view.webContents.on('leave-html-full-screen', () => {
+        leaveStreamingFullscreen(instObj);
+    });
+    view.webContents.on('before-input-event', (_event, input) => {
+        if (input.type === 'keyDown' && input.key === 'Escape' && isStreamingFullscreen) {
+            leaveStreamingFullscreen(instObj);
+        }
+    });
+    view.setBounds(safeBounds);
     const applyStyling = () => {
-        if (!streamingView || streamingView.webContents.isDestroyed())
+        if (!view || view.webContents.isDestroyed())
             return;
         // Inject styles: thin 6px dark purple custom scrollbar and rounded container clipping
         const customScrollbarCss = `
@@ -978,8 +1227,8 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
                 border-radius: ${radius}px !important;
             }
         `;
-        streamingView.webContents.insertCSS(customScrollbarCss, { cssOrigin: 'user' }).catch(() => { });
-        streamingView.webContents.executeJavaScript(`
+        view.webContents.insertCSS(customScrollbarCss, { cssOrigin: 'user' }).catch(() => { });
+        view.webContents.executeJavaScript(`
             (function() {
                 try {
                     // Neutralize WebAuthn / Passkeys in DOM to prevent Windows Security prompts
@@ -1050,189 +1299,203 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             })()
         `).catch(() => { });
     };
-    streamingView.webContents.on('dom-ready', applyStyling);
-    streamingView.webContents.on('did-finish-load', () => {
+    view.webContents.on('dom-ready', applyStyling);
+    view.webContents.on('did-finish-load', () => {
         applyStyling();
-        if (targetUrl && targetUrl.includes('bitmovin.com/demos/drm')) {
-            streamingView?.webContents.executeJavaScript(`
-                setTimeout(() => {
-                    const p = document.getElementById('player') || document.querySelector('.bmpui-ui-player') || document.querySelector('video') || document.querySelector('.bitmovinplayer-container');
-                    if (p) {
-                        p.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    } else {
-                        window.scrollTo({ top: 320, behavior: 'smooth' });
-                    }
-                }, 400);
-            `).catch(() => { });
-        }
     });
-    streamingView.webContents.on('did-navigate', (_e, navUrl) => {
+    view.webContents.on('did-navigate', (_e, navUrl) => {
         applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('streaming-event', { type: 'navigate', url: navUrl });
+            mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
         }
     });
-    let targetUrl = options.url?.trim();
-    if (!targetUrl) {
-        targetUrl = options.service === 'netflix'
-            ? 'https://www.netflix.com/browse'
-            : 'https://www.primevideo.com';
-    }
+    activeStreamingService = options.service;
+    streamingInstances.set(options.service, instObj);
+    showStreamingView(options.service);
     fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA})\n`);
-    await streamingView.webContents.loadURL(targetUrl);
+    await view.webContents.loadURL(targetUrl);
+    mainWindow.webContents.send('streaming-event', {
+        type: 'opened',
+        service: options.service,
+        url: targetUrl,
+        openServices: Array.from(streamingInstances.keys()),
+    });
+});
+electron_1.ipcMain.on('set-active-media-tab', (_event, tab) => {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    if (tab === 'youtube') {
+        hideStreamingView('netflix');
+        hideStreamingView('prime');
+        activeStreamingService = null;
+    }
+    else if (tab === 'netflix' || tab === 'prime') {
+        showStreamingView(tab);
+    }
 });
 electron_1.ipcMain.on('resize-streaming-view', (_event, bounds) => {
-    if (!streamingView || !mainWindow || mainWindow.isDestroyed())
+    if (!mainWindow || mainWindow.isDestroyed())
         return;
-    if (bounds.width <= 0 || bounds.height <= 0) {
-        if (typeof streamingView.setVisible === 'function') {
-            streamingView.setVisible(false);
-        }
+    if (bounds.width <= 0 || bounds.height <= 0)
         return;
-    }
     const safeBounds = {
         x: Math.max(0, Math.round(bounds.x)),
         y: Math.max(0, Math.round(bounds.y)),
         width: Math.max(1, Math.round(bounds.width)),
         height: Math.max(1, Math.round(bounds.height)),
     };
-    streamingBounds = safeBounds;
-    streamingView.setBounds(safeBounds);
-    if (typeof streamingView.setVisible === 'function') {
-        streamingView.setVisible(true);
+    activeStreamingBounds = safeBounds;
+    if (!isStreamingFullscreen && activeStreamingService) {
+        const inst = streamingInstances.get(activeStreamingService);
+        if (inst && typeof inst.view.setVisible === 'function') {
+            inst.view.setBounds(safeBounds);
+            inst.view.setVisible(true);
+        }
     }
 });
-electron_1.ipcMain.on('close-streaming-view', () => {
-    if (streamingView && mainWindow && !mainWindow.isDestroyed()) {
-        try {
-            if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
-                mainWindow.contentView.removeChildView(streamingView);
-            }
-            else if (typeof mainWindow.removeBrowserView === 'function') {
-                mainWindow.removeBrowserView(streamingView);
-            }
-            streamingView.webContents.destroy?.();
-        }
-        catch (e) { }
-        streamingView = null;
-        streamingBounds = null;
-        mainWindow.webContents.send('streaming-event', { type: 'closed' });
-    }
+electron_1.ipcMain.on('close-streaming-view', (_event, service) => {
+    closeStreamingInstance(service);
 });
 electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
-    if (!streamingView || streamingView.webContents.isDestroyed())
+    const targetService = payload?.service || activeStreamingService;
+    const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed())
         return;
+    const wc = inst.view.webContents;
     if (command === 'play') {
-        streamingView.webContents.executeJavaScript(`
+        wc.focus();
+        // 1. Hardware Space key event
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+        // 2. DOM selectors for Prime Video & Netflix
+        wc.executeJavaScript(`
             (function() {
                 const v = document.querySelector('video');
-                if (v && v.paused) v.play();
+                if (v && v.paused) {
+                    v.play().catch(() => {});
+                }
                 const playBtn = document.querySelector('[data-uia="control-play-pause-play"]') ||
                                 document.querySelector('.button-nfplayerPlay') ||
-                                document.querySelector('.play-icon');
+                                document.querySelector('.atvwebplayersdk-playpause-button') ||
+                                document.querySelector('[data-automation-id="playback-play-pause"]') ||
+                                document.querySelector('.pausedOverlayButton') ||
+                                document.querySelector('button[aria-label*="Reproduzir"]') ||
+                                document.querySelector('button[aria-label*="Play"]');
                 if (playBtn) playBtn.click();
             })()
         `).catch(() => { });
     }
     else if (command === 'pause') {
-        streamingView.webContents.executeJavaScript(`
+        wc.focus();
+        // 1. Hardware Space key event
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
+        // 2. DOM selectors for Prime Video & Netflix
+        wc.executeJavaScript(`
             (function() {
                 const v = document.querySelector('video');
-                if (v && !v.paused) v.pause();
+                if (v && !v.paused) {
+                    v.pause();
+                }
                 const pauseBtn = document.querySelector('[data-uia="control-play-pause-pause"]') ||
                                  document.querySelector('.button-nfplayerPause') ||
-                                 document.querySelector('.pause-icon');
+                                 document.querySelector('.atvwebplayersdk-playpause-button') ||
+                                 document.querySelector('[data-automation-id="playback-play-pause"]') ||
+                                 document.querySelector('button[aria-label*="Pausar"]') ||
+                                 document.querySelector('button[aria-label*="Pause"]');
                 if (pauseBtn) pauseBtn.click();
             })()
         `).catch(() => { });
     }
     else if (command === 'skip') {
-        streamingView.webContents.executeJavaScript(`
+        wc.focus();
+        // 1. Hardware Right arrow key event (10 seconds fast forward on both Netflix and Prime Video)
+        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Right' });
+        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Right' });
+        // 2. DOM selectors for 10-second fast forward button + currentTime advance
+        wc.executeJavaScript(`
             (function() {
-                // 1. Skip intro or recap
-                const skipIntro = document.querySelector('[data-uia="player-skip-intro"]') ||
-                                  document.querySelector('[data-uia="player-skip-recap"]') ||
-                                  document.querySelector('.skip-credits') ||
-                                  document.querySelector('.skip-credits a') ||
-                                  document.querySelector('.atvwebplayersdk-skipelement-button') ||
-                                  document.querySelector('[aria-label*="Pular"]') ||
-                                  document.querySelector('[aria-label*="Skip"]');
-                if (skipIntro) {
-                    skipIntro.click();
+                const ff = document.querySelector('[data-uia="control-fastforward-10"]') ||
+                           document.querySelector('.button-nfplayerFastForward10') ||
+                           document.querySelector('.atvwebplayersdk-fastforward-button') ||
+                           document.querySelector('[data-automation-id="fast-forward-button"]') ||
+                           document.querySelector('button[aria-label*="Avançar 10"]') ||
+                           document.querySelector('button[aria-label*="Fast forward"]') ||
+                           document.querySelector('button[aria-label*="10s"]') ||
+                           document.querySelector('button[aria-label*="10 s"]');
+                if (ff) {
+                    ff.click();
                     return;
                 }
-                // 2. Next episode button
-                const nextEp = document.querySelector('[data-uia="control-next"]') ||
-                               document.querySelector('.button-nfplayerNextEpisode') ||
-                               document.querySelector('.next-episode-button') ||
-                               document.querySelector('[aria-label*="Próximo"]') ||
-                               document.querySelector('[aria-label*="Next episode"]');
-                if (nextEp) {
-                    nextEp.click();
-                    return;
-                }
-                // 3. Fast forward 10s
-                const ff10 = document.querySelector('[data-uia="control-fastforward-10"]') ||
-                             document.querySelector('.button-nfplayerFastForward10');
-                if (ff10) {
-                    ff10.click();
-                    return;
-                }
-                // 4. Seek video forward 10s
                 const v = document.querySelector('video');
                 if (v) {
-                    v.currentTime = Math.min(v.duration || Infinity, v.currentTime + 10);
+                    v.currentTime = Math.min((v.duration || Infinity), v.currentTime + 10);
                 }
             })()
         `).catch(() => { });
     }
     else if (command === 'seek' && typeof payload?.time === 'number') {
-        streamingView.webContents.executeJavaScript(`
+        wc.executeJavaScript(`
             (function() {
                 const v = document.querySelector('video');
                 if (v) v.currentTime = ${payload.time};
             })()
         `).catch(() => { });
     }
+    else if (command === 'fullscreen') {
+        if (isStreamingFullscreen) {
+            leaveStreamingFullscreen(inst);
+        }
+        else {
+            enterStreamingFullscreen(inst);
+        }
+    }
     else if (command === 'exit' || command === 'back') {
-        streamingView.webContents.executeJavaScript(`
+        wc.executeJavaScript(`
             (function() {
-                // 1. Netflix back to browse button
-                const netflixBack = document.querySelector('[data-uia="control-back"]') ||
-                                    document.querySelector('.button-nfplayerBack') ||
-                                    document.querySelector('button[aria-label*="Voltar"]') ||
-                                    document.querySelector('button[aria-label*="Back"]');
-                if (netflixBack) {
-                    netflixBack.click();
-                    return;
-                }
-                // 2. Prime Video player back button
-                const primeBack = document.querySelector('.atvwebplayersdk-back-button') ||
-                                  document.querySelector('[data-automation-id="back-button"]') ||
-                                  document.querySelector('.backButton') ||
-                                  document.querySelector('button[aria-label*="Back"]') ||
-                                  document.querySelector('button[aria-label*="Voltar"]');
-                if (primeBack) {
-                    primeBack.click();
-                    return;
-                }
-                // 3. Direct URL fallback to catalog if watching a title
                 const href = window.location.href;
-                if (href.includes('netflix.com/watch')) {
-                    window.location.href = 'https://www.netflix.com/browse';
-                    return;
-                }
-                if (href.includes('primevideo.com/detail') || href.includes('primevideo.com/gp/video/detail') || href.includes('primevideo.com/player')) {
-                    window.location.href = 'https://www.primevideo.com';
-                    return;
-                }
-                if (window.history.length > 1) {
-                    window.history.back();
-                } else {
-                    window.location.href = href.includes('netflix.com') ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com';
-                }
+                const isNetflixWatch = href.includes('netflix.com/watch');
+                const isPrimeWatch = href.includes('/player') || href.includes('/gp/video/detail') || href.includes('/detail');
+                const hasBackBtn = !!(
+                    document.querySelector('[data-uia="control-back"]') ||
+                    document.querySelector('.button-nfplayerBack') ||
+                    document.querySelector('.atvwebplayersdk-back-button') ||
+                    document.querySelector('[data-automation-id="back-button"]') ||
+                    document.querySelector('.backButton')
+                );
+                return {
+                    isWatching: isNetflixWatch || isPrimeWatch || hasBackBtn,
+                    href: href
+                };
             })()
-        `).catch(() => { });
+        `).then((res) => {
+            if (!res || !res.isWatching) {
+                // Se já estiver fora do filme/série (no catálogo ou home), feche a transmissão
+                closeStreamingInstance(inst.service);
+            }
+            else {
+                // Se estiver assistindo ao filme/série, saia do filme e volte ao catálogo
+                wc.executeJavaScript(`
+                    (function() {
+                        const netflixBack = document.querySelector('[data-uia="control-back"]') ||
+                                            document.querySelector('.button-nfplayerBack');
+                        if (netflixBack) { netflixBack.click(); return; }
+                        const primeBack = document.querySelector('.atvwebplayersdk-back-button') ||
+                                          document.querySelector('[data-automation-id="back-button"]') ||
+                                          document.querySelector('.backButton');
+                        if (primeBack) { primeBack.click(); return; }
+                        const href = window.location.href;
+                        if (href.includes('netflix.com')) {
+                            window.location.href = 'https://www.netflix.com/browse';
+                        } else {
+                            window.location.href = 'https://www.primevideo.com';
+                        }
+                    })()
+                `).catch(() => { });
+            }
+        }).catch(() => {
+            closeStreamingInstance(inst.service);
+        });
         const streamingSession = electron_1.session.fromPartition('persist:streaming-session');
         streamingSession.cookies.flushStore().catch(() => { });
     }

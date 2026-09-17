@@ -51,7 +51,8 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     getYouTubeQualities: () => electron_1.ipcRenderer.invoke('yt-get-qualities'),
     openStreamingView: (options) => electron_1.ipcRenderer.invoke('open-streaming-view', options),
     resizeStreamingView: (bounds) => electron_1.ipcRenderer.send('resize-streaming-view', bounds),
-    closeStreamingView: () => electron_1.ipcRenderer.send('close-streaming-view'),
+    closeStreamingView: (service) => electron_1.ipcRenderer.send('close-streaming-view', service),
+    setActiveMediaTab: (tab) => electron_1.ipcRenderer.send('set-active-media-tab', tab),
     sendStreamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
     streamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
     onStreamingEvent: (callback) => {

@@ -75,7 +75,11 @@ interface AppState {
   ytAvailableQualities: string[];
   setYtAvailableQualities: (qualities: string[]) => void;
 
-  // Streaming (Netflix / Prime Video)
+  // Streaming & Multi-Platform Media
+  activeMediaTab: 'youtube' | 'netflix' | 'prime';
+  setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime') => void;
+  streamingSessions: { netflix: boolean; prime: boolean };
+  setStreamingSession: (service: 'netflix' | 'prime', active: boolean) => void;
   activeStreaming: { service: 'netflix' | 'prime'; url?: string } | null;
   setActiveStreaming: (s: { service: 'netflix' | 'prime'; url?: string } | null) => void;
 
@@ -187,9 +191,26 @@ export const useAppStore = create<AppState>((set) => ({
   ytAvailableQualities: ['auto'],
   setYtAvailableQualities: (ytAvailableQualities) => set({ ytAvailableQualities }),
 
-  // Streaming (Netflix / Prime Video)
+  // Streaming & Multi-Platform Media
+  activeMediaTab: 'youtube',
+  setActiveMediaTab: (activeMediaTab) => set({ activeMediaTab }),
+  streamingSessions: { netflix: false, prime: false },
+  setStreamingSession: (service, active) =>
+    set((state) => ({
+      streamingSessions: { ...state.streamingSessions, [service]: active },
+    })),
   activeStreaming: null,
-  setActiveStreaming: (activeStreaming) => set({ activeStreaming }),
+  setActiveStreaming: (activeStreaming) => {
+    if (activeStreaming) {
+      set((state) => ({
+        activeStreaming,
+        activeMediaTab: activeStreaming.service,
+        streamingSessions: { ...state.streamingSessions, [activeStreaming.service]: true },
+      }));
+    } else {
+      set({ activeStreaming });
+    }
+  },
 
   // Screen share
   screenShareUserId: null,
@@ -220,6 +241,8 @@ export const useAppStore = create<AppState>((set) => ({
       currentTrackTitle: null,
       isPlaying: false,
       visualizerActive: false,
+      activeMediaTab: 'youtube',
+      streamingSessions: { netflix: false, prime: false },
       activeStreaming: null,
       screenShareUserId: null,
       screenShareUserName: null,

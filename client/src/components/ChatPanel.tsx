@@ -7,6 +7,7 @@ import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
+import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -95,12 +96,16 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     activeChannelId,
     currentVideoId,
     currentTrackTitle,
-    isBuffering,
     isPiPActive,
     isPlaying,
     musicStartTime,
     setVisualizerActive,
     activeStreaming,
+    setActiveStreaming,
+    activeMediaTab,
+    setActiveMediaTab,
+    streamingSessions,
+    setStreamingSession,
     ytAvailableQualities
   } = useAppStore();
 
@@ -117,29 +122,67 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   const [imageZoom, setImageZoom] = useState<number>(1);
   const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
+  // ── Aviso no chat para comandos de áudio (/play, /pause, /skip, /clear) ──
+  const broadcastAudioCommandNotice = useCallback((action: 'play' | 'pause' | 'skip' | 'clear') => {
+    const currentChannel = activeChannelId || 'ch-geral';
+    const noticeText = `O usuário ${myName || 'Anônimo'} executou o comando /${action}`;
+
+    if (room?.id) {
+      saveMessageToSupabase(room.id, 'Sistema', noticeText, currentChannel, 'text');
+    }
+
+    onSendMessage?.(noticeText, 'text', undefined, undefined, currentChannel, null);
+  }, [activeChannelId, myName, onSendMessage, room?.id]);
+
+  // ── Ouvir eventos de streaming do processo principal (Electron) ──
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (electron && electron.onStreamingEvent) {
+      const unsub = electron.onStreamingEvent((event: any) => {
+        if (event.type === 'closed') {
+          if (event.service) {
+            setStreamingSession(event.service, false);
+          }
+          if (event.activeService) {
+            setActiveStreaming({ service: event.activeService });
+            setActiveMediaTab(event.activeService);
+          } else {
+            setActiveStreaming(null);
+            setActiveMediaTab('youtube');
+          }
+        } else if (event.type === 'opened') {
+          if (event.service) {
+            setStreamingSession(event.service, true);
+          }
+        }
+      });
+      return unsub;
+    }
+  }, [setActiveStreaming, setActiveMediaTab, setStreamingSession]);
+
   // ── Video Player Flip ──
   const [showVideoPlayer, setShowVideoPlayer] = useState(false);
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
   const [renderMedia, setRenderMedia] = useState(false);
   const streamingHostRef = useRef<HTMLDivElement>(null);
 
-  // Auto flip when streaming is opened; reset renderMedia so skeleton shows during spin
+  // Auto flip when streaming is opened or active media tab is a streaming service
   useEffect(() => {
-    if (activeStreaming) {
+    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
+    if (isStreamingTab) {
       if (showVideoPlayer) {
         setRenderMedia(true);
       } else {
         setRenderMedia(false);
         setShowVideoPlayer(true);
       }
-    } else {
-      setRenderMedia(false);
     }
-  }, [activeStreaming]);
+  }, [activeMediaTab, showVideoPlayer]);
 
   // Fallback timer: if onTransitionEnd fails to fire within 850ms, ensure media mounts
   useEffect(() => {
-    if (showVideoPlayer && activeStreaming) {
+    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
+    if (showVideoPlayer && isStreamingTab) {
       const timer = setTimeout(() => {
         setRenderMedia(true);
       }, 850);
@@ -147,15 +190,19 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     } else if (!showVideoPlayer) {
       setRenderMedia(false);
     }
-  }, [showVideoPlayer, activeStreaming]);
+  }, [showVideoPlayer, activeMediaTab]);
 
-  // Synchronize Electron WebContentsView / BrowserView.
+  // Synchronize Electron WebContentsView / BrowserView with active tab.
   // Mounts/opens ONLY once renderMedia is true (i.e. after the flip animation finishes).
   useEffect(() => {
     const electron = (window as any).electron;
-    if (!activeStreaming || !renderMedia) {
-      if (electron?.closeStreamingView) {
-        electron.closeStreamingView();
+    if (!electron) return;
+
+    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
+
+    if (!showVideoPlayer || !isStreamingTab || !renderMedia) {
+      if (electron.setActiveMediaTab) {
+        electron.setActiveMediaTab(showVideoPlayer ? activeMediaTab : 'youtube');
       }
       return;
     }
@@ -176,11 +223,14 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
       if (electron.openStreamingView) {
         await electron.openStreamingView({
-          service: activeStreaming.service,
-          url: activeStreaming.url,
+          service: activeMediaTab,
+          url: activeStreaming?.service === activeMediaTab ? activeStreaming.url : undefined,
           bounds,
           borderRadius: 16,
         });
+        if (!isCancelled) {
+          setStreamingSession(activeMediaTab, true);
+        }
       }
     };
 
@@ -208,11 +258,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       isCancelled = true;
       window.removeEventListener('resize', updateBounds);
       ro.disconnect();
-      if (electron?.closeStreamingView) {
-        electron.closeStreamingView();
-      }
     };
-  }, [activeStreaming, renderMedia]);
+  }, [activeMediaTab, renderMedia, showVideoPlayer]);
 
   // ── Video Settings Menu ──
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -294,7 +341,6 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
   // Custom Video Player Single-Player Teleport & Controls
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const seekLockRef = useRef<number>(0);
-  const [isSeekingLocked, setIsSeekingLocked] = useState(false);
 
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [duration, setDuration] = useState<number>(0);
@@ -528,16 +574,20 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
     fetchChannelMessages(room.id, chId).then((history) => {
       if (history && history.length > 0) {
-        const loaded: ChatMessage[] = history.map((m) => ({
-          id: m.id,
-          userName: m.sender_name,
-          message: m.content,
-          timestamp: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-          type: m.msg_type,
-          url: m.file_url || undefined,
-          filename: m.file_name || undefined,
-          channelId: m.channel_id || 'ch-geral',
-        }));
+        const loaded: ChatMessage[] = history.map((m) => {
+          const isSystem = m.sender_name === 'Sistema' || (m.msg_type as string) === 'system' || (typeof m.content === 'string' && m.content.startsWith('O usuário ') && m.content.includes(' executou o comando /'));
+          return {
+            id: m.id,
+            userName: isSystem ? 'Sistema' : m.sender_name,
+            message: m.content,
+            timestamp: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            type: m.msg_type,
+            url: m.file_url || undefined,
+            filename: m.file_name || undefined,
+            channelId: m.channel_id || 'ch-geral',
+            isSystem,
+          };
+        });
         setMessages(loaded);
       }
     });
@@ -633,6 +683,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       const cmd = trimmed.toLowerCase();
       if (cmd === '/pause' || cmd === '/play' || cmd === '/skip' || cmd === '/clear') {
         const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
+        broadcastAudioCommandNotice(action);
         if (onMusicAction) {
           onMusicAction(action);
         }
@@ -848,26 +899,26 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           )}
 
           {/* Botão só aparece quando há vídeo tocando ou streaming ativo */}
-          {(currentVideoId || showVideoPlayer || activeStreaming) && (
+          {(currentVideoId || showVideoPlayer || activeStreaming || streamingSessions.netflix || streamingSessions.prime) && (
             <button
-              className={`${styles.videoToggleBtn} ${showVideoPlayer ? styles.videoToggleBtnActive : ''} ${(isPlaying || activeStreaming) ? styles.videoToggleBtnPlaying : ''}`}
+              className={`${styles.videoToggleBtn} ${showVideoPlayer ? styles.videoToggleBtnActive : ''} ${(isPlaying || activeStreaming || streamingSessions.netflix || streamingSessions.prime) ? styles.videoToggleBtnPlaying : ''}`}
               onClick={() => {
                 // When closing the player, immediately hide media; when opening, skeleton
                 // shows during the flip and renderMedia is set by onTransitionEnd.
                 setRenderMedia(false);
                 setShowVideoPlayer(v => !v);
               }}
-              title={showVideoPlayer ? 'Voltar ao Chat' : (activeStreaming ? `Assistir ${activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}` : 'Assistir Vídeo')}
+              title={showVideoPlayer ? 'Voltar ao Chat' : 'Assistir Mídia / Player'}
             >
               {showVideoPlayer ? <IconArrowLeft /> : <IconVideo />}
-              <span>{showVideoPlayer ? 'Chat' : (activeStreaming ? (activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime') : 'Assistir')}</span>
+              <span>{showVideoPlayer ? 'Chat' : (activeMediaTab === 'netflix' ? 'Netflix' : activeMediaTab === 'prime' ? 'Prime' : 'Assistir')}</span>
             </button>
           )}
         </div>
       </div>
 
       {/* ── FLIP CARD CONTAINER ── */}
-      <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''}`}>
+      <div className={`${styles.flipCard} ${showVideoPlayer ? styles.flipped : ''} ${(showVideoPlayer && renderMedia) ? styles.mediaSettled : ''}`}>
         <div
           className={styles.flipCardInner}
           onTransitionEnd={(e) => {
@@ -909,15 +960,17 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 </div>
               ) : (
                 displayedMessages.map((msg) => {
-                  const isMe = msg.userName === myName;
+                  const isSystemMsg = Boolean(msg.isSystem || msg.userName === 'Sistema' || (typeof msg.message === 'string' && msg.message.startsWith('O usuário ') && msg.message.includes(' executou o comando /')));
+                  const isMe = !isSystemMsg && msg.userName === myName;
                   return (
                     <div
                       key={msg.id}
-                      className={`${styles.messageWrapper} ${msg.isSystem ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
+                      className={`${styles.messageWrapper} ${isSystemMsg ? styles.systemWrapper : isMe ? styles.myWrapper : styles.otherWrapper
                         }`}
                     >
-                      {msg.isSystem ? (
+                      {isSystemMsg ? (
                         <div className={styles.systemMessage}>
+                          <span className={styles.systemMessageIcon}>⚙️</span>
                           <span>{msg.message}</span>
                         </div>
                       ) : (
@@ -1239,161 +1292,295 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           <div className={styles.flipCardBack}>
             <div className={styles.videoPlayerContainer}>
 
-              {/* Streaming View for Netflix & Prime Video */}
-              {activeStreaming ? (
-                <>
-                  <div
-                    className={styles.videoSlotWrapper}
-                    style={{
-                      position: 'relative',
-                      overflow: 'hidden',
-                      flex: 1,
-                      minHeight: 0,
-                      borderRadius: '16px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: '#090912',
-                      border: '1px solid rgba(124, 58, 237, 0.4)',
-                      boxShadow: '0 0 24px rgba(124, 58, 237, 0.15)',
-                    }}
-                  >
-                    <div
-                      ref={streamingHostRef}
-                      id="streaming-host"
-                      style={{
-                        position: 'relative',
-                        overflow: 'hidden',
-                        width: '100%',
-                        height: '100%',
-                        borderRadius: '16px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      {!isElectron && renderMedia ? (
-                        <iframe
-                          src={activeStreaming.url || (activeStreaming.service === 'netflix' ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com')}
-                          title={activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
-                          className={styles.streamingIframe}
-                          allow="autoplay; encrypted-media; fullscreen"
-                        />
-                      ) : !renderMedia ? (
-                        <div className={styles.streamingSkeleton}>
-                          <div
-                            className={styles.skeletonSpinner}
-                            style={{ borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1' }}
-                          />
-                          <p className={styles.skeletonLabel}>
-                            {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}
-                          </p>
+              {/* ── Multi-Platform Media Tab Bar ── */}
+              <div className={styles.mediaTabBar} role="tablist" aria-label="Navegar entre plataformas">
+                {/* YouTube Tab */}
+                <button
+                  className={`${styles.mediaTab} ${activeMediaTab === 'youtube' ? styles.mediaTabActive : ''}`}
+                  onClick={() => {
+                    setActiveMediaTab('youtube');
+                    setActiveStreaming(null);
+                    const electron = (window as any).electron;
+                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
+                  }}
+                  title="YouTube (Músicas e Vídeos)"
+                >
+                  <YouTubeIcon />
+                  <span className={styles.mediaTabTitle}>YouTube</span>
+                  {currentVideoId && isPlaying && (
+                    <span className={styles.mediaTabLiveDot} title="Reproduzindo" />
+                  )}
+                </button>
+
+                {/* Netflix Tab */}
+                <button
+                  className={`${styles.mediaTab} ${styles.mediaTabNetflix} ${activeMediaTab === 'netflix' ? styles.mediaTabActive : ''}`}
+                  onClick={() => {
+                    setActiveMediaTab('netflix');
+                    setActiveStreaming({ service: 'netflix' });
+                    setStreamingSession('netflix', true);
+                    const electron = (window as any).electron;
+                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('netflix');
+                  }}
+                  title="Netflix"
+                >
+                  <NetflixIcon />
+                  <span className={styles.mediaTabTitle}>Netflix</span>
+                  {streamingSessions.netflix && (
+                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
+                  )}
+                </button>
+
+                {/* Prime Video Tab */}
+                <button
+                  className={`${styles.mediaTab} ${styles.mediaTabPrime} ${activeMediaTab === 'prime' ? styles.mediaTabActive : ''}`}
+                  onClick={() => {
+                    setActiveMediaTab('prime');
+                    setActiveStreaming({ service: 'prime' });
+                    setStreamingSession('prime', true);
+                    const electron = (window as any).electron;
+                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('prime');
+                  }}
+                  title="Prime Video"
+                >
+                  <PrimeIcon />
+                  <span className={styles.mediaTabTitle}>Prime Video</span>
+                  {streamingSessions.prime && (
+                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
+                  )}
+                </button>
+              </div>
+
+              {/* ── Conteúdo: Streaming (Netflix ou Prime Video) ── */}
+              <div
+                style={{
+                  display: (activeMediaTab === 'netflix' || activeMediaTab === 'prime') ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                  width: '100%',
+                }}
+              >
+                {(() => {
+                  const currentService = activeMediaTab === 'netflix' || activeMediaTab === 'prime' ? activeMediaTab : 'prime';
+                  const isSessionActive = Boolean(streamingSessions[currentService] || activeStreaming?.service === currentService);
+                  const platformLabel = currentService === 'netflix' ? 'Netflix' : 'Prime Video';
+
+                  if (!isSessionActive) {
+                    return (
+                      <div className={styles.streamingLauncherCard}>
+                        <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : styles.streamingLauncherPrime}`}>
+                          {currentService === 'netflix' ? <NetflixIcon /> : <PrimeIcon />}
                         </div>
-                      ) : (
-                        <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
-                          <div
-                            style={{
-                              width: '36px',
-                              height: '36px',
-                              borderRadius: '50%',
-                              border: '3px solid rgba(255, 255, 255, 0.1)',
-                              borderTopColor: activeStreaming.service === 'netflix' ? '#E50914' : '#00A8E1',
-                              margin: '0 auto 14px',
-                              animation: 'spin 1s linear infinite',
+                        <h3 className={styles.streamingLauncherTitle}>
+                          Sessão da {platformLabel} não iniciada
+                        </h3>
+                        <p className={styles.streamingLauncherDesc}>
+                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus filmes e séries sem sair do app.
+                        </p>
+                        <button
+                          className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : styles.streamingLauncherBtnPrime}`}
+                          onClick={() => {
+                            setActiveStreaming({ service: currentService });
+                            setActiveMediaTab(currentService);
+                            setStreamingSession(currentService, true);
+                            const electron = (window as any).electron;
+                            if (electron?.setActiveMediaTab) {
+                              electron.setActiveMediaTab(currentService);
+                            }
+                          }}
+                        >
+                          <span>▶</span> Abrir {platformLabel} no Concord
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <div
+                        className={styles.videoSlotWrapper}
+                        style={{
+                          position: 'relative',
+                          overflow: 'hidden',
+                          flex: 1,
+                          minHeight: 0,
+                          borderRadius: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: '#090912',
+                          border: currentService === 'netflix'
+                            ? '1px solid rgba(229, 9, 20, 0.4)'
+                            : '1px solid rgba(0, 168, 225, 0.4)',
+                          boxShadow: currentService === 'netflix'
+                            ? '0 0 24px rgba(229, 9, 20, 0.15)'
+                            : '0 0 24px rgba(0, 168, 225, 0.15)',
+                        }}
+                      >
+                        <div
+                          ref={streamingHostRef}
+                          id="streaming-host"
+                          style={{
+                            position: 'relative',
+                            overflow: 'hidden',
+                            width: '100%',
+                            height: '100%',
+                            borderRadius: '16px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {!isElectron && renderMedia ? (
+                            <iframe
+                              src={activeStreaming?.url || (currentService === 'netflix' ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com')}
+                              title={platformLabel}
+                              className={styles.streamingIframe}
+                              allow="autoplay; encrypted-media; fullscreen"
+                            />
+                          ) : !renderMedia ? (
+                            <div className={styles.streamingSkeleton}>
+                              <div
+                                className={styles.skeletonSpinner}
+                                style={{ borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1' }}
+                              />
+                              <p className={styles.skeletonLabel}>
+                                {platformLabel}
+                              </p>
+                            </div>
+                          ) : (
+                            <div style={{ textAlign: 'center', padding: '24px', color: '#888' }}>
+                              <div
+                                style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '50%',
+                                  border: '3px solid rgba(255, 255, 255, 0.1)',
+                                  borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1',
+                                  margin: '0 auto 14px',
+                                  animation: 'spin 1s linear infinite',
+                                }}
+                              />
+                              <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
+                                Conectando ao {platformLabel}...
+                              </p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
+                                Navegador com Widevine DRM ativo
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Controles do Streaming (Play, Pause, Skip 10s, Sair/Catálogo, Tela Cheia) */}
+                      <div className={styles.videoShortcutWrapper}>
+                        <p className={styles.videoShortcutLabel}>⎯⎯ Controles da {platformLabel} ⎯⎯</p>
+                        <div className={styles.videoShortcutGrid}>
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('play', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('play', { service: currentService });
                             }}
-                          />
-                          <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-                            Conectando ao {activeStreaming.service === 'netflix' ? 'Netflix' : 'Prime Video'}...
-                          </p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
-                            Iniciando navegador com Widevine DRM ativo
-                          </p>
+                            title="Reproduzir vídeo"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                            <span>/play</span>
+                            <small>Reproduzir</small>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('pause', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('pause', { service: currentService });
+                            }}
+                            title="Pausar vídeo"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
+                            <span>/pause</span>
+                            <small>Pausar</small>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('skip', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('skip', { service: currentService });
+                            }}
+                            title="Pular 10 segundos para frente"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+                            <span>/skip</span>
+                            <small>Pular 10s</small>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('exit', { service: currentService });
+                            }}
+                            title="Sair do filme / fechar transmissão"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M19 12H5M12 19l-7-7 7-7" />
+                            </svg>
+                            <span>Sair</span>
+                            <small>Catálogo</small>
+                          </button>
+
+                          <button
+                            className={styles.videoShortcutBtn}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('fullscreen', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('fullscreen', { service: currentService });
+                            }}
+                            title="Tela Cheia"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                            </svg>
+                            <span>Tela Cheia</span>
+                            <small>Expandir</small>
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
 
-                  {/* Controles no mesmo padrão do YouTube */}
-                  <div className={styles.videoShortcutWrapper}>
-                    <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
-                    <div className={styles.videoShortcutGrid}>
-                      <button
-                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
-                        onClick={() => {
-                          const electron = (window as any).electron;
-                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('play');
-                          else if (electron?.streamingCommand) electron.streamingCommand('play');
-                        }}
-                        title="Reproduzir vídeo"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                        <span>/play</span>
-                        <small>Reproduzir</small>
-                      </button>
-
-                      <button
-                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
-                        onClick={() => {
-                          const electron = (window as any).electron;
-                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('pause');
-                          else if (electron?.streamingCommand) electron.streamingCommand('pause');
-                        }}
-                        title="Pausar vídeo"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
-                        <span>/pause</span>
-                        <small>Pausar</small>
-                      </button>
-
-                      <button
-                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
-                        onClick={() => {
-                          const electron = (window as any).electron;
-                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('skip');
-                          else if (electron?.streamingCommand) electron.streamingCommand('skip');
-                        }}
-                        title="Pular (abertura / 10s / próximo episódio)"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-                        <span>/skip</span>
-                        <small>Pular</small>
-                      </button>
-
-                      <button
-                        className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
-                        onClick={() => {
-                          const electron = (window as any).electron;
-                          if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit');
-                          else if (electron?.streamingCommand) electron.streamingCommand('exit');
-                        }}
-                        title="Sair do filme e voltar ao catálogo"
-                      >
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M19 12H5M12 19l-7-7 7-7" />
-                        </svg>
-                        <span>Sair</span>
-                        <small>Catálogo</small>
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Player area */}
+              {/* ── Player area do YouTube (SEMPRE montado no DOM) ── */}
+              <div
+                style={{
+                  display: activeMediaTab === 'youtube' ? 'flex' : 'none',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                  width: '100%',
+                }}
+              >
                   {(() => {
                     const videoPlayerContent = (
                   <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
-                    {/* Global YT Host - stays visible only when on video player tab */}
+                    {/* Global YT Host - stays visible only when on YouTube tab */}
                     <div
                       style={{
-                        display: (isPiPActive || !currentVideoId || !!activeStreaming) ? 'none' : 'block',
+                        display: (isPiPActive || !currentVideoId || activeMediaTab !== 'youtube') ? 'none' : 'block',
                         visibility: showVideoPlayer ? 'visible' : 'hidden',
                         pointerEvents: showVideoPlayer ? 'auto' : 'none',
                         width: '100%',
                         height: '100%'
                       }}
                     >
-                      <div id="yt-host" className={`${styles.ytHostContainer} ${(isDraggingSeek || isSeekingLocked || isBuffering) ? styles.ytHostSeeking : ''} ${!showVideoPlayer ? styles.audioOnlyMode : ''}`} />
+                      <div id="yt-host" className={styles.ytHostContainer} />
                     </div>
                     {isPiPActive && currentVideoId && (
                       <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -1411,7 +1598,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
                         <button
                           className={styles.centerPlayBtn}
-                          onClick={() => onMusicAction?.(isPlaying ? 'pause' : 'play')}
+                          onClick={() => {
+                            const nextAction = isPlaying ? 'pause' : 'play';
+                            broadcastAudioCommandNotice(nextAction);
+                            onMusicAction?.(nextAction);
+                          }}
                           title={isPlaying ? 'Pausar' : 'Reproduzir'}
                         >
                           {isPlaying ? (
@@ -1445,16 +1636,13 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                   setIsDraggingSeek(false);
                                   const targetTime = parseFloat((e.target as HTMLInputElement).value);
                                   seekLockRef.current = Date.now() + 1000;
-                                  setIsSeekingLocked(true);
-                                  setTimeout(() => setIsSeekingLocked(false), 1000);
                                   onMusicSeek?.(targetTime);
                                 }}
+                                touch-action="none"
                                 onTouchEnd={(e) => {
                                   setIsDraggingSeek(false);
                                   const targetTime = parseFloat((e.target as HTMLInputElement).value);
                                   seekLockRef.current = Date.now() + 1000;
-                                  setIsSeekingLocked(true);
-                                  setTimeout(() => setIsSeekingLocked(false), 1000);
                                   onMusicSeek?.(targetTime);
                                 }}
                               />
@@ -1549,42 +1737,41 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                           <span>Legendas</span>
                                         </div>
                                         <span className={`${styles.settingsBadge} ${isCCActive ? styles.badgeActive : ''}`}>
-                                          {isCCActive ? 'Ativadas' : 'Desativadas'}
+                                          {isCCActive ? 'ATIVADO' : 'DESATIVADO'}
                                         </span>
                                       </button>
 
                                       {/* Item Qualidade */}
                                       <button
                                         className={styles.settingsMenuItem}
-                                        onClick={() => {
-                                          setSettingsSubMenu('quality');
-                                          getYtAvailableQualities?.();
-                                        }}
+                                        onClick={() => setSettingsSubMenu('quality')}
                                       >
                                         <div className={styles.settingsItemLeft}>
                                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                            <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                                            <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                                            <polyline points="2 17 12 22 22 17" />
+                                            <polyline points="2 12 12 17 22 12" />
                                           </svg>
                                           <span>Qualidade</span>
                                         </div>
                                         <div className={styles.settingsItemRight}>
-                                          <span className={styles.settingsValueText}>{formatQualityLabel(selectedQuality)}</span>
-                                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                                          <span className={styles.settingsValueText}>
+                                            {formatQualityLabel(selectedQuality)}
+                                          </span>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
                                         </div>
                                       </button>
                                     </div>
                                   ) : (
+                                    /* Submenu de Qualidade */
                                     <div className={styles.settingsMenuList}>
-                                      {/* Header Submenu Qualidade */}
                                       <button
-                                        className={styles.settingsSubHeader}
+                                        className={styles.settingsMenuBack}
                                         onClick={() => setSettingsSubMenu('main')}
                                       >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
                                         <span>Qualidade</span>
                                       </button>
-
-                                      {/* Opções de Qualidade Nativas do YouTube */}
                                       {(() => {
                                         const storeQualities = ytAvailableQualities && ytAvailableQualities.length > 0 ? ytAvailableQualities : [];
                                         const hookQualities = getYtAvailableQualities ? getYtAvailableQualities() : [];
@@ -1643,13 +1830,16 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 </div>
               )}
 
-              {/* Shortcut buttons — controles de música */}
+              {/* Shortcut buttons — controles de música YouTube */}
               <div className={styles.videoShortcutWrapper}>
                 <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
                 <div className={styles.videoShortcutGrid}>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
-                    onClick={() => onMusicAction?.('play')}
+                    onClick={() => {
+                      broadcastAudioCommandNotice('play');
+                      onMusicAction?.('play');
+                    }}
                     title="Retomar música"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
@@ -1658,7 +1848,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
-                    onClick={() => onMusicAction?.('pause')}
+                    onClick={() => {
+                      broadcastAudioCommandNotice('pause');
+                      onMusicAction?.('pause');
+                    }}
                     title="Pausar música"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
@@ -1667,7 +1860,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </button>
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
-                    onClick={() => onMusicAction?.('skip')}
+                    onClick={() => {
+                      broadcastAudioCommandNotice('skip');
+                      onMusicAction?.('skip');
+                    }}
                     title="Pular música"
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4" /><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
@@ -1677,6 +1873,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   <button
                     className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
                     onClick={() => {
+                      broadcastAudioCommandNotice('clear');
                       onMusicAction?.('clear');
                       const store = useAppStore.getState();
                       if (store.isPiPActive) {
@@ -1693,8 +1890,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </button>
                 </div>
               </div>
-            </>
-          )}
+            </div>
 
             </div>
           </div>{/* end flipCardBack */}

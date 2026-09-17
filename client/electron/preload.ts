@@ -30,8 +30,10 @@ declare global {
             /** Widevine Streaming (Netflix / Prime Video) */
             openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
             resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
-            closeStreamingView?: () => void;
+            closeStreamingView?: (service?: 'netflix' | 'prime') => void;
+            setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime') => void;
             sendStreamingCommand?: (command: string, payload?: any) => void;
+            streamingCommand?: (command: string, payload?: any) => void;
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
             /** Screen Share Source Picker */
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
@@ -88,9 +90,10 @@ contextBridge.exposeInMainWorld('electron', {
     },
     setYouTubeQuality: (quality: string) => ipcRenderer.invoke('yt-set-quality', quality),
     getYouTubeQualities: () => ipcRenderer.invoke('yt-get-qualities'),
-    openStreamingView: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number } }) => ipcRenderer.invoke('open-streaming-view', options),
+    openStreamingView: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => ipcRenderer.invoke('open-streaming-view', options),
     resizeStreamingView: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.send('resize-streaming-view', bounds),
-    closeStreamingView: () => ipcRenderer.send('close-streaming-view'),
+    closeStreamingView: (service?: 'netflix' | 'prime') => ipcRenderer.send('close-streaming-view', service),
+    setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime') => ipcRenderer.send('set-active-media-tab', tab),
     sendStreamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
     streamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
     onStreamingEvent: (callback: (event: any) => void) => {

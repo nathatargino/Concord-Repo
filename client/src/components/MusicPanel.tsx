@@ -14,14 +14,14 @@ interface PlatformConfig {
 }
 
 // Netflix "N" icon
-const NetflixIcon = () => (
+export const NetflixIcon = () => (
   <svg width="14" height="14" viewBox="0 0 111 190" fill="currentColor" aria-hidden="true">
     <path d="M0 0h30.4l40.3 117.4V0H111v190H81.4L40.3 71.5V190H0z" />
   </svg>
 );
 
 // Prime Video icon (simplified play arrow inside box)
-const PrimeIcon = () => (
+export const PrimeIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="2" y="3" width="20" height="14" rx="2" />
     <path d="M10 8l5 3-5 3V8z" fill="currentColor" stroke="none" />
@@ -31,14 +31,14 @@ const PrimeIcon = () => (
 );
 
 // YouTube icon
-const YouTubeIcon = () => (
+export const YouTubeIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M22.54 6.42a2.78 2.78 0 0 0-1.95-1.96C18.88 4 12 4 12 4s-6.88 0-8.59.46A2.78 2.78 0 0 0 1.46 6.42 29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.95 1.96C5.12 20 12 20 12 20s6.88 0 8.59-.46a2.78 2.78 0 0 0 1.96-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"/>
     <polygon points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" fill="white"/>
   </svg>
 );
 
-const PLATFORMS: PlatformConfig[] = [
+export const PLATFORMS: PlatformConfig[] = [
   { id: 'youtube', label: 'YouTube', icon: <YouTubeIcon /> },
   { id: 'netflix', label: 'Netflix', icon: <NetflixIcon /> },
   { id: 'prime',   label: 'Prime',   icon: <PrimeIcon /> },
@@ -56,11 +56,35 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [trackTitle, setTrackTitle] = useState<string | null>(null);
-  const [selectedPlatform, setSelectedPlatform] = useState<Platform>('youtube');
   const [streamingUrl, setStreamingUrl] = useState('');
   const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-  const { musicQueue, currentVideoId, isPlaying, activeStreaming, setActiveStreaming } = useAppStore();
+  const {
+    musicQueue,
+    currentVideoId,
+    isPlaying,
+    activeStreaming,
+    setActiveStreaming,
+    activeMediaTab,
+    setActiveMediaTab,
+    streamingSessions,
+    setStreamingSession
+  } = useAppStore();
+
+  const selectedPlatform = activeMediaTab;
+  const setSelectedPlatform = (p: Platform) => {
+    setActiveMediaTab(p);
+    if (p === 'netflix' || p === 'prime') {
+      setActiveStreaming({ service: p });
+      setStreamingSession(p, true);
+    } else {
+      setActiveStreaming(null);
+    }
+    const electron = (window as any).electron;
+    if (electron?.setActiveMediaTab) {
+      electron.setActiveMediaTab(p);
+    }
+  };
 
   // Detect if running inside Electron
   const isElectron = !!(window as any).electron;
@@ -69,6 +93,12 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     setIsOpeningStreaming(true);
     try {
       setActiveStreaming({ service, url: targetUrl });
+      setActiveMediaTab(service);
+      setStreamingSession(service, true);
+      const electron = (window as any).electron;
+      if (electron?.setActiveMediaTab) {
+        electron.setActiveMediaTab(service);
+      }
     } finally {
       setIsOpeningStreaming(false);
     }
@@ -76,10 +106,24 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
 
   const handleCloseStreaming = () => {
     const electron = (window as any).electron;
-    if (electron?.closeStreamingView) {
-      electron.closeStreamingView();
+    const currentService = selectedPlatform === 'netflix' || selectedPlatform === 'prime' ? selectedPlatform : activeStreaming?.service;
+    if (currentService) {
+      if (electron?.closeStreamingView) {
+        electron.closeStreamingView(currentService);
+      }
+      setStreamingSession(currentService, false);
+      // If the other service is still open, switch to it; otherwise go to youtube
+      const otherService: 'netflix' | 'prime' = currentService === 'netflix' ? 'prime' : 'netflix';
+      if (streamingSessions[otherService]) {
+        setActiveStreaming({ service: otherService });
+        setActiveMediaTab(otherService);
+        if (electron?.setActiveMediaTab) electron.setActiveMediaTab(otherService);
+      } else {
+        setActiveStreaming(null);
+        setActiveMediaTab('youtube');
+        if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
+      }
     }
-    setActiveStreaming(null);
   };
 
   React.useEffect(() => {
@@ -351,7 +395,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
             {/* Desktop: Player Controls (Phase 2) */}
             {isElectron && (
               <div className={styles.streamingControls}>
-                {activeStreaming?.service === selectedPlatform ? (
+                {(streamingSessions[selectedPlatform as 'netflix' | 'prime'] || activeStreaming?.service === selectedPlatform) ? (
                   <>
                     <div className={styles.streamingActiveBadge}>
                       <span>

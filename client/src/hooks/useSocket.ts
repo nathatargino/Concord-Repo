@@ -227,16 +227,18 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl) => {
+      const isSystem = userName === 'Sistema' || (type as string) === 'system' || (typeof message === 'string' && message.startsWith('O usuário ') && message.includes(' executou o comando /'));
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        userName,
+        userName: isSystem ? 'Sistema' : userName,
         message,
         timestamp,
+        isSystem,
         type: type || 'text',
         url,
         filename,
         channelId: channelId || 'ch-geral',
-        avatarUrl: avatarUrl || null,
+        avatarUrl: isSystem ? null : (avatarUrl || null),
       };
       store.addMessage(newMsg);
     });
