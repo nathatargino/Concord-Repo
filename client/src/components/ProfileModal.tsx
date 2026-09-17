@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import styles from './ProfileModal.module.css';
-import { supabase, savePrefsToElectron } from '../lib/supabase';
+import { 
+  supabase, 
+  savePrefsToElectron, 
+  leaveServerFromSupabase, 
+  removeMyServer,
+  updateServerNameInSupabase,
+  updateServerLogoInSupabase
+} from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import toast from 'react-hot-toast';
@@ -8,21 +17,43 @@ import toast from 'react-hot-toast';
 interface Props {
   onClose: () => void;
   onUpdate: (newName: string, newAvatar?: string) => void;
+  onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
+  initialTab?: 'server' | 'profile' | 'audio';
 }
 
-export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
-  const initialName = useAppStore.getState().myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '';
-  const initialAvatar = useAppStore.getState().myAvatarUrl || localStorage.getItem('concord_avatar_url') || '';
+export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServer, initialTab }) => {
+  const navigate = useNavigate();
+  const { 
+    room, 
+    isServer, 
+    serverName, 
+    setServerName, 
+    serverIconUrl, 
+    setServerIconUrl, 
+    serverMembers,
+    myId,
+    myName, 
+    myAvatarUrl 
+  } = useAppStore();
 
-  const [activeTab, setActiveTab] = useState<'profile' | 'audio'>('profile');
+  const myMember = serverMembers.find(m => m.username?.toLowerCase() === (myName || '').toLowerCase());
+  const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || room?.ownerId === myId;
+  const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
+  const canEditServer = isOwner || isSubOwner;
+
+  const [serverEditName, setServerEditName] = useState(room?.name || serverName || '');
+  const [serverEditLogo, setServerEditLogo] = useState(serverIconUrl || room?.iconUrl || '');
+  const [savingServer, setSavingServer] = useState(false);
+  const serverLogoInputRef = useRef<HTMLInputElement>(null);
+
+  const initialName = myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '';
+  const initialAvatar = myAvatarUrl || localStorage.getItem('concord_avatar_url') || '';
+
+  const [activeTab, setActiveTab] = useState<'server' | 'profile' | 'audio'>(initialTab || (room ? 'server' : 'profile'));
   const [username, setUsername] = useState(initialName);
   const [avatarUrl, setAvatarUrl] = useState(initialAvatar);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Áudio & Dispositivos ──
@@ -31,10 +62,6 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
     selectedAudioOutputId,
     setSelectedAudioInputId,
     setSelectedAudioOutputId,
-    micVol,
-    setMicVol,
-    remoteVol,
-    setRemoteVol,
     noiseSuppression,
     setNoiseSuppression,
   } = useAudioStore();
@@ -52,14 +79,13 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
     try {
       let devs = await navigator.mediaDevices.enumerateDevices();
-      // Se não houver labels disponíveis, tenta obter permissão temporária
       if (!devs.some(d => d.label)) {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
           stream.getTracks().forEach(t => t.stop());
           devs = await navigator.mediaDevices.enumerateDevices();
         } catch {
-          // Permissão não concedida ou cancelada
+          // Permissão não concedida
         }
       }
 
@@ -120,32 +146,27 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       analyser.fftSize = 256;
       source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
       setIsTestingMic(true);
 
       const updateMeter = () => {
         analyser.getByteFrequencyData(dataArray);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
+        for (let i = 0; i < bufferLength; i++) {
           sum += dataArray[i];
         }
-        const average = sum / dataArray.length;
-        const percentage = Math.min(100, Math.round((average / 110) * 100));
-        setMicLevel(percentage);
+        const avg = sum / bufferLength;
+        const normalized = Math.min(100, Math.round((avg / 128) * 100));
+        setMicLevel(normalized);
         animFrameRef.current = requestAnimationFrame(updateMeter);
       };
+
       updateMeter();
     } catch (err) {
-      toast.error('Não foi possível acessar o microfone para teste.');
-      setIsTestingMic(false);
-    }
-  };
-
-  const handleToggleMicTest = () => {
-    if (isTestingMic) {
-      stopMicTest();
-    } else {
-      startMicTest();
+      console.error('Erro ao testar microfone:', err);
+      toast.error('Não foi possível acessar o microfone.');
     }
   };
 
@@ -169,8 +190,8 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
       const gain = audioCtx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
-      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.12); // A5
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.12);
 
       gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
@@ -201,6 +222,94 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
     };
   }, [stopMicTest]);
 
+  // Carregar dados
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data } = await supabase
+            .from('profiles')
+            .select('username, avatar_url')
+            .eq('id', user.id)
+            .single();
+
+          if (data) {
+            if (data.username) setUsername(data.username);
+            if (data.avatar_url) setAvatarUrl(data.avatar_url);
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar perfil:', err);
+      }
+    };
+    fetchUser();
+  }, []);
+
+  // ── AÇÕES DO SERVIDOR (PROTÓTIPO) ──
+  const handleCopyInvite = () => {
+    if (!room) return;
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    const baseUrl = isElectron ? 'https://concord-olive.vercel.app' : window.location.origin;
+    const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
+
+    if ((window as any).electron?.copyToClipboard) {
+      (window as any).electron.copyToClipboard(inviteMessage);
+      toast.success('Link de convite copiado!');
+    } else {
+      navigator.clipboard.writeText(inviteMessage).then(() => {
+        toast.success('Link de convite copiado!');
+      }).catch(() => {
+        toast.error('Erro ao copiar link');
+      });
+    }
+  };
+
+  const handleCopyCode = () => {
+    if (!room?.code) return;
+    if ((window as any).electron?.copyToClipboard) {
+      (window as any).electron.copyToClipboard(room.code);
+      toast.success('Código copiado!');
+    } else {
+      navigator.clipboard.writeText(room.code).then(() => {
+        toast.success('Código copiado!');
+      });
+    }
+  };
+
+  const handleBackToMenu = () => {
+    handleClose();
+    useAppStore.getState().setRoom(null);
+    navigate('/');
+    toast.success('Voltando ao Menu Principal...');
+  };
+
+  const handleLeaveServer = async () => {
+    if (!room) return;
+    if (!window.confirm(room.isServer || isServer ? 'Tem certeza de que deseja sair deste servidor?' : 'Tem certeza de que deseja sair desta sala?')) {
+      return;
+    }
+    setIsLeaving(true);
+    try {
+      if (room.isServer || isServer) {
+        await leaveServerFromSupabase(room.id, myName);
+        removeMyServer(room.id);
+        removeMyServer(room.code);
+        toast.success('Você saiu do servidor.');
+      } else {
+        toast.success('Você saiu da sala.');
+      }
+    } catch (err) {
+      console.warn('Erro ao sair do servidor:', err);
+    } finally {
+      setIsLeaving(false);
+      handleClose();
+      useAppStore.getState().setRoom(null);
+      navigate('/');
+    }
+  };
+
+  // ── SALVAR PERFIL ──
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -243,66 +352,21 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         }
         toast.success('Imagem selecionada! Clique em "Salvar Alterações" para confirmar.');
       };
-      img.onerror = () => {
-        setAvatarUrl(src);
-        toast.success('Imagem selecionada! Clique em "Salvar Alterações" para confirmar.');
-      };
       img.src = src;
     };
     reader.readAsDataURL(file);
   };
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setUserId(user.id);
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          if (profile) {
-            if (profile.username) setUsername(profile.username);
-            if (profile.avatar_url) setAvatarUrl(profile.avatar_url);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching profile from Supabase:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProfile();
-
-    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-    if (isElectron && (window as any).electron) {
-      (window as any).electron.getAppVersion().then((version: string) => {
-        setAppVersion(version);
-      });
-      const unsubscribe = (window as any).electron.onUpdateMessage((msg: string) => {
-        setUpdateMessage(msg);
-        setIsCheckingUpdate(false);
-      });
-      return () => {
-        if (unsubscribe) unsubscribe();
-      };
-    }
-  }, []);
-
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = username.trim();
-    if (!cleanName) {
-      toast.error('O apelido não pode ser vazio!');
+    if (!cleanName || cleanName.length < 2) {
+      toast.error('O apelido deve ter pelo menos 2 caracteres.');
       return;
     }
 
     setSaving(true);
     try {
-      // 1. Atualizar estado global Zustand, LocalStorage e preferências do Electron
       useAppStore.getState().setMyName(cleanName);
       useAppStore.getState().setMyAvatarUrl(avatarUrl || null);
 
@@ -319,55 +383,6 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
         concord_avatar_url: avatarUrl || '',
       });
 
-      // 2. Atualizar no Supabase (se autenticado ou por busca de conta correspondente)
-      try {
-        let activeUid = userId;
-        if (!activeUid) {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) activeUid = user.id;
-        }
-
-        if (activeUid) {
-          const updates = {
-            id: activeUid,
-            username: cleanName,
-            avatar_url: avatarUrl.trim() || null,
-            updated_at: new Date().toISOString(),
-          };
-
-          await supabase.from('profiles').upsert(updates);
-
-          await supabase.auth.updateUser({
-            data: {
-              username: cleanName,
-              display_name: cleanName,
-              avatar_url: avatarUrl.trim() || null,
-            }
-          });
-        } else {
-          // Atualizar perfil existente correspondente pelo nome antigo ou novo se houver no DB
-          const lookupName = initialName || cleanName;
-          const { data: existingProf } = await supabase
-            .from('profiles')
-            .select('id')
-            .ilike('username', lookupName)
-            .maybeSingle();
-
-          if (existingProf?.id) {
-            await supabase
-              .from('profiles')
-              .update({
-                username: cleanName,
-                avatar_url: avatarUrl.trim() || null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', existingProf.id);
-          }
-        }
-      } catch (sbErr) {
-        console.warn('Supabase sync warning:', sbErr);
-      }
-
       onUpdate(cleanName, avatarUrl);
       toast.success('Perfil atualizado com sucesso!');
       handleClose();
@@ -379,24 +394,40 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className={styles.overlay} onClick={handleClose}>
-        <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-          <p style={{ color: '#fff' }}>Carregando perfil...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  return createPortal(
     <div className={styles.overlay} onClick={handleClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <button className={styles.closeBtn} onClick={handleClose}>×</button>
-        <h2 className={styles.title}>Configurações</h2>
+        {/* Modal Header matching prototype */}
+        <div className={styles.modalHeader}>
+          <div className={styles.modalHeaderLeft}>
+            <div className={styles.modalHeaderIcon}>
+              <i className="fa-solid fa-gear"></i>
+            </div>
+            <div className={styles.modalHeaderTitles}>
+              <h3 className={styles.modalTitle}>Configurações</h3>
+              <p className={styles.modalSubtitle}>Opções do servidor e conta</p>
+            </div>
+          </div>
+          <button type="button" className={styles.closeBtn} onClick={handleClose}>
+            <i className="fa-solid fa-xmark"></i>
+          </button>
+        </div>
 
-        {/* ── ABAS: Perfil e Áudio ── */}
+        {/* Tab Selector */}
         <div className={styles.tabContainer}>
+          {room && (
+            <button
+              type="button"
+              className={`${styles.tabBtn} ${activeTab === 'server' ? styles.tabBtnActive : ''}`}
+              onClick={() => {
+                stopMicTest();
+                setActiveTab('server');
+              }}
+            >
+              <i className="fa-solid fa-server"></i>
+              <span>Servidor</span>
+            </button>
+          )}
           <button
             type="button"
             className={`${styles.tabBtn} ${activeTab === 'profile' ? styles.tabBtnActive : ''}`}
@@ -405,299 +436,325 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate }) => {
               setActiveTab('profile');
             }}
           >
-            <span className={styles.tabIcon}>👤</span>
-            Perfil
+            <i className="fa-solid fa-user"></i>
+            <span>Meu Perfil</span>
           </button>
           <button
             type="button"
             className={`${styles.tabBtn} ${activeTab === 'audio' ? styles.tabBtnActive : ''}`}
             onClick={() => setActiveTab('audio')}
           >
-            <span className={styles.tabIcon}>🎧</span>
-            Áudio
+            <i className="fa-solid fa-headphones"></i>
+            <span>Voz e Áudio</span>
           </button>
         </div>
 
-        {/* ══ ABA 1: PERFIL ══ */}
-        {activeTab === 'profile' && (
-          <>
-            <form onSubmit={handleSave} className={styles.form}>
-              <div className={styles.avatarPreviewArea}>
-                <div
-                  className={styles.avatarCircle}
-                  onClick={() => fileInputRef.current?.click()}
-                  title="Clique para alterar a foto de perfil"
-                >
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="Avatar" className={styles.avatarImg} />
-                  ) : (
-                    <span className={styles.avatarInitial}>{username.charAt(0).toUpperCase() || '?'}</span>
-                  )}
-                  <div className={styles.avatarHoverOverlay}>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12 20h9" />
-                      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                    </svg>
-                    <span className={styles.avatarHoverText}>Alterar</span>
-                  </div>
-                </div>
+        {/* ══ ABA 1: SERVIDOR (PROTÓTIPO EXATO) ══ */}
+        {activeTab === 'server' && room && (
+          <div className={styles.serverSection}>
+            {/* Server Info Box */}
+            <div className={styles.serverInfoBox}>
+              <div>
+                <p className={styles.serverInfoLabel}>Identificador do Servidor</p>
+                <p className={styles.serverInfoCode} onClick={handleCopyCode} title="Clique para copiar">
+                  <span>{room.code}</span>
+                  <i className="fa-solid fa-copy" style={{ fontSize: '11px', color: '#9ca3af' }}></i>
+                </p>
               </div>
+              <span className={styles.serverBadge}>
+                {room.name || serverName || 'Concord'}
+              </span>
+            </div>
 
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept="image/*"
-                style={{ display: 'none' }}
-                onChange={handleAvatarFileChange}
-              />
-
-              <div className={styles.inputGroup}>
-                <label className={styles.label}>Seu Apelido / Nome de Usuário</label>
-                <input
-                  type="text"
-                  className={styles.input}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Digite seu nome..."
-                  maxLength={32}
+            {/* Personalização do Servidor (Nome e Foto) */}
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!room?.id) return;
+              const cleanName = serverEditName.trim();
+              if (isOwner && (!cleanName || cleanName.length < 2)) {
+                toast.error('O nome do servidor deve ter pelo menos 2 caracteres.');
+                return;
+              }
+              setSavingServer(true);
+              try {
+                if (isOwner && cleanName && cleanName !== (room.name || serverName)) {
+                  await updateServerNameInSupabase(room.id, cleanName);
+                  setServerName(cleanName);
+                }
+                if (serverEditLogo && serverEditLogo !== (room.iconUrl || serverIconUrl)) {
+                  await updateServerLogoInSupabase(room.id, serverEditLogo);
+                  setServerIconUrl(serverEditLogo);
+                }
+                if (onUpdateServer) {
+                  onUpdateServer(room.id, cleanName || undefined, serverEditLogo || undefined);
+                }
+                toast.success('Servidor atualizado com sucesso!');
+              } catch (err) {
+                console.error('Update server error:', err);
+                toast.error('Erro ao atualizar servidor.');
+              } finally {
+                setSavingServer(false);
+              }
+            }} className={styles.serverCustomizationBox}>
+              <p className={styles.serverInfoLabel}>Personalização do Servidor</p>
+              <div className={styles.serverLogoRow}>
+                <input 
+                  type="file" 
+                  ref={serverLogoInputRef} 
+                  style={{ display: 'none' }} 
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 8 * 1024 * 1024) {
+                      toast.error('A imagem deve ter no máximo 8MB!');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (loadEvent) => {
+                      const src = loadEvent.target?.result as string;
+                      if (!src) return;
+                      const img = new Image();
+                      img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const maxDim = 256;
+                        let w = img.width;
+                        let h = img.height;
+                        if (w > h) {
+                          if (w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; }
+                        } else {
+                          if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; }
+                        }
+                        canvas.width = w;
+                        canvas.height = h;
+                        const ctx = canvas.getContext('2d');
+                        if (ctx) {
+                          ctx.drawImage(img, 0, 0, w, h);
+                          setServerEditLogo(canvas.toDataURL('image/jpeg', 0.88));
+                        } else {
+                          setServerEditLogo(src);
+                        }
+                        toast.success('Imagem da logo selecionada! Clique em "Salvar Alterações" para confirmar.');
+                      };
+                      img.src = src;
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  disabled={!canEditServer}
                 />
-              </div>
-
-              <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
-                {saving ? 'Salvando...' : 'Salvar Alterações'}
-              </button>
-            </form>
-
-            {appVersion && (
-              <div className={styles.systemSection}>
-                <div className={styles.systemHeader}>
-                  <span className={styles.systemTitle}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                      <line x1="8" y1="21" x2="16" y2="21" />
-                      <line x1="12" y1="17" x2="12" y2="21" />
-                    </svg>
-                    Sistema
-                  </span>
+                <div 
+                  className={styles.serverLogoCircle}
+                  onClick={() => canEditServer && serverLogoInputRef.current?.click()}
+                  title={canEditServer ? "Clique para alterar a foto do servidor" : "Apenas Donos ou Sub Donos podem alterar a foto"}
+                  style={{ cursor: canEditServer ? 'pointer' : 'default' }}
+                >
+                  {serverEditLogo ? (
+                    <img src={serverEditLogo} alt="Logo" className={styles.serverLogoImg} />
+                  ) : (
+                    <span className={styles.serverLogoFallback}>
+                      {(serverEditName || room.name || 'S').charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  {canEditServer && (
+                    <div className={styles.avatarHoverOverlay}>
+                      <i className="fa-solid fa-camera" style={{ fontSize: '16px' }} />
+                    </div>
+                  )}
                 </div>
 
-                <div className={styles.systemCard}>
-                  <div className={styles.systemInfo}>
-                    <div className={styles.appNameRow}>
-                      <span className={styles.appName}>Concord</span>
-                      <span className={styles.versionBadge}>v{appVersion}</span>
-                    </div>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <input
+                    type="text"
+                    className={styles.serverNameInput}
+                    value={serverEditName}
+                    onChange={(e) => setServerEditName(e.target.value)}
+                    maxLength={40}
+                    disabled={!isOwner}
+                    placeholder={isOwner ? "Nome do Servidor" : "Nome do Servidor (Apenas Dono)"}
+                    title={isOwner ? "Nome do Servidor" : "Apenas o Dono pode alterar o nome do servidor"}
+                  />
+                </div>
+              </div>
 
-                    <div className={styles.statusRow}>
-                      {(() => {
-                        if (isCheckingUpdate || updateMessage?.includes('Verificando')) {
-                          return (
-                            <span className={styles.statusChecking}>
-                              <svg className={styles.spin} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                              </svg>
-                              Verificando atualizações...
-                            </span>
-                          );
-                        }
-                        if (updateMessage?.includes('atualizado')) {
-                          return (
-                            <span className={styles.statusSuccess}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
-                              {updateMessage}
-                            </span>
-                          );
-                        }
-                        if (updateMessage?.includes('Erro')) {
-                          return (
-                            <span className={styles.statusError}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <circle cx="12" cy="12" r="10" />
-                                <line x1="12" y1="8" x2="12" y2="12" />
-                                <line x1="12" y1="16" x2="12.01" y2="16" />
-                              </svg>
-                              {updateMessage}
-                            </span>
-                          );
-                        }
-                        if (updateMessage) {
-                          return (
-                            <span className={styles.statusChecking}>
-                              <span className={styles.statusIndicatorDot} />
-                              {updateMessage}
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className={styles.statusDefault}>
-                            <span className={styles.statusIndicatorDot} />
-                            Versão estável mais recente
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className={styles.updateBtn}
-                    disabled={isCheckingUpdate}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsCheckingUpdate(true);
-                      (window as any).electron?.checkForUpdates();
-                      setTimeout(() => setIsCheckingUpdate(false), 3000);
-                    }}
-                    title="Buscar atualizações do Concord"
+              {canEditServer && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                  <button 
+                    type="submit" 
+                    className={styles.serverSaveBtn}
+                    disabled={savingServer || (!serverEditName.trim())}
                   >
-                    <svg
-                      className={isCheckingUpdate ? styles.spin : ''}
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21.5 2v6h-6" />
-                      <path d="M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                    </svg>
-                    {isCheckingUpdate ? 'Buscando...' : 'Verificar Atualizações'}
+                    {savingServer ? 'Salvando...' : 'Salvar Alterações'}
                   </button>
                 </div>
-              </div>
-            )}
-          </>
+              )}
+            </form>
+
+            {/* Actions List */}
+            <div className={styles.actionsGroup}>
+              <p className={styles.actionsTitle}>Ações do Servidor</p>
+
+              {/* Convidar Amigos */}
+              <button
+                type="button"
+                onClick={handleCopyInvite}
+                className={styles.actionBtn}
+              >
+                <span className={styles.actionBtnContent}>
+                  <i className="fa-solid fa-link" style={{ color: '#7c5cff' }}></i>
+                  <span>Convidar Amigos</span>
+                </span>
+                <i className="fa-solid fa-chevron-right" style={{ fontSize: '11px', color: '#6b7280' }}></i>
+              </button>
+
+              {/* Voltar ao Menu */}
+              <button
+                type="button"
+                onClick={handleBackToMenu}
+                className={styles.actionBtn}
+              >
+                <span className={styles.actionBtnContent}>
+                  <i className="fa-solid fa-house" style={{ color: '#9ca3af' }}></i>
+                  <span>Voltar ao Menu</span>
+                </span>
+                <i className="fa-solid fa-chevron-right" style={{ fontSize: '11px', color: '#6b7280' }}></i>
+              </button>
+
+              {/* Sair do Servidor */}
+              <button
+                type="button"
+                onClick={handleLeaveServer}
+                className={styles.actionBtnDanger}
+                disabled={isLeaving}
+              >
+                <span className={styles.actionBtnContent}>
+                  <i className="fa-solid fa-arrow-right-from-bracket"></i>
+                  <span>{isLeaving ? 'Saindo...' : (room.isServer || isServer ? 'Sair do Servidor' : 'Sair da Sala')}</span>
+                </span>
+                <i className="fa-solid fa-chevron-right" style={{ fontSize: '11px', opacity: 0.7 }}></i>
+              </button>
+            </div>
+          </div>
         )}
 
-        {/* ══ ABA 2: ÁUDIO ══ */}
-        {activeTab === 'audio' && (
-          <div className={styles.audioContainer}>
-            {/* 1. Microfone */}
-            <div className={styles.deviceCard}>
-              <div className={styles.deviceCardHeader}>
-                <span className={styles.deviceLabel}>
-                  <span>🎙️</span> Microfone de Entrada
-                </span>
+        {/* ══ ABA 2: MEU PERFIL ══ */}
+        {activeTab === 'profile' && (
+          <form onSubmit={handleSaveProfile} className={styles.form}>
+            <div className={styles.avatarPreviewArea}>
+              <div
+                className={styles.avatarCircle}
+                onClick={() => fileInputRef.current?.click()}
+                title="Clique para alterar a foto de perfil"
+              >
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Avatar" className={styles.avatarImg} />
+                ) : (
+                  <span className={styles.avatarInitial}>{username.charAt(0).toUpperCase() || '?'}</span>
+                )}
+                <div className={styles.avatarHoverOverlay}>
+                  <i className="fa-solid fa-camera" style={{ fontSize: '18px', marginBottom: '4px' }}></i>
+                  <span>Alterar</span>
+                </div>
               </div>
+            </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleAvatarFileChange}
+            />
+
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Seu Apelido / Nome de Usuário</label>
+              <input
+                type="text"
+                className={styles.input}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Digite seu nome..."
+                maxLength={32}
+              />
+            </div>
+
+            <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
+              {saving ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+          </form>
+        )}
+
+        {/* ══ ABA 3: VOZ E ÁUDIO ══ */}
+        {activeTab === 'audio' && (
+          <div className={styles.audioSection}>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Dispositivo de Microfone</label>
               <select
                 className={styles.deviceSelect}
                 value={selectedAudioInputId}
                 onChange={(e) => handleMicChange(e.target.value)}
               >
-                <option value="default">Microfone Padrão do Sistema</option>
+                <option value="default">Padrão do Sistema</option>
                 {inputDevices.map((d) => (
                   <option key={d.deviceId} value={d.deviceId}>
                     {d.label}
                   </option>
                 ))}
               </select>
-
-              {/* Teste do Microfone */}
-              <div className={styles.micTestWrapper}>
-                <button
-                  type="button"
-                  className={`${styles.testBtn} ${isTestingMic ? styles.testBtnActive : ''}`}
-                  onClick={handleToggleMicTest}
-                  title="Fale para testar a captação do microfone"
-                >
-                  {isTestingMic ? '⏹ Parar Teste' : '▶ Testar Microfone'}
-                </button>
-                <div className={styles.meterContainer} title="Nível de captação do microfone">
-                  <div className={styles.meterFill} style={{ width: `${micLevel}%` }} />
-                </div>
-              </div>
-
-              {/* Volume do Microfone */}
-              <div className={styles.volumeRow}>
-                <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>Sensibilidade</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  value={micVol}
-                  onChange={(e) => setMicVol(Number(e.target.value))}
-                  className={styles.volumeSlider}
-                />
-                <span className={styles.volumeValue}>{micVol}%</span>
-              </div>
             </div>
 
-            {/* 2. Headset / Saída */}
-            <div className={styles.deviceCard}>
-              <div className={styles.deviceCardHeader}>
-                <span className={styles.deviceLabel}>
-                  <span>🎧</span> Headset / Dispositivo de Saída
-                </span>
-                <button
-                  type="button"
-                  className={styles.testBtn}
-                  onClick={testHeadset}
-                  title="Reproduzir som de teste no headset"
-                >
-                  🔔 Testar Headset
-                </button>
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Teste de Microfone</label>
+              <div className={styles.micMeterContainer}>
+                <div className={styles.micMeterFill} style={{ width: `${micLevel}%` }} />
               </div>
+              <button
+                type="button"
+                className={styles.audioActionBtn}
+                onClick={isTestingMic ? stopMicTest : startMicTest}
+              >
+                <i className={`fa-solid ${isTestingMic ? 'fa-stop' : 'fa-microphone'}`}></i>
+                <span>{isTestingMic ? 'Parar Teste' : 'Iniciar Teste de Microfone'}</span>
+              </button>
+            </div>
+
+            <div className={styles.inputGroup}>
+              <label className={styles.label}>Dispositivo de Saída (Headset / Alto-falante)</label>
               <select
                 className={styles.deviceSelect}
                 value={selectedAudioOutputId}
                 onChange={(e) => handleHeadsetChange(e.target.value)}
               >
-                <option value="default">Headset / Saída Padrão do Sistema</option>
+                <option value="default">Padrão do Sistema</option>
                 {outputDevices.map((d) => (
                   <option key={d.deviceId} value={d.deviceId}>
                     {d.label}
                   </option>
                 ))}
               </select>
-
-              {/* Volume de Saída */}
-              <div className={styles.volumeRow}>
-                <span style={{ fontSize: '12px', color: 'rgba(255, 255, 255, 0.6)' }}>Volume Geral</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  value={remoteVol}
-                  onChange={(e) => setRemoteVol(Number(e.target.value))}
-                  className={styles.volumeSlider}
-                />
-                <span className={styles.volumeValue}>{remoteVol}%</span>
-              </div>
+              <button
+                type="button"
+                className={styles.audioActionBtn}
+                onClick={testHeadset}
+                style={{ marginTop: '4px' }}
+              >
+                <i className="fa-solid fa-volume-high"></i>
+                <span>Testar Saída de Som</span>
+              </button>
             </div>
 
-            {/* 3. Aprimoramento de Voz */}
-            <div className={styles.deviceCard}>
-              <div className={styles.deviceCardHeader}>
-                <span className={styles.deviceLabel}>
-                  <span>⚙️</span> Processamento de Voz
-                </span>
-              </div>
-              <label className={styles.toggleRow}>
-                <span className={styles.toggleLabel}>
-                  🛡️ Supressão de Ruído de Fundo
-                </span>
-                <div className={styles.switch}>
-                  <input
-                    type="checkbox"
-                    checked={noiseSuppression}
-                    onChange={(e) => setNoiseSuppression(e.target.checked)}
-                  />
-                  <span className={styles.slider} />
-                </div>
-              </label>
-              <p className={styles.helperText}>
-                Filtra ruídos de teclado, ventilador e estática automaticamente durante as chamadas.
-              </p>
+            <div className={styles.inputGroup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px' }}>
+              <label className={styles.label} style={{ margin: 0 }}>Supressão de Ruído</label>
+              <input
+                type="checkbox"
+                checked={noiseSuppression}
+                onChange={(e) => setNoiseSuppression(e.target.checked)}
+                style={{ width: '18px', height: '18px', accentColor: '#7c5cff', cursor: 'pointer' }}
+              />
             </div>
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
-

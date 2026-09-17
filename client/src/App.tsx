@@ -21,7 +21,6 @@ import { AudioControls } from './components/AudioControls';
 import { BroadcasterScreenPanel } from './components/BroadcasterScreenPanel';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
 import { ScreenPickerModal } from './components/ScreenPickerModal';
-import { StatusBar } from './components/StatusBar';
 import { AccountModals } from './components/AccountModals';
 
 import styles from './App.module.css';
@@ -111,11 +110,15 @@ export default function App() {
 
   // Sync audio volumes and screen share audio when stores change
   useEffect(() => {
-    const unsubAudio = useAudioStore.subscribe((state) => {
+    const unsubAudio = useAudioStore.subscribe((state, prevState) => {
       audio.applyMicSettings();
       audio.applyRemoteSettings();
       audio.applyNoiseSuppressionSettings();
       yt.applyYTVolume();
+
+      if (state.micMuted !== prevState.micMuted || state.callMuted !== prevState.callMuted) {
+        socket.emit('update_media_state', state.micMuted, state.callMuted);
+      }
 
       const electron = (window as any).electron;
       if (electron?.sendPipSync && useAppStore.getState().isPiPActive) {
@@ -461,6 +464,7 @@ export default function App() {
       const processedStream = await audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
       store.setInVoice(true);
+      socket.emit('update_media_state', useAudioStore.getState().micMuted, useAudioStore.getState().callMuted);
       monitorSpeaking(processedStream, store.myId);
     } catch (err) {
       console.error('Mic error', err);
@@ -487,7 +491,6 @@ export default function App() {
     }
   };
 
-  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
   const isPipRoute = window.location.hash.startsWith('#/pip');
 
@@ -499,55 +502,43 @@ export default function App() {
     <div className={`${styles.appContainer}`}>
       <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
 
-      {(!isElectron && !isPiPActive) && (
-        <div className={styles.webTopBar}>
-          <a href="https://github.com/nathatargino/Concord-Repo/releases/latest/download/Concord-Setup.exe" target="_blank" rel="noopener noreferrer">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'text-bottom' }}>
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            Baixar App Desktop
-          </a>
-        </div>
-      )}
 
       {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
-      <Sidebar
-        onScreenShareClick={(id) => {
-          const u = store.users.find(x => x.id === id);
-          store.setScreenShare(id, u?.name);
-          setTimeout(() => {
-            document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
-              a.play().catch(() => {});
-            });
-          }, 50);
-        }}
-        onJoinVoice={handleJoinVoice}
-        onLeaveVoice={handleLeaveVoice}
-        onStartScreenShare={screenShare.startScreenShare}
-        onStopScreenShare={screenShare.stopScreenShare}
-        onCreateChannel={(name) => socket.emit('create_channel', name)}
-        onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
-        onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
-        onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
-        onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
-        onUpdateProfile={(name, avatarUrl) => {
-          socket.emit('set_username', name, avatarUrl);
-          socket.emit('update_avatar', avatarUrl);
-        }}
-        onAdminAction={(action, targetId) => {
-          if (action === 'mute') socket.emit('admin_mute_user', targetId);
-          else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
-          else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
-          else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
-          else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
-          else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
-        }}
-      />
+      <div className={styles.mainLayout}>
+        <Sidebar
+          onScreenShareClick={(id) => {
+            const u = store.users.find(x => x.id === id);
+            store.setScreenShare(id, u?.name);
+            setTimeout(() => {
+              document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
+                a.play().catch(() => {});
+              });
+            }, 50);
+          }}
+          onJoinVoice={handleJoinVoice}
+          onLeaveVoice={handleLeaveVoice}
+          onStartScreenShare={screenShare.startScreenShare}
+          onStopScreenShare={screenShare.stopScreenShare}
+          onCreateChannel={(name) => socket.emit('create_channel', name)}
+          onEditChannel={(channelId, newName) => socket.emit('edit_channel', channelId, newName)}
+          onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
+          onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
+          onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
+          onUpdateProfile={(name, avatarUrl) => {
+            socket.emit('set_username', name, avatarUrl);
+            socket.emit('update_avatar', avatarUrl);
+          }}
+          onAdminAction={(action, targetId) => {
+            if (action === 'mute') socket.emit('admin_mute_user', targetId);
+            else if (action === 'unmute') socket.emit('admin_unmute_user', targetId);
+            else if (action === 'kick_voice') socket.emit('admin_kick_voice', targetId);
+            else if (action === 'kick_room') socket.emit('admin_kick_room', targetId);
+            else if (action === 'give_admin') socket.emit('admin_transfer_role', targetId);
+            else if (action === 'local_mute') useAudioStore.getState().toggleLocalMuteUser(targetId);
+          }}
+        />
 
-      <main className={styles.mainContent}>
         <div className={styles.chatSection}>
           <ChatPanel
             onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
@@ -569,7 +560,7 @@ export default function App() {
           />
         </div>
 
-        <div className={styles.sidePanels} style={{ display: 'flex' }}>
+        <div className={styles.sidePanels}>
           <MusicPanel
             onRequestMusic={(url, title) => socket.emit('request_music', url, title)}
             onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
@@ -582,7 +573,7 @@ export default function App() {
             onChangeSharing={screenShare.changeScreenShare}
           />
         </div>
-      </main>
+      </div>
 
       <ScreenSharePanel
         onClose={() => store.setScreenShare(null)}
@@ -590,10 +581,6 @@ export default function App() {
         onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
         onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
       />
-
-      <div style={{ position: 'absolute', bottom: 0, width: '100%' }}>
-        <StatusBar />
-      </div>
 
       <AccountModals />
 

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import styles from './StatusBar.module.css';
-
 import { leaveServerFromSupabase, removeMyServer } from '../lib/supabase';
 
 function formatTimeLeft(ms: number): { text: string; isWarning: boolean; isCritical: boolean } {
@@ -15,8 +14,8 @@ function formatTimeLeft(ms: number): { text: string; isWarning: boolean; isCriti
   const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   return {
     text,
-    isWarning: ms < 30 * 60 * 1000, // < 30 min
-    isCritical: ms < 5 * 60 * 1000, // < 5 min
+    isWarning: ms < 30 * 60 * 1000,
+    isCritical: ms < 5 * 60 * 1000,
   };
 }
 
@@ -38,7 +37,6 @@ export const StatusBar: React.FC = () => {
       const ms = room.expiresAt - Date.now();
       setTimeLeft(formatTimeLeft(ms));
       if (ms <= 0) {
-        // Room expired
         useAppStore.getState().setRoom(null);
         navigate('/');
       }
@@ -56,6 +54,7 @@ export const StatusBar: React.FC = () => {
       ? 'https://concord-olive.vercel.app' 
       : window.location.origin;
     const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
+    
     const copyAndNotify = (text: string, label: string) => {
       try {
         if ((window as any).electron?.copyToClipboard) {
@@ -94,13 +93,11 @@ export const StatusBar: React.FC = () => {
     }
   }, [room]);
 
-  // Ação 2: Voltar ao Menu (Lobby) — Redireciona mantendo o vínculo e sem desconectar da conta
   const handleBackToMenu = useCallback(() => {
     useAppStore.getState().setRoom(null);
     navigate('/');
   }, [navigate]);
 
-  // Ação 3: Sair do Servidor — Remove vínculo do usuário com o servidor
   const handleConfirmLeave = useCallback(async () => {
     if (!room) return;
     setIsLeaving(true);
@@ -126,99 +123,78 @@ export const StatusBar: React.FC = () => {
   return (
     <>
       <footer className={styles.footer}>
-        {/* Left: connection status */}
+        {/* Left: connection & room status matching prototype */}
         <div className={styles.left}>
-          <div className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />
-          <span className={styles.statusText}>
-            {connected ? 'Conectado' : 'Desconectado'}
+          <span className={styles.connectionStatus}>
+            <span className={`${styles.statusDot} ${connected ? styles.connected : styles.disconnected}`} />
+            <span>Conectado: {myName || 'Usuário'}</span>
           </span>
-          {myName && (
-            <span className={styles.userName}>{myName}</span>
+
+          {room && (
+            <>
+              <span className={styles.divider}>|</span>
+              <span className={styles.serverTag} onClick={handleCopyCode} title="Clique para copiar código">
+                {room.isServer || isServer ? 'Servidor:' : 'Sala:'}{' '}
+                <strong>{room.code}</strong>
+              </span>
+
+              <span className={styles.divider}>|</span>
+              {room.isServer || isServer ? (
+                <span className={styles.permanentBadge}>Permanente</span>
+              ) : timeLeft ? (
+                <span className={`${styles.timerBadge} ${timeLeft.isWarning ? styles.timerWarning : ''}`}>
+                  <i className="fa-regular fa-clock"></i>
+                  {timeLeft.text}
+                </span>
+              ) : null}
+            </>
           )}
         </div>
 
-        {/* Center: server or room info */}
-        {room && (
-          <div className={styles.center}>
-            <span className={styles.roomCode}>
-              <span className={styles.codeLabel}>{room.isServer || isServer ? 'Servidor' : 'Sala'}</span>
-              <span
-                className={styles.codeValue}
-                onClick={handleCopyCode}
-                title="Clique para copiar o código de convite"
-              >
-                {room.code}
-              </span>
-            </span>
-            {room.isServer || isServer ? (
-              <>
-                <span className={styles.timerSep}>•</span>
-                <div className={styles.timer} title="Servidor Permanente sem expiração">
-                  <span className={styles.timerIcon}>🛡️</span>
-                  <span className={styles.timerText}>Permanente</span>
-                </div>
-              </>
-            ) : timeLeft ? (
-              <>
-                <span className={styles.timerSep}>•</span>
-                <div
-                  className={`${styles.timer} ${timeLeft.isWarning ? styles.timerWarning : ''} ${timeLeft.isCritical ? styles.timerCritical : ''}`}
-                  title="Tempo restante da sala"
-                >
-                  <span className={styles.timerIcon}>⏱</span>
-                  <span className={styles.timerText}>{timeLeft.text}</span>
-                </div>
-              </>
-            ) : null}
-          </div>
-        )}
-
-        {/* Right: 3 distinct actions (Convidar, Voltar ao Menu, Sair do Servidor) */}
+        {/* Right: Actions matching prototype */}
         <div className={styles.right}>
           {room && (
             <>
-              {/* Ação 1: Convidar */}
               <button
-                className={`${styles.inviteBtn} ${copied ? styles.inviteCopied : ''}`}
+                type="button"
+                className={`${styles.actionBtn} ${copied ? styles.actionBtnCopied : ''}`}
                 onClick={handleCopyInvite}
-                title={`Clique para copiar o convite:\n\nVocê foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n[link da sala]`}
+                title="Copiar convite"
               >
-                {copied ? '✓ Copiado!' : '🔗 Convidar'}
+                <i className="fa-solid fa-link" style={{ fontSize: '10px' }}></i>
+                <span>{copied ? 'Copiado!' : 'Convidar'}</span>
               </button>
 
-              {/* Ação 2: Voltar ao Menu */}
               <button
-                className={styles.menuBtn}
+                type="button"
+                className={styles.actionBtn}
                 onClick={handleBackToMenu}
-                title="Voltar para a tela inicial / lobby (permanece membro do servidor)"
+                title="Voltar ao Menu Principal"
               >
-                🏠 Voltar ao Menu
+                <i className="fa-solid fa-house" style={{ fontSize: '10px' }}></i>
+                <span>Voltar ao Menu</span>
               </button>
 
-              {/* Ação 3: Sair do Servidor */}
               <button
+                type="button"
                 className={styles.leaveBtn}
                 onClick={() => setShowLeaveModal(true)}
-                title={room.isServer || isServer ? 'Desvincular-se e sair deste servidor' : 'Sair desta sala'}
+                title={room.isServer || isServer ? 'Sair do Servidor' : 'Sair da Sala'}
               >
-                {room.isServer || isServer ? '🚪 Sair do Servidor' : '🚪 Sair da Sala'}
+                <i className="fa-solid fa-arrow-right-from-bracket" style={{ fontSize: '10px' }}></i>
+                <span>{room.isServer || isServer ? 'Sair do Servidor' : 'Sair da Sala'}</span>
               </button>
             </>
-          )}
-          {!room && myName && (
-            <span className={styles.userText}>
-              Logado como <strong className={styles.userNameRight}>{myName}</strong>
-            </span>
           )}
         </div>
       </footer>
 
-      {/* Modal de Confirmação de Saída */}
+      {/* Confirmation Modal */}
       {showLeaveModal && (
         <div className={styles.modalOverlay} onClick={() => !isLeaving && setShowLeaveModal(false)}>
           <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <div className={styles.modalWarningIcon}>⚠️</div>
+              <i className={`fa-solid fa-triangle-exclamation ${styles.modalWarningIcon}`}></i>
               <h3 className={styles.modalTitle}>
                 {room?.isServer || isServer ? 'Sair do Servidor?' : 'Sair da Sala?'}
               </h3>
