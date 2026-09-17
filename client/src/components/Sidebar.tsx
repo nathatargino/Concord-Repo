@@ -1043,17 +1043,34 @@ export const Sidebar: React.FC<Props> = ({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className={styles.contextMenuSlider}>
-            <label>Volume do Usuário</label>
+          {/* Header: nome + cargo */}
+          <div className={styles.contextMenuHeader}>
+            <span>{targetUserInContextMenu?.name ?? '...'}</span>
+            <span className={styles.contextMenuUserTag}>
+              {isTargetSubOwner ? '🛡 Sub Dono' : '👤 Membro'}
+            </span>
+          </div>
+
+          {/* Slider de volume */}
+          <div className={styles.contextMenuVolume}>
+            <div className={styles.contextMenuVolumeLabel}>
+              <span><i className="fa-solid fa-volume-high" style={{ marginRight: 4 }} />Volume do Usuário</span>
+              <span>{userVolumes[contextMenu.targetId] ?? 100}%</span>
+            </div>
             <input 
               type="range" 
               min="0" 
               max="200" 
               value={userVolumes[contextMenu.targetId] ?? 100}
               onChange={(e) => setUserVolume(contextMenu.targetId, Number(e.target.value))}
+              style={{ width: '100%', accentColor: '#7c5cff' }}
             />
           </div>
 
+          {/* Separador */}
+          <div className={styles.contextMenuDivider} />
+
+          {/* Silenciar para mim */}
           <button 
             className={styles.contextMenuItem}
             onClick={() => {
@@ -1061,11 +1078,14 @@ export const Sidebar: React.FC<Props> = ({
               setContextMenu(null);
             }}
           >
-            {localMutedUsers.includes(contextMenu.targetId) ? '🔊 Desmutar para mim' : '🔇 Silenciar para mim'}
+            <i className={`fa-solid ${localMutedUsers.includes(contextMenu.targetId) ? 'fa-volume-high' : 'fa-volume-xmark'}`} style={{ width: 14 }} />
+            {localMutedUsers.includes(contextMenu.targetId) ? 'Desmutar para mim' : 'Silenciar para mim'}
           </button>
 
+          {/* Promoção / rebaixamento (só Dono) */}
           {isOwner && (
             <>
+              <div className={styles.contextMenuDivider} />
               {!isTargetSubOwner ? (
                 <button 
                   className={styles.contextMenuItem}
@@ -1074,7 +1094,8 @@ export const Sidebar: React.FC<Props> = ({
                     setContextMenu(null);
                   }}
                 >
-                  🛡️ Promover a Sub Dono
+                  <i className="fa-solid fa-shield" style={{ width: 14, color: '#7c5cff' }} />
+                  Promover a Sub Dono
                 </button>
               ) : (
                 <button 
@@ -1084,14 +1105,17 @@ export const Sidebar: React.FC<Props> = ({
                     setContextMenu(null);
                   }}
                 >
-                  👤 Rebaixar para Membro
+                  <i className="fa-solid fa-user" style={{ width: 14 }} />
+                  Rebaixar para Membro
                 </button>
               )}
             </>
           )}
 
+          {/* Ações de moderação (Dono + Sub Dono) */}
           {canManageServer && (
             <>
+              <div className={styles.contextMenuDivider} />
               <button 
                 className={styles.contextMenuItem}
                 onClick={() => {
@@ -1099,7 +1123,8 @@ export const Sidebar: React.FC<Props> = ({
                   setContextMenu(null);
                 }}
               >
-                🔇 Silenciar no Servidor
+                <i className="fa-solid fa-microphone-slash" style={{ width: 14 }} />
+                Silenciar no Servidor
               </button>
               <button 
                 className={styles.contextMenuItem}
@@ -1108,8 +1133,10 @@ export const Sidebar: React.FC<Props> = ({
                   setContextMenu(null);
                 }}
               >
-                🔊 Desmutar no Servidor
+                <i className="fa-solid fa-microphone" style={{ width: 14 }} />
+                Desmutar no Servidor
               </button>
+              <div className={styles.contextMenuDivider} />
               <button 
                 className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
                 onClick={() => {
@@ -1117,7 +1144,8 @@ export const Sidebar: React.FC<Props> = ({
                   setContextMenu(null);
                 }}
               >
-                🚪 Desconectar da Call
+                <i className="fa-solid fa-phone-slash" style={{ width: 14 }} />
+                Desconectar da Call
               </button>
               <button 
                 className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
@@ -1126,7 +1154,8 @@ export const Sidebar: React.FC<Props> = ({
                   setContextMenu(null);
                 }}
               >
-                🚫 Expulsar da Sala
+                <i className="fa-solid fa-ban" style={{ width: 14 }} />
+                Expulsar da Sala
               </button>
             </>
           )}

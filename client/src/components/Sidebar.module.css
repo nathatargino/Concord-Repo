@@ -843,52 +843,70 @@
   position: fixed;
   z-index: 10000;
   background: #181b24;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 12px;
   padding: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(124, 92, 255, 0.08);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 180px;
+  min-width: 210px;
+  animation: contextMenuIn 0.12s ease-out;
+  transform-origin: top left;
+}
+
+@keyframes contextMenuIn {
+  from { opacity: 0; transform: scale(0.94) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1)   translateY(0);     }
 }
 
 .contextMenuHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 4px;
-  font-size: 12px;
+  padding: 8px 12px 6px;
+  font-size: 13px;
   font-weight: 700;
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 
 .contextMenuUserTag {
   font-size: 10px;
+  font-weight: 600;
   color: #7c5cff;
+  background: rgba(124, 92, 255, 0.12);
+  padding: 2px 6px;
+  border-radius: 20px;
 }
 
 .contextMenuVolume {
-  padding: 6px 10px;
+  padding: 6px 10px 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .contextMenuVolumeLabel {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
+  font-weight: 500;
   color: #9ca3af;
+}
+
+.contextMenuDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 2px 6px;
 }
 
 .contextMenuItem {
   background: transparent;
   border: none;
   color: #e5e7eb;
-  padding: 8px 10px;
+  padding: 8px 12px;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
@@ -896,17 +914,22 @@
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
-  transition: background 0.15s;
+  gap: 10px;
+  transition: background 0.12s, color 0.12s;
+  width: 100%;
 }
 
 .contextMenuItem:hover {
-  background: rgba(124, 92, 255, 0.2);
+  background: rgba(124, 92, 255, 0.18);
   color: #fff;
 }
 
+.contextMenuDanger {
+  color: #e5e7eb;
+}
+
 .contextMenuDanger:hover {
-  background: rgba(244, 63, 94, 0.2);
+  background: rgba(244, 63, 94, 0.18);
   color: #f43f5e;
 }
 

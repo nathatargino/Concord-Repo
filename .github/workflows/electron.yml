@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
@@ -48,7 +48,7 @@ jobs:
           "
 
       - name: Setup Python for Widevine VMP Signing
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -67,12 +67,40 @@ jobs:
           echo "=== client/release contents ==="
           find client/release -maxdepth 1 -type f | sort
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (sem assets)
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=${{ github.ref_name }}
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Release $TAG" \
+            --draft=false
+
+      - name: Upload release assets (com retry)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${{ github.ref_name }}
+
+          upload_with_retry() {
+            local FILE="$1"
+            local MAX=3
+            local N=0
+            until gh release upload "$TAG" "$FILE" --clobber; do
+              N=$((N+1))
+              if [ $N -ge $MAX ]; then
+                echo "ERRO: falha ao enviar $FILE após $MAX tentativas"
+                exit 1
+              fi
+              echo "Tentativa $N falhou, aguardando 15s..."
+              sleep 15
+            done
+            echo "Upload de $FILE concluído com sucesso!"
+          }
+
           EXE=$(find client/release -maxdepth 1 -name "*.exe" | head -1)
           BLOCKMAP=$(find client/release -maxdepth 1 -name "*.exe.blockmap" | head -1)
           LATESTYML=$(find client/release -maxdepth 1 -name "latest.yml" | head -1)
@@ -81,10 +109,6 @@ jobs:
           echo "BLOCKMAP: $BLOCKMAP"
           echo "LATEST.YML: $LATESTYML"
 
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes "Release $TAG" \
-            --draft=false \
-            "$EXE" \
-            ${BLOCKMAP:+"$BLOCKMAP"} \
-            ${LATESTYML:+"$LATESTYML"}
+          [ -n "$EXE" ]       && upload_with_retry "$EXE"
+          [ -n "$BLOCKMAP" ]  && upload_with_retry "$BLOCKMAP"
+          [ -n "$LATESTYML" ] && upload_with_retry "$LATESTYML"
