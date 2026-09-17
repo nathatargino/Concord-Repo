@@ -57,8 +57,8 @@ jobs:
 
       - name: Build Electron App (no publish)
         env:
-          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
-          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME || 'concord' }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD || 'Chosen@123' }}
         run: pnpm --filter client run electron:ci
 
       - name: List release artifacts
