@@ -1,6 +1,6 @@
 {
   "name": "concord",
-  "version": "1.0.80",
+  "version": "1.0.81",
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
