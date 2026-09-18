@@ -1,5 +1,6 @@
 /// <reference types="youtube" />
 import { useCallback, useRef, useMemo, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 
@@ -17,6 +18,10 @@ const ytReadyCallbacks: (() => void)[] = [];
 function loadYTApi(): Promise<void> {
   return new Promise((resolve) => {
     if (ytApiReady) return resolve();
+    if (typeof window !== 'undefined' && (window as any).YT && (window as any).YT.Player) {
+      ytApiReady = true;
+      return resolve();
+    }
     ytReadyCallbacks.push(resolve);
     if (ytApiLoaded) return;
     ytApiLoaded = true;
@@ -101,6 +106,7 @@ export function useYouTube(
   const isCCEnabledRef = useRef<boolean>(false);
   const targetQualityRef = useRef<string>('auto');
   const availableQualitiesRef = useRef<string[]>(['auto']);
+  const playerInitPromiseRef = useRef<Promise<YT.Player> | null>(null);
 
   const postYTCommand = useCallback((func: string, args: any[] = []) => {
     try {
@@ -321,7 +327,11 @@ export function useYouTube(
   }, []);
 
   const ensurePlayer = useCallback((): Promise<YT.Player> => {
-    return new Promise(async (resolve) => {
+    if (playerInitPromiseRef.current) {
+      return playerInitPromiseRef.current;
+    }
+
+    const promise = new Promise<YT.Player>(async (resolve, reject) => {
       console.log('[YT] ensurePlayer called');
       const { pipWindow } = useAppStore.getState();
       const doc = pipWindow ? pipWindow.document : document;
@@ -336,6 +346,7 @@ export function useYouTube(
         try {
           const iframe = (playerRef.current as any).getIframe?.();
           if (iframe && iframe.isConnected && doc.contains(iframe)) {
+            playerInitPromiseRef.current = null;
             return resolve(playerRef.current);
           } else {
             console.warn('[YT] playerRef iframe is disconnected from DOM, recreating player...');
@@ -346,21 +357,30 @@ export function useYouTube(
         }
       }
 
-      const container = doc.getElementById('yt-host');
+      let container = doc.getElementById('yt-host');
+      if (!container) {
+        // Wait up to 2 seconds for DOM to mount
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          container = doc.getElementById('yt-host');
+          if (container) break;
+        }
+      }
+
       if (!container) {
         console.error('[YT] #yt-host not found in DOM! pipWindow=', !!pipWindow);
-        return;
+        playerInitPromiseRef.current = null;
+        return reject(new Error('#yt-host not found in DOM'));
       }
       
       container.innerHTML = ''; // Clear zombie iframes
 
       const div = doc.createElement('div');
       div.id = 'yt-player-inner';
-      // Ensure placeholder video is completely invisible initially
+      // Ensure placeholder video is hidden via opacity so YouTube iframe initializes properly
       if (!useAppStore.getState().currentVideoId) {
-        div.style.display = 'none';
         div.style.opacity = '0';
-        div.style.visibility = 'hidden';
+        div.style.pointerEvents = 'none';
       }
       container.appendChild(div);
 
@@ -369,6 +389,20 @@ export function useYouTube(
       const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
+
+      let isResolved = false;
+      const readyTimeout = setTimeout(() => {
+        if (!isResolved) {
+          console.warn('[YT] onReady timeout reached');
+          isResolved = true;
+          playerInitPromiseRef.current = null;
+          if (playerRef.current) {
+            resolve(playerRef.current);
+          } else {
+            reject(new Error('YouTube player initialization timed out'));
+          }
+        }
+      }, 4000);
 
       playerRef.current = new YTAPI.Player(div, {
         height: '100%',
@@ -390,9 +424,8 @@ export function useYouTube(
         },
         events: {
           onReady: (event: any) => {
+             clearTimeout(readyTimeout);
              console.log('[YT] onReady fired! player=', !!event.target);
-             // Grant the cross-origin YouTube iframe permission to autoplay
-             // with sound once the tab has a user gesture (web only).
              try {
                const iframe = playerRef.current?.getIframe?.();
                if (iframe && !/autoplay/.test(iframe.getAttribute('allow') || '')) {
@@ -400,9 +433,8 @@ export function useYouTube(
                }
                // Keep placeholder invisible unless there is an actual track
                if (iframe && !useAppStore.getState().currentVideoId) {
-                 iframe.style.display = 'none';
                  iframe.style.opacity = '0';
-                 iframe.style.visibility = 'hidden';
+                 iframe.style.pointerEvents = 'none';
                }
              } catch {
                // ignore
@@ -423,10 +455,29 @@ export function useYouTube(
                playerRef.current?.unMute();
                playerRef.current?.setVolume(targetVol);
              }
-             resolve(playerRef.current!);
+             if (!isResolved) {
+               isResolved = true;
+               playerInitPromiseRef.current = null;
+               resolve(playerRef.current!);
+             }
           },
           onError: (event: any) => {
             console.error('[YT] Player error:', event.data);
+            const code = event.data;
+            let msg = 'Erro ao reproduzir vídeo do YouTube.';
+            if (code === 150 || code === 101) {
+              msg = 'Este vídeo não permite reprodução incorporada fora do YouTube.';
+            } else if (code === 100) {
+              msg = 'Vídeo do YouTube não encontrado ou privado.';
+            } else if (code === 2) {
+              msg = 'ID do vídeo inválido.';
+            }
+            toast.error(msg);
+            useAppStore.getState().setIsPlaying(false);
+            useAppStore.getState().setIsBuffering(false);
+            if (currentTokenRef.current !== null) {
+              onMusicEnded(currentTokenRef.current);
+            }
           },
           onPlaybackQualityChange: (event: any) => {
             console.log('[YT] onPlaybackQualityChange fired:', event.data);
@@ -491,6 +542,9 @@ export function useYouTube(
         },
       });
     });
+
+    playerInitPromiseRef.current = promise;
+    return promise;
   }, [onMusicEnded, applyCCState]);
 
   const playYouTube = useCallback(
@@ -512,13 +566,21 @@ export function useYouTube(
       useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
 
-      const player = await ensurePlayer();
+      let player: YT.Player;
+      try {
+        player = await ensurePlayer();
+      } catch (err) {
+        console.warn('[YT] Failed to ensure player on first attempt, retrying...', err);
+        playerInitPromiseRef.current = null;
+        player = await ensurePlayer();
+      }
       try {
         const iframe = player.getIframe?.();
         if (iframe) {
           iframe.style.display = 'block';
           iframe.style.opacity = '1';
           iframe.style.visibility = 'visible';
+          iframe.style.pointerEvents = 'auto';
         }
       } catch {}
 
@@ -530,6 +592,11 @@ export function useYouTube(
         });
       } catch {
         player.loadVideoById(videoId, Math.floor(startSeconds));
+      }
+      try {
+        player.playVideo?.();
+      } catch (e) {
+        console.warn('[YT] playVideo call error:', e);
       }
       applyCCState(isCCEnabledRef.current);
 

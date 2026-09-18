@@ -55,6 +55,8 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     setActiveMediaTab: (tab) => electron_1.ipcRenderer.send('set-active-media-tab', tab),
     sendStreamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
     streamingCommand: (command, payload) => electron_1.ipcRenderer.send('streaming-command', command, payload),
+    setStreamingVolume: (volume) => electron_1.ipcRenderer.send('set-streaming-volume', volume),
+    setModalActive: (active) => electron_1.ipcRenderer.send('set-modal-active', active),
     onStreamingEvent: (callback) => {
         const subscription = (_event, data) => callback(data);
         electron_1.ipcRenderer.on('streaming-event', subscription);

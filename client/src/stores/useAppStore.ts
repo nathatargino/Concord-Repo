@@ -84,6 +84,8 @@ interface AppState {
   setActiveStreaming: (s: { service: 'netflix' | 'prime'; url?: string } | null) => void;
   showVideoPlayer: boolean;
   setShowVideoPlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
+  isYouTubeSearchOpen: boolean;
+  setIsYouTubeSearchOpen: (open: boolean) => void;
 
   // Screen share
   screenShareUserId: string | null;
@@ -218,6 +220,8 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       showVideoPlayer: typeof v === 'function' ? v(state.showVideoPlayer) : v,
     })),
+  isYouTubeSearchOpen: false,
+  setIsYouTubeSearchOpen: (isYouTubeSearchOpen) => set({ isYouTubeSearchOpen }),
 
   // Screen share
   screenShareUserId: null,

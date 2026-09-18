@@ -10,8 +10,8 @@ export const PiPPlayer: React.FC = () => {
   
   const [isDraggingSeek, setIsDraggingSeek] = useState(false);
   const [seekValue, setSeekValue] = useState(0);
-  const [volume, setVolume] = useState<number>(80);
-  const volumeRef = useRef<number>(80);
+  const [volume, setVolume] = useState<number>(50);
+  const volumeRef = useRef<number>(50);
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -270,7 +270,7 @@ export const PiPPlayer: React.FC = () => {
                   <button
                     className={styles.volumeBtn}
                     onClick={() => {
-                      const newVol = volume > 0 ? 0 : 80;
+                      const newVol = volume > 0 ? 0 : 50;
                       setVolume(newVol);
                       sendAction('volume', newVol);
                     }}

@@ -197,6 +197,8 @@ function extractVideoId(url: string): string | null {
     /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
     /(?:embed\/)([a-zA-Z0-9_-]{11})/,
     /(?:shorts\/)([a-zA-Z0-9_-]{11})/,
+    /(?:live\/)([a-zA-Z0-9_-]{11})/,
+    /(?:v\/)([a-zA-Z0-9_-]{11})/,
   ];
   for (const pattern of patterns) {
     const match = trimmed.match(pattern);
@@ -235,12 +237,10 @@ function broadcastQueueUpdate(io: IoServer, room: RoomState) {
 
 function playNextInQueue(io: IoServer, room: RoomState) {
   if (room.musicQueue.length === 0) {
-    if (room.currentMusicToken !== null) {
-      io.to(room.id).emit('stop_youtube', room.currentMusicToken);
-      room.currentMusicToken = null;
-      room.currentMusicVideoId = null;
-      room.currentMusicStartTime = null;
-    }
+    io.to(room.id).emit('stop_youtube', room.currentMusicToken ?? 0);
+    room.currentMusicToken = null;
+    room.currentMusicVideoId = null;
+    room.currentMusicStartTime = null;
     return;
   }
   const next = room.musicQueue.shift()!;
@@ -504,6 +504,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       socket.emit('room_joined', toRoomInfo(room));
       broadcastUserList(io, room);
+      socket.emit('music_queue_update', [...room.musicQueue]);
+      if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
+        const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
+        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
+      }
       console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
 
       // Send message history to newly joined user (servers only)
@@ -785,9 +790,14 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
-    socket.on('request_music', async (url: string, suggestedTitle?: string) => {
+    socket.on('request_music', async (url: string, suggestedTitle?: string, playNow?: boolean) => {
       const room = getCurrentRoom();
       if (!room) return;
+
+      if (!room.voiceUsers.has(socket.id)) {
+        socket.emit('toast_notification', 'Você precisa estar na call de voz para colocar vídeos.', 'error');
+        return;
+      }
 
       const videoId = extractVideoId(url);
       if (!videoId) {
@@ -808,11 +818,16 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       const token = Date.now();
       const item: MusicItem = { videoId, token, requestedBy: user.name, title };
-      room.musicQueue.push(item);
-      broadcastQueueUpdate(io, room);
 
-      if (room.currentMusicToken === null) {
-        playNextInQueue(io, room);
+      if (playNow || room.currentMusicToken === null || !room.currentMusicVideoId) {
+        room.currentMusicToken = token;
+        room.currentMusicVideoId = videoId;
+        room.currentMusicStartTime = Date.now();
+        io.to(room.id).emit('play_youtube', videoId, 0, token);
+        broadcastQueueUpdate(io, room);
+      } else {
+        room.musicQueue.push(item);
+        broadcastQueueUpdate(io, room);
       }
     });
 

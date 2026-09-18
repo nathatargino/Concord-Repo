@@ -935,6 +935,8 @@ const streamingInstances = new Map<'netflix' | 'prime', StreamingInstance>();
 let activeStreamingService: 'netflix' | 'prime' | null = null;
 let activeStreamingBounds: { x: number; y: number; width: number; height: number } | null = null;
 let isStreamingFullscreen = false;
+let isModalActive = false;
+let modalHiddenStreamingService: 'netflix' | 'prime' | null = null;
 
 function getActiveStreamingInstance(): StreamingInstance | undefined {
     if (activeStreamingService && streamingInstances.has(activeStreamingService)) {
@@ -942,6 +944,28 @@ function getActiveStreamingInstance(): StreamingInstance | undefined {
     }
     const first = streamingInstances.values().next().value;
     return first;
+}
+
+let currentStreamingVolume = 50; // 0 to 100
+
+function applyStreamingVolumeToView(view: any, volume: number) {
+    if (!view || view.webContents.isDestroyed()) return;
+    const fraction = Math.max(0, Math.min(1, volume / 100));
+    const isMuted = fraction === 0;
+    try {
+        view.webContents.setAudioMuted(isMuted);
+    } catch (e) {}
+    view.webContents.executeJavaScript(`
+        (function() {
+            try {
+                var mediaEls = document.querySelectorAll('video, audio');
+                mediaEls.forEach(function(el) {
+                    el.volume = ${fraction};
+                    el.muted = ${isMuted};
+                });
+            } catch(e) {}
+        })();
+    `).catch(() => {});
 }
 
 function hideStreamingView(service: 'netflix' | 'prime') {
@@ -969,10 +993,13 @@ function hideStreamingView(service: 'netflix' | 'prime') {
 
 function showStreamingView(service: 'netflix' | 'prime') {
     if (!mainWindow || mainWindow.isDestroyed()) return;
+    activeStreamingService = service;
+    if (isModalActive) {
+        modalHiddenStreamingService = service;
+        return;
+    }
     const inst = streamingInstances.get(service);
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
-
-    activeStreamingService = service;
 
     for (const [s] of streamingInstances.entries()) {
         if (s !== service) {
@@ -1014,9 +1041,7 @@ function showStreamingView(service: 'netflix' | 'prime') {
     if (typeof (inst.view as any).setVisible === 'function') {
         inst.view.setVisible(true);
     }
-    try {
-        inst.view.webContents.setAudioMuted(false);
-    } catch (e) {}
+    applyStreamingVolumeToView(inst.view, currentStreamingVolume);
     try {
         inst.view.webContents.focus();
     } catch (e) {}
@@ -1361,7 +1386,11 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
 
     activeStreamingService = options.service;
     streamingInstances.set(options.service, instObj);
-    showStreamingView(options.service);
+    if (!isModalActive) {
+        showStreamingView(options.service);
+    } else {
+        modalHiddenStreamingService = options.service;
+    }
 
     fs.appendFileSync(logFile, `[Streaming] Loading ${options.service}: ${targetUrl} (UA: ${cleanChromeUA})\n`);
     await view.webContents.loadURL(targetUrl);
@@ -1380,8 +1409,31 @@ ipcMain.on('set-active-media-tab', (_event, tab: 'youtube' | 'netflix' | 'prime'
         hideStreamingView('netflix');
         hideStreamingView('prime');
         activeStreamingService = null;
+        modalHiddenStreamingService = null;
     } else if (tab === 'netflix' || tab === 'prime') {
-        showStreamingView(tab);
+        if (!isModalActive) {
+            showStreamingView(tab);
+        } else {
+            modalHiddenStreamingService = tab;
+        }
+    }
+});
+
+ipcMain.on('set-modal-active', (_event, active: boolean) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    isModalActive = !!active;
+    if (isModalActive) {
+        if (activeStreamingService) {
+            modalHiddenStreamingService = activeStreamingService;
+        }
+        hideStreamingView('netflix');
+        hideStreamingView('prime');
+    } else {
+        const toRestore = modalHiddenStreamingService || activeStreamingService;
+        if (toRestore && streamingInstances.has(toRestore)) {
+            showStreamingView(toRestore);
+        }
+        modalHiddenStreamingService = null;
     }
 });
 
@@ -1395,7 +1447,7 @@ ipcMain.on('resize-streaming-view', (_event, bounds: { x: number; y: number; wid
         height: Math.max(1, Math.round(bounds.height)),
     };
     activeStreamingBounds = safeBounds;
-    if (!isStreamingFullscreen && activeStreamingService) {
+    if (!isStreamingFullscreen && activeStreamingService && !isModalActive) {
         const inst = streamingInstances.get(activeStreamingService);
         if (inst && typeof (inst.view as any).setVisible === 'function') {
             inst.view.setBounds(safeBounds);
@@ -1408,13 +1460,28 @@ ipcMain.on('close-streaming-view', (_event, service?: 'netflix' | 'prime') => {
     closeStreamingInstance(service);
 });
 
+ipcMain.on('set-streaming-volume', (_event, volume: number) => {
+    currentStreamingVolume = typeof volume === 'number' ? volume : 50;
+    for (const inst of streamingInstances.values()) {
+        if (inst.view) {
+            applyStreamingVolumeToView(inst.view, currentStreamingVolume);
+        }
+    }
+});
+
 ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
     const targetService = payload?.service || activeStreamingService;
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
     const wc = inst.view.webContents;
 
-    if (command === 'play') {
+    if (command === 'volume') {
+        const rawVol = typeof payload === 'number' ? payload : payload?.volume;
+        if (typeof rawVol === 'number') {
+            currentStreamingVolume = rawVol;
+            applyStreamingVolumeToView(inst.view, currentStreamingVolume);
+        }
+    } else if (command === 'play') {
         wc.focus();
         // 1. Hardware Space key event
         wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });

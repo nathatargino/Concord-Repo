@@ -115,8 +115,8 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
         <div className={styles.sliderGroup}>
           <div className={styles.sliderHeader}>
             <span className={styles.sliderLabel}>
-              <i className="fa-brands fa-youtube" style={{ color: '#ef4444' }}></i>
-              Som do YouTube/Stream
+              <i className="fa-solid fa-tv" style={{ color: '#a78bfa' }}></i>
+              Streaming
             </span>
             <span className={styles.sliderValue}>{ytVol}%</span>
           </div>

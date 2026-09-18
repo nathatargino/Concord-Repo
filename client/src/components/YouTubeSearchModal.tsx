@@ -26,16 +26,24 @@ export const YouTubeSearchModal: React.FC<Props> = ({
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Focus search input when modal opens
+  // Focus search input when modal opens and hide any streaming views
   useEffect(() => {
     if (isOpen) {
+      (window as any).electron?.setModalActive?.(true);
       setTimeout(() => inputRef.current?.focus(), 50);
     } else {
+      (window as any).electron?.setModalActive?.(false);
       setQuery('');
       setResults([]);
       setHasSearched(false);
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      (window as any).electron?.setModalActive?.(false);
+    };
+  }, []);
 
   // Handle ESC key to close
   useEffect(() => {

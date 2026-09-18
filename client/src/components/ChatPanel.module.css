@@ -502,8 +502,8 @@
 /* ── Giphy Popover ── */
 .giphyPopover {
   position: absolute;
-  bottom: 70px;
-  left: 20px;
+  bottom: 72px;
+  right: 16px;
   width: 320px;
   height: 380px;
   background: #181b24;
@@ -1574,15 +1574,13 @@
 }
 
 .hiddenSlot {
-  visibility: hidden !important;
   position: absolute !important;
-  left: -10000px !important;
-  top: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
   opacity: 0 !important;
   pointer-events: none !important;
+  z-index: 0 !important;
 }
 
 .ytHostSeeking {
@@ -1935,41 +1933,47 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 7px 14px;
+  padding: 8px 14px;
   border-radius: 8px;
   background: transparent;
   border: 1px solid transparent;
   color: #9ca3af;
   font-size: 12px;
   font-weight: 600;
+  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   user-select: none;
   flex: 1;
 }
 
-.mediaTab:hover {
-  background: #222634;
+.mediaTab:hover:not([class*="mediaTabActive"]) {
+  background: rgba(255, 255, 255, 0.06);
   color: #fff;
 }
 
-.mediaTabActive {
-  background: #7c5cff !important;
-  border-color: rgba(124, 92, 255, 0.4) !important;
-  color: #fff !important;
-  box-shadow: 0 2px 10px rgba(124, 92, 255, 0.25);
+/* YouTube Active Tab */
+.mediaTabYoutube.mediaTabActive {
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.25), rgba(200, 0, 0, 0.15)) !important;
+  border: 1px solid rgba(255, 60, 60, 0.45) !important;
+  color: #FF5252 !important;
+  box-shadow: 0 2px 12px rgba(255, 0, 0, 0.2);
 }
 
+/* Netflix Active Tab */
 .mediaTabNetflix.mediaTabActive {
-  background: #e50914 !important;
-  border-color: rgba(229, 9, 20, 0.5) !important;
-  box-shadow: 0 2px 10px rgba(229, 9, 20, 0.3);
+  background: linear-gradient(135deg, rgba(229, 9, 20, 0.3), rgba(180, 0, 10, 0.15)) !important;
+  border: 1px solid rgba(229, 9, 20, 0.5) !important;
+  color: #E50914 !important;
+  box-shadow: 0 2px 12px rgba(229, 9, 20, 0.25);
 }
 
+/* Prime Video Active Tab */
 .mediaTabPrime.mediaTabActive {
-  background: #00A8E1 !important;
-  border-color: rgba(0, 168, 225, 0.5) !important;
-  box-shadow: 0 2px 10px rgba(0, 168, 225, 0.3);
+  background: linear-gradient(135deg, rgba(0, 168, 225, 0.25), rgba(0, 120, 180, 0.15)) !important;
+  border: 1px solid rgba(0, 168, 225, 0.45) !important;
+  color: #00A8E1 !important;
+  box-shadow: 0 2px 12px rgba(0, 168, 225, 0.2);
 }
 
 .mediaTabTitle {
@@ -1981,8 +1985,8 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px #22c55e;
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
   animation: pulseDot 1.5s infinite;
 }
 
@@ -1995,11 +1999,11 @@
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 6px;
-  background: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.4);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  border: 1px solid currentColor;
 }
 
 /* Empty launcher card when streaming session not started */
@@ -2087,6 +2091,30 @@
   background: #008ebd;
   transform: translateY(-1px);
 }
+
+.searchYouTubeEmptyBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #7c5cff;
+  border: 1px solid rgba(124, 92, 255, 0.5);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(124, 92, 255, 0.35);
+}
+
+.searchYouTubeEmptyBtn:hover {
+  background: #6947f6;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(124, 92, 255, 0.5);
+}
+
 
 
 

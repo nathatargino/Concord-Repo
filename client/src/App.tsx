@@ -125,6 +125,11 @@ export default function App() {
         const targetVol = state.callMuted ? 0 : state.ytVol;
         electron.sendPipSync({ volume: targetVol });
       }
+
+      if (electron?.setStreamingVolume) {
+        const targetVol = state.callMuted ? 0 : state.ytVol;
+        electron.setStreamingVolume(targetVol);
+      }
     });
 
     const unsubApp = useAppStore.subscribe((state, prevState) => {
@@ -138,6 +143,15 @@ export default function App() {
       unsubApp();
     };
   }, [audio, yt]);
+
+  // Initial sync of streaming volume to Electron
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (electron?.setStreamingVolume) {
+      const { ytVol, callMuted } = useAudioStore.getState();
+      electron.setStreamingVolume(callMuted ? 0 : ytVol);
+    }
+  }, []);
 
   // Sync YT mute when PiP toggles
   useEffect(() => {
@@ -165,19 +179,17 @@ export default function App() {
     onReceiveAnswer: rtc.onReceiveAnswer,
     onReceiveIce: rtc.onReceiveIce,
     onPlayYouTube: (videoId, startSeconds, token) => {
-      if (useAppStore.getState().inVoice) {
-        yt.playYouTube(videoId, startSeconds, token);
-      }
+      yt.playYouTube(videoId, startSeconds, token);
     },
     onStopYouTube: yt.stopYouTube,
     onPauseYouTube: () => {
-      if (useAppStore.getState().inVoice) yt.pauseYouTube();
+      yt.pauseYouTube();
     },
     onResumeYouTube: () => {
-      if (useAppStore.getState().inVoice) yt.resumeYouTube();
+      yt.resumeYouTube();
     },
     onMusicSeek: (time) => {
-      if (useAppStore.getState().inVoice) yt.seekTo(time);
+      yt.seekTo(time);
       store.setMusicStartTime(Date.now() - (time * 1000));
     },
     onRoomJoined: (roomInfo) => {
@@ -448,18 +460,27 @@ export default function App() {
 
     try {
       const inputDeviceId = useAudioStore.getState().selectedAudioInputId;
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: (inputDeviceId && inputDeviceId !== 'default') ? { exact: inputDeviceId } : undefined,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          // @ts-ignore
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-        },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: (inputDeviceId && inputDeviceId !== 'default') ? { exact: inputDeviceId } : undefined,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            // @ts-ignore
+            googNoiseSuppression: true,
+            googHighpassFilter: true,
+          },
+        });
+      } catch (micErr) {
+        console.warn('Microfone não encontrado ou permissão negada, entrando como ouvinte:', micErr);
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const dest = audioCtx.createMediaStreamDestination();
+        stream = dest.stream;
+        useAudioStore.getState().setMicMuted(true);
+      }
       rawMicStreamRef.current = stream;
       const processedStream = await audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
@@ -467,8 +488,8 @@ export default function App() {
       socket.emit('update_media_state', useAudioStore.getState().micMuted, useAudioStore.getState().callMuted);
       monitorSpeaking(processedStream, store.myId);
     } catch (err) {
-      console.error('Mic error', err);
-      alert('Erro ao acessar o microfone. Verifique as permissões.');
+      console.error('Voice join error', err);
+      alert('Erro ao entrar na chamada de voz. Verifique suas conexões e permissões.');
     }
   };
 
@@ -562,7 +583,13 @@ export default function App() {
 
         <div className={styles.sidePanels}>
           <MusicPanel
-            onRequestMusic={(url, title) => socket.emit('request_music', url, title)}
+            onRequestMusic={(url, title, playNow) => {
+              if (!store.inVoice) {
+                toast.error('Você precisa estar em uma call de voz para colocar vídeos.');
+                return;
+              }
+              socket.emit('request_music', url, title, playNow);
+            }}
             onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
             onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
             inVoice={store.inVoice}

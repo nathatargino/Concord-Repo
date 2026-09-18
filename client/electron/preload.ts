@@ -34,6 +34,8 @@ declare global {
             setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime') => void;
             sendStreamingCommand?: (command: string, payload?: any) => void;
             streamingCommand?: (command: string, payload?: any) => void;
+            setStreamingVolume?: (volume: number) => void;
+            setModalActive?: (active: boolean) => void;
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
             /** Screen Share Source Picker */
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
@@ -96,6 +98,8 @@ contextBridge.exposeInMainWorld('electron', {
     setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime') => ipcRenderer.send('set-active-media-tab', tab),
     sendStreamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
     streamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
+    setStreamingVolume: (volume: number) => ipcRenderer.send('set-streaming-volume', volume),
+    setModalActive: (active: boolean) => ipcRenderer.send('set-modal-active', active),
     onStreamingEvent: (callback: (event: any) => void) => {
         const subscription = (_event: any, data: any) => callback(data);
         ipcRenderer.on('streaming-event', subscription);

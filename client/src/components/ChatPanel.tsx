@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import toast from 'react-hot-toast';
 
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
@@ -7,7 +8,7 @@ import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
 import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
-import { NetflixIcon } from './MusicPanel';
+import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -95,6 +96,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     ytAvailableQualities,
     showVideoPlayer,
     setShowVideoPlayer,
+    setIsYouTubeSearchOpen,
+    inVoice,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -275,12 +278,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     }
   };
 
-  // Auto-fechar o player e o PiP quando o vídeo parar de tocar (exceto se houver streaming ativo)
+  // Auto-fechar o PiP quando o vídeo parar de tocar e não houver streaming ativo
   useEffect(() => {
     if (!currentVideoId && !activeStreaming) {
-      if (showVideoPlayer) {
-        setShowVideoPlayer(false);
-      }
       const store = useAppStore.getState();
       if (store.isPiPActive) {
         const electron = (window as any).electron;
@@ -288,7 +288,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         store.setPiPActive(false);
       }
     }
-  }, [currentVideoId, showVideoPlayer, activeStreaming]);
+  }, [currentVideoId, activeStreaming]);
 
   // Sempre que for colocado um novo vídeo de reprodução, pré-selecionar a opção de qualidade automática
   useEffect(() => {
@@ -858,8 +858,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
             )}
           </div>
 
-          {/* Botão só aparece quando há vídeo do YouTube tocando ou quando o player já está aberto */}
-          {(Boolean(currentVideoId) || showVideoPlayer) && (
+          {/* Botão de alternar entre Chat e Streaming quando há streaming ativo ou player aberto */}
+          {((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || currentVideoId)) || showVideoPlayer) && (
             <button
               className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
@@ -870,10 +870,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   setShowVideoPlayer(true);
                 }
               }}
-              title={showVideoPlayer ? 'Voltar ao Chat' : 'Assistir vídeo na sala'}
+              title={showVideoPlayer ? 'Voltar ao Chat' : 'Voltar ao Streaming'}
             >
               <i className={`fa-solid ${showVideoPlayer ? 'fa-arrow-left' : 'fa-tv'}`}></i>
-              <span>{showVideoPlayer ? 'Chat' : 'Assistir'}</span>
+              <span>{showVideoPlayer ? 'Chat' : 'Streaming'}</span>
             </button>
           )}
         </div>
@@ -1265,16 +1265,20 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               <div className={styles.mediaTabBar} role="tablist" aria-label="Navegar entre plataformas">
                 {/* YouTube Tab */}
                 <button
-                  className={`${styles.mediaTab} ${activeMediaTab === 'youtube' ? styles.mediaTabActive : ''}`}
+                  className={`${styles.mediaTab} ${styles.mediaTabYoutube} ${activeMediaTab === 'youtube' ? styles.mediaTabActive : ''}`}
                   onClick={() => {
                     setActiveMediaTab('youtube');
                     setActiveStreaming(null);
+                    setShowVideoPlayer(true);
                     const electron = (window as any).electron;
                     if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
+                    if (!currentVideoId) {
+                      setIsYouTubeSearchOpen(true);
+                    }
                   }}
                   title="YouTube (Músicas e Vídeos)"
                 >
-                  <i className="fa-brands fa-youtube" style={{ color: '#ef4444', fontSize: '13px' }}></i>
+                  <YouTubeIcon active={activeMediaTab === 'youtube'} />
                   <span className={styles.mediaTabTitle}>YouTube</span>
                   {currentVideoId && isPlaying && (
                     <span className={styles.mediaTabLiveDot} title="Reproduzindo" />
@@ -1312,7 +1316,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   }}
                   title="Prime Video"
                 >
-                  <i className="fa-solid fa-play" style={{ color: '#22d3ee', fontSize: '10px' }}></i>
+                  <PrimeIcon />
                   <span className={styles.mediaTabTitle}>Prime Video</span>
                   {streamingSessions.prime && (
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
@@ -1350,6 +1354,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                         <button
                           className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : styles.streamingLauncherBtnPrime}`}
                           onClick={() => {
+                            if (!inVoice) {
+                              toast.error(`Você precisa estar em uma call de voz para assistir ${platformLabel}.`);
+                              return;
+                            }
                             setActiveStreaming({ service: currentService });
                             setActiveMediaTab(currentService);
                             setStreamingSession(currentService, true);
@@ -1535,9 +1543,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     {/* Global YT Host - stays visible only when on YouTube tab */}
                     <div
                       style={{
-                        display: (isPiPActive || !currentVideoId || activeMediaTab !== 'youtube') ? 'none' : 'block',
-                        visibility: showVideoPlayer ? 'visible' : 'hidden',
-                        pointerEvents: showVideoPlayer ? 'auto' : 'none',
+                        display: isPiPActive ? 'none' : 'block',
+                        visibility: 'visible',
+                        opacity: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 1 : 0,
+                        pointerEvents: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'auto' : 'none',
                         width: '100%',
                         height: '100%'
                       }}
@@ -1771,8 +1780,22 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   </div>
                   <p className={styles.videoEmptyTitle}>Nenhum vídeo tocando</p>
                   <p className={styles.videoEmptySubtitle}>
-                    Adicione um vídeo do YouTube na fila do painel de música para assistir aqui.
+                    Adicione um vídeo do YouTube na fila do painel de streaming para assistir aqui.
                   </p>
+                  <button
+                    type="button"
+                    className={styles.searchYouTubeEmptyBtn}
+                    onClick={() => {
+                      if (!inVoice) {
+                        toast.error('Você precisa estar em uma call de voz para buscar e reproduzir vídeos.');
+                        return;
+                      }
+                      setIsYouTubeSearchOpen(true);
+                    }}
+                  >
+                    <i className="fa-solid fa-magnifying-glass"></i>
+                    <span>Buscar Vídeo no YouTube</span>
+                  </button>
                   <div className={styles.videoEmptyPulse} />
                 </div>
               )}

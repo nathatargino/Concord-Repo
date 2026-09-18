@@ -55,7 +55,34 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [saving, setSaving] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+    if (isElectron && (window as any).electron) {
+      if ((window as any).electron.setModalActive) {
+        (window as any).electron.setModalActive(true);
+      }
+      (window as any).electron.getAppVersion?.().then((v: string) => setAppVersion(v));
+      const unsub = (window as any).electron.onUpdateMessage?.((msg: string) => {
+        setUpdateMessage(msg);
+        if (msg.includes('encontrada') || msg.includes('disponível') || msg.includes('baixada') || msg.includes('Baixando')) {
+          setUpdateAvailable(true);
+        } else if (msg.includes('atualizado')) {
+          setUpdateAvailable(false);
+        }
+      });
+      return () => {
+        if ((window as any).electron.setModalActive) {
+          (window as any).electron.setModalActive(false);
+        }
+        unsub?.();
+      };
+    }
+  }, []);
 
   // ── Áudio & Dispositivos ──
   const {
@@ -680,6 +707,29 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
             <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
               {saving ? 'Salvando...' : 'Salvar Alterações'}
             </button>
+
+            {appVersion && (
+              <div className={styles.systemSection}>
+                <div className={styles.systemInfo}>
+                  <span className={styles.systemLabel}>Concord Desktop v{appVersion}</span>
+                  <span className={styles.systemStatusText}>
+                    {updateMessage || (updateAvailable ? 'Nova versão disponível!' : 'Aplicativo atualizado')}
+                  </span>
+                </div>
+                {updateAvailable && (
+                  <button
+                    type="button"
+                    className={styles.updateAppBtn}
+                    onClick={() => {
+                      (window as any).electron?.checkForUpdates();
+                    }}
+                  >
+                    <i className="fa-solid fa-arrow-up-from-bracket"></i>
+                    <span>Atualizar App</span>
+                  </button>
+                )}
+              </div>
+            )}
           </form>
         )}
 
@@ -743,13 +793,20 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
             </div>
 
             <div className={styles.inputGroup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px' }}>
-              <label className={styles.label} style={{ margin: 0 }}>Supressão de Ruído</label>
-              <input
-                type="checkbox"
-                checked={noiseSuppression}
-                onChange={(e) => setNoiseSuppression(e.target.checked)}
-                style={{ width: '18px', height: '18px', accentColor: '#7c5cff', cursor: 'pointer' }}
-              />
+              <div>
+                <label className={styles.label} style={{ margin: 0 }}>Supressão de Ruído</label>
+                <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '2px' }}>
+                  Filtra ruídos de fundo e estática automaticamente
+                </span>
+              </div>
+              <label className={styles.toggleSwitch}>
+                <input
+                  type="checkbox"
+                  checked={noiseSuppression}
+                  onChange={(e) => setNoiseSuppression(e.target.checked)}
+                />
+                <span className={styles.toggleSlider} />
+              </label>
             </div>
           </div>
         )}

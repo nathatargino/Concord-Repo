@@ -791,14 +791,7 @@ export const Sidebar: React.FC<Props> = ({
             </button>
           </div>
         </div>
-      ) : (
-        <div className={styles.disconnectedVoiceWidget}>
-          <span className={styles.disconnectedVoiceText}>Voz Desconectada</span>
-          <button className={styles.quickJoinCallBtn} onClick={onJoinVoice}>
-            <i className="fa-solid fa-headset" style={{ fontSize: '11px' }} /> Entrar na Call
-          </button>
-        </div>
-      )}
+      ) : null}
 
       {/* ── USER CONTROL BAR (FOOTER) ── */}
       <div className={styles.userControlFooter}>

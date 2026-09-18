@@ -735,8 +735,8 @@
 .userControlFooter {
   height: 64px;
   min-height: 64px;
-  padding: 0 12px;
-  background: rgba(17, 19, 25, 0.8);
+  padding: 0 16px;
+  background: rgba(17, 19, 25, 0.85);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   align-items: center;
@@ -747,7 +747,8 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  overflow: hidden;
+  overflow: visible;
+  min-width: 0;
 }
 
 .myAvatarWrapper {
@@ -755,6 +756,9 @@
   width: 36px;
   height: 36px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .myAvatarImg {
@@ -763,6 +767,7 @@
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 0 0 2px #7c5cff;
+  display: block;
 }
 
 .myAvatarFallback {
@@ -788,6 +793,7 @@
   background-color: #10b981;
   border-radius: 50%;
   border: 2px solid #181b24;
+  z-index: 2;
 }
 
 .myInfo {

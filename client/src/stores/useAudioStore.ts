@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-const STORAGE_KEY = 'concord_audio_v1';
+const STORAGE_KEY = 'concord_audio_v2';
 
 interface AudioState {
   ytVol: number;
@@ -36,7 +36,7 @@ interface AudioState {
 }
 
 const defaults = {
-  ytVol: 80,
+  ytVol: 50, // Default 50% for first-time users as requested
   micVol: 100,
   remoteVol: 100,
   screenShareVol: 100,
@@ -50,6 +50,35 @@ const defaults = {
   localMutedUsers: [],
   userVolumes: {},
 };
+
+function getInitialState() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return defaults;
+  }
+  try {
+    const savedV2 = localStorage.getItem(STORAGE_KEY);
+    if (savedV2) {
+      const parsed = JSON.parse(savedV2);
+      if (parsed?.state) return { ...defaults, ...parsed.state };
+    }
+    // Migrate from v1 if v2 does not exist
+    const savedV1 = localStorage.getItem('concord_audio_v1');
+    if (savedV1) {
+      const parsed = JSON.parse(savedV1);
+      if (parsed?.state) {
+        const migratedYtVol = parsed.state.ytVol === 80 ? 50 : (parsed.state.ytVol ?? 50);
+        return {
+          ...defaults,
+          ...parsed.state,
+          ytVol: migratedYtVol,
+        };
+      }
+    }
+  } catch (e) {
+    console.debug('Error reading audio store from localStorage:', e);
+  }
+  return defaults;
+}
 
 export async function applyAudioOutputDevice(deviceId: string) {
   const audioElements = document.querySelectorAll<HTMLAudioElement>('audio');
@@ -67,7 +96,7 @@ export async function applyAudioOutputDevice(deviceId: string) {
 export const useAudioStore = create<AudioState>()(
   persist(
     (set) => ({
-      ...defaults,
+      ...getInitialState(),
       setYtVol: (ytVol) => set({ ytVol: Math.min(100, Math.max(0, ytVol)) }),
       setMicVol: (micVol) => set({ micVol: Math.min(200, Math.max(0, micVol)) }),
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),

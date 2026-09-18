@@ -75,7 +75,7 @@ interface ClientToServerEvents {
   delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
-  request_music: (url: string, title?: string) => void;
+  request_music: (url: string, title?: string, playNow?: boolean) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   music_seek: (time: number) => void;
   remove_from_queue: (token: number) => void;
@@ -276,6 +276,12 @@ export function useSocket(callbacks: SocketCallbacks) {
     socket.on('play_youtube', (videoId, startSeconds, token) => {
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
+      store.setActiveMediaTab('youtube');
+      store.setShowVideoPlayer(true);
+      const electron = (window as any).electron;
+      if (electron?.setActiveMediaTab) {
+        electron.setActiveMediaTab('youtube');
+      }
       callbacksRef.current.onPlayYouTube(videoId, startSeconds, token);
     });
 
