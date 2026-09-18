@@ -18,6 +18,17 @@ export interface MusicItem {
   title?: string;
 }
 
+export interface WatchSession {
+  roomId: string;
+  platform: 'netflix' | 'prime';
+  titleUrl: string;
+  positionSeconds: number;
+  isPlaying: boolean;
+  lastUpdated: number;
+  startedBy: string;
+  startedByName?: string;
+}
+
 export interface ServerChannel {
   id: string;
   name: string;
@@ -86,6 +97,10 @@ export interface ClientToServerEvents {
   admin_kick_room: (targetId: string) => void;
   admin_transfer_role: (targetId: string) => void;
   destroy_empty_server: (serverId: string) => void;
+  watch_session_start: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
+  watch_session_end: () => void;
+  watch_session_query: () => void;
 }
 
 // Server → Client events
@@ -127,6 +142,8 @@ export interface ServerToClientEvents {
   user_stopped_screen_share: (userId: string) => void;
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
+  watch_session_sync: (session: WatchSession | null) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
   // Room events
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;

@@ -1412,7 +1412,7 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     streamingSession.webRequest.onBeforeSendHeaders((details, callback) => {
         const headers = { ...details.requestHeaders };
         headers['User-Agent'] = cleanChromeUA;
-        headers['sec-ch-ua'] = `"Google Chrome";v="${chromeMajor}", "Chromium";v="${chromeMajor}", "Not_A Brand";v="24"`;
+        headers['sec-ch-ua'] = `"Chromium";v="${chromeMajor}", "Google Chrome";v="${chromeMajor}", "Not/A)Brand";v="24"`;
         headers['sec-ch-ua-mobile'] = '?0';
         headers['sec-ch-ua-platform'] = '"Windows"';
         callback({ requestHeaders: headers });
@@ -1552,32 +1552,50 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
 
                     if (navigator.userAgentData) {
                         try {
-                            var brands = [
-                                { brand: 'Google Chrome', version: '150' },
+                            var chromeBrands = [
                                 { brand: 'Chromium', version: '150' },
-                                { brand: 'Not_A Brand', version: '24' }
+                                { brand: 'Google Chrome', version: '150' },
+                                { brand: 'Not/A)Brand', version: '24' }
                             ];
-                            Object.defineProperty(navigator, 'userAgentData', {
-                                get: function() {
+                            var fullVersionList = [
+                                { brand: 'Chromium', version: '150.0.7871.250' },
+                                { brand: 'Google Chrome', version: '150.0.7871.250' },
+                                { brand: 'Not/A)Brand', version: '24.0.0.0' }
+                            ];
+                            try {
+                                Object.defineProperty(navigator.userAgentData, 'brands', {
+                                    get: function() { return chromeBrands; },
+                                    configurable: true
+                                });
+                            } catch(e) {}
+
+                            var origFn = navigator.userAgentData.getHighEntropyValues;
+                            navigator.userAgentData.getHighEntropyValues = function(hints) {
+                                return (origFn ? origFn.call(navigator.userAgentData, hints) : Promise.resolve({})).then(function(res) {
+                                    res = res || {};
+                                    res.brands = chromeBrands;
+                                    res.fullVersionList = fullVersionList;
+                                    res.platform = 'Windows';
+                                    res.platformVersion = res.platformVersion || '10.0.0';
+                                    res.architecture = res.architecture || 'x86';
+                                    res.bitness = res.bitness || '64';
+                                    res.model = res.model || '';
+                                    res.uaFullVersion = '150.0.7871.250';
+                                    return res;
+                                }).catch(function() {
                                     return {
-                                        brands: brands,
+                                        architecture: 'x86',
+                                        bitness: '64',
+                                        brands: chromeBrands,
+                                        fullVersionList: fullVersionList,
                                         mobile: false,
+                                        model: '',
                                         platform: 'Windows',
-                                        getHighEntropyValues: function() {
-                                            return Promise.resolve({
-                                                architecture: 'x86',
-                                                bitness: '64',
-                                                brands: brands,
-                                                mobile: false,
-                                                model: '',
-                                                platform: 'Windows',
-                                                platformVersion: '10.0.0',
-                                                uaFullVersion: '150.0.7871.250'
-                                            });
-                                        }
+                                        platformVersion: '10.0.0',
+                                        uaFullVersion: '150.0.7871.250'
                                     };
-                                }
-                            });
+                                });
+                            };
                         } catch(e) {}
                     }
 
@@ -1599,6 +1617,13 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     });
 
     view.webContents.on('did-navigate', (_e: any, navUrl: string) => {
+        applyStyling();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
+        }
+    });
+
+    view.webContents.on('did-navigate-in-page', (_e: any, navUrl: string) => {
         applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
@@ -1833,3 +1858,46 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
         streamingSession.cookies.flushStore().catch(() => {});
     }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// ── WATCH PARTY SYNC IPC (NETFLIX & PRIME VIDEO) ──
+// ═══════════════════════════════════════════════════════════════════
+
+ipcMain.on('streaming-playback-event', (event, data: any) => {
+    let service: 'netflix' | 'prime' | null = null;
+    for (const [srv, inst] of streamingInstances.entries()) {
+        if (inst.view && !inst.view.webContents.isDestroyed() && inst.view.webContents.id === event.sender.id) {
+            service = srv;
+            break;
+        }
+    }
+    if (!service) service = activeStreamingService;
+    if (mainWindow && !mainWindow.isDestroyed() && service) {
+        mainWindow.webContents.send('streaming-event', {
+            type: 'playback-event',
+            playbackType: data.type,
+            service,
+            url: data.url,
+            positionSeconds: data.positionSeconds,
+            isPlaying: data.isPlaying,
+        });
+    }
+});
+
+ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => {
+    const targetService = data.service || activeStreamingService;
+    const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
+    inst.view.webContents.send('apply-streaming-playback', data);
+});
+
+ipcMain.on('navigate-streaming-view', (_event, { service, url }: { service: 'netflix' | 'prime'; url: string }) => {
+    const inst = streamingInstances.get(service);
+    if (inst && !inst.view.webContents.isDestroyed()) {
+        if (inst.currentUrl !== url) {
+            inst.currentUrl = url;
+            inst.view.webContents.loadURL(url).catch(() => {});
+        }
+    }
+});
+

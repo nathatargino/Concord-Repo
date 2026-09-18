@@ -32,6 +32,17 @@ export interface MusicItem {
   title?: string;
 }
 
+export interface WatchSession {
+  roomId: string;
+  platform: 'netflix' | 'prime';
+  titleUrl: string;
+  positionSeconds: number;
+  isPlaying: boolean;
+  lastUpdated: number;
+  startedBy: string;
+  startedByName?: string;
+}
+
 export interface ChatMessage {
   id: string;
   userName: string;

@@ -4,7 +4,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
-import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo } from '../types';
+import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo, WatchSession } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
 interface ServerToClientEvents {
@@ -37,6 +37,8 @@ interface ServerToClientEvents {
   user_stopped_screen_share: (userId: string) => void;
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
+  watch_session_sync: (session: WatchSession | null) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;
   room_info: (room: RoomInfo) => void;
@@ -99,6 +101,10 @@ interface ClientToServerEvents {
   admin_kick_room: (targetId: string) => void;
   admin_transfer_role: (targetId: string) => void;
   destroy_empty_server: (serverId: string) => void;
+  watch_session_start: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
+  watch_session_end: () => void;
+  watch_session_query: () => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -360,6 +366,61 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('music_seek' as any, (time: number) => {
       callbacksRef.current.onMusicSeek?.(time);
+    });
+
+    // ─── WATCH PARTY (STREAMING SYNC) ───
+    socket.on('watch_session_sync', (session) => {
+      store.setWatchSession(session);
+      const electron = (window as any).electron;
+
+      if (session && store.inVoice) {
+        store.setActiveMediaTab(session.platform);
+        store.setShowVideoPlayer(true);
+        if (electron?.setActiveMediaTab) {
+          electron.setActiveMediaTab(session.platform);
+        }
+
+        const elapsedSinceUpdate = session.isPlaying
+          ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
+          : 0;
+        const estimatedPosition = session.positionSeconds + elapsedSinceUpdate;
+
+        if (electron?.navigateStreamingView) {
+          electron.navigateStreamingView(session.platform, session.titleUrl);
+        }
+
+        if (electron?.syncStreamingPlayback) {
+          setTimeout(() => {
+            electron.syncStreamingPlayback?.({
+              action: session.isPlaying ? 'play' : 'pause',
+              positionSeconds: estimatedPosition,
+              service: session.platform,
+            });
+          }, 1200);
+        }
+      }
+    });
+
+    socket.on('watch_session_action', (data) => {
+      const electron = (window as any).electron;
+      const currentSession = useAppStore.getState().watchSession;
+      if (!currentSession) return;
+
+      const updated: WatchSession = {
+        ...currentSession,
+        isPlaying: data.action === 'play' ? true : data.action === 'pause' ? false : currentSession.isPlaying,
+        positionSeconds: typeof data.positionSeconds === 'number' ? data.positionSeconds : currentSession.positionSeconds,
+        lastUpdated: data.timestamp || Date.now(),
+      };
+      store.setWatchSession(updated);
+
+      if (electron?.syncStreamingPlayback) {
+        electron.syncStreamingPlayback({
+          action: data.action,
+          positionSeconds: data.positionSeconds,
+          service: currentSession.platform,
+        });
+      }
     });
 
     socket.on('existing_voice_users', (userIds) => {
