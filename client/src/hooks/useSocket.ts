@@ -404,10 +404,24 @@ export function useSocket(callbacks: SocketCallbacks) {
       callbacksRef.current.onKickedFromRoom?.();
     });
 
+    socket.on('server_members' as any, (members: any[]) => {
+      if (members && Array.isArray(members)) {
+        store.setServerMembers(members.map(m => ({
+          id: m.id || m.username,
+          username: m.username,
+          avatarUrl: m.avatarUrl || null,
+          isOnline: false,
+          inVoice: false,
+          role: m.role || 'member',
+        })));
+      }
+    });
+
     return () => {
       if ((window as any).__concord_socket === socket) {
         (window as any).__concord_socket = null;
       }
+      socket.removeAllListeners();
       socket.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

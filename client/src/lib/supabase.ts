@@ -741,6 +741,63 @@ export async function updateMemberRoleInSupabase(serverId: string, username: str
   }
 }
 
+function getServerMembersCacheKey(serverId: string): string {
+  return `concord_server_members_${serverId.trim().toLowerCase()}`;
+}
+
+export function getLocalServerMembers(serverId: string): DbMember[] {
+  if (!serverId) return [];
+  try {
+    const raw = localStorage.getItem(getServerMembersCacheKey(serverId));
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+
+export function saveLocalServerMember(serverId: string, member: Partial<DbMember> & { username: string }): void {
+  if (!serverId || !member.username) return;
+  try {
+    const key = getServerMembersCacheKey(serverId);
+    const raw = localStorage.getItem(key);
+    let list: DbMember[] = raw ? JSON.parse(raw) : [];
+    const cleanUser = member.username.trim();
+    const idx = list.findIndex(m => m.username.trim().toLowerCase() === cleanUser.toLowerCase());
+    const memberObj: DbMember = {
+      id: member.id || member.user_id || `local-mem-${cleanUser.toLowerCase()}`,
+      server_id: serverId,
+      user_id: member.user_id || null,
+      username: cleanUser,
+      avatar_url: member.avatar_url || null,
+      role: member.role || 'member',
+      joined_at: member.joined_at || new Date().toISOString(),
+    };
+    if (idx >= 0) {
+      list[idx] = {
+        ...list[idx],
+        ...memberObj,
+        avatar_url: memberObj.avatar_url || list[idx].avatar_url,
+        role: member.role || list[idx].role || 'member',
+      };
+    } else {
+      list.push(memberObj);
+    }
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {}
+}
+
+export function removeLocalServerMember(serverId: string, username: string): void {
+  if (!serverId || !username) return;
+  try {
+    const key = getServerMembersCacheKey(serverId);
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      let list: DbMember[] = JSON.parse(raw);
+      list = list.filter(m => m.username.trim().toLowerCase() !== username.trim().toLowerCase());
+      localStorage.setItem(key, JSON.stringify(list));
+    }
+  } catch {}
+}
+
 export async function registerServerMember(
   serverId: string, 
   username: string, 
@@ -757,14 +814,34 @@ export async function registerServerMember(
     icon_url: serverInfo?.icon_url
   });
 
-  if (!supabaseUrl || !supabaseAnonKey || !serverId || !username) return;
+  if (!serverId || !username) return;
+
+  // Salvar imediatamente no cache local do servidor
+  const localAvatar = localStorage.getItem('concord_avatar_url') || null;
+  saveLocalServerMember(serverId, {
+    username,
+    user_id: userId,
+    role,
+    avatar_url: localAvatar,
+  });
+
+  if (!supabaseUrl || !supabaseAnonKey) return;
 
   try {
     let actualServerId = serverId;
     if (!isUuid(serverId)) {
       const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
-      else return; // Não é UUID e não está no Supabase
+      if (dbRoom?.id && isUuid(dbRoom.id)) {
+        actualServerId = dbRoom.id;
+        saveLocalServerMember(actualServerId, {
+          username,
+          user_id: userId,
+          role,
+          avatar_url: localAvatar,
+        });
+      } else {
+        return; // Não é UUID e não está no Supabase
+      }
     }
 
     let uid = userId;
@@ -830,6 +907,7 @@ export async function leaveServerFromSupabase(
 ): Promise<{ success: boolean; serverDeleted: boolean }> {
   // 1. Remover do histórico local "Meus Servidores"
   removeMyServer(serverId);
+  removeLocalServerMember(serverId, username);
 
   if (!supabaseUrl || !supabaseAnonKey || !serverId) {
     return { success: true, serverDeleted: false };
@@ -839,8 +917,12 @@ export async function leaveServerFromSupabase(
     let actualServerId = serverId;
     if (!isUuid(serverId)) {
       const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
-      else return { success: true, serverDeleted: false };
+      if (dbRoom?.id && isUuid(dbRoom.id)) {
+        actualServerId = dbRoom.id;
+        removeLocalServerMember(actualServerId, username);
+      } else {
+        return { success: true, serverDeleted: false };
+      }
     }
 
     let uid = userId;
@@ -874,14 +956,34 @@ export async function leaveServerFromSupabase(
 }
 
 export async function fetchServerMembers(serverId: string): Promise<DbMember[]> {
-  if (!supabaseUrl || !supabaseAnonKey || !serverId) return [];
+  if (!serverId) return [];
+
+  // Obter membros conhecidos do cache local
+  const localMap = new Map<string, DbMember>();
+  for (const m of getLocalServerMembers(serverId)) {
+    localMap.set(m.username.trim().toLowerCase(), m);
+  }
+
+  let actualServerId = serverId;
+  if (!isUuid(serverId)) {
+    try {
+      const dbRoom = await findRoomInSupabase(serverId);
+      if (dbRoom?.id && isUuid(dbRoom.id)) {
+        actualServerId = dbRoom.id;
+        for (const m of getLocalServerMembers(actualServerId)) {
+          localMap.set(m.username.trim().toLowerCase(), m);
+        }
+      }
+    } catch {}
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return Array.from(localMap.values());
+  }
 
   try {
-    let actualServerId = serverId;
-    if (!isUuid(serverId)) {
-      const dbRoom = await findRoomInSupabase(serverId);
-      if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
-      else return [];
+    if (!isUuid(actualServerId)) {
+      return Array.from(localMap.values());
     }
 
     const { data, error } = await supabase
@@ -891,14 +993,31 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
       .order('joined_at', { ascending: true });
 
     if (error || !data) {
-      return [];
+      return Array.from(localMap.values());
     }
-    return data.map((m: any) => ({
+
+    const remoteMembers = data.map((m: any) => ({
       ...m,
       avatar_url: m.profiles?.avatar_url || m.avatar_url || null,
     })) as DbMember[];
+
+    // Mesclar resultados remotos no mapa
+    for (const rm of remoteMembers) {
+      localMap.set(rm.username.trim().toLowerCase(), rm);
+    }
+
+    const merged = Array.from(localMap.values());
+    // Atualizar cache local com dados mesclados
+    try {
+      localStorage.setItem(getServerMembersCacheKey(serverId), JSON.stringify(merged));
+      if (actualServerId !== serverId) {
+        localStorage.setItem(getServerMembersCacheKey(actualServerId), JSON.stringify(merged));
+      }
+    } catch {}
+
+    return merged;
   } catch {
-    return [];
+    return Array.from(localMap.values());
   }
 }
 

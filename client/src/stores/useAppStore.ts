@@ -27,7 +27,7 @@ interface AppState {
 
   // Server Members (for Servers: Offline, Online, In Call)
   serverMembers: ServerMember[];
-  setServerMembers: (members: ServerMember[]) => void;
+  setServerMembers: (members: ServerMember[] | ((prev: ServerMember[]) => ServerMember[])) => void;
   myRole: 'owner' | 'sub_owner' | 'member';
   setMyRole: (role: 'owner' | 'sub_owner' | 'member') => void;
 
@@ -147,7 +147,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Server Members
   serverMembers: [],
-  setServerMembers: (serverMembers) => set({ serverMembers }),
+  setServerMembers: (members) =>
+    set((state) => ({
+      serverMembers: typeof members === 'function' ? members(state.serverMembers) : members,
+    })),
   myRole: 'member',
   setMyRole: (myRole) => set({ myRole }),
 
@@ -167,10 +170,26 @@ export const useAppStore = create<AppState>((set) => ({
   messages: [],
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) =>
-    set((s) => ({ messages: [...s.messages.slice(-500), msg] })),
+    set((s) => {
+      const last = s.messages[s.messages.length - 1];
+      if (
+        last &&
+        last.userName === msg.userName &&
+        last.message === msg.message &&
+        last.channelId === msg.channelId &&
+        last.type === msg.type
+      ) {
+        return s;
+      }
+      return { messages: [...s.messages.slice(-500), msg] };
+    }),
   addSystemMessage: (message, channelId) =>
     set((s) => {
       const currentChannel = channelId || s.activeChannelId || 'ch-geral';
+      const last = s.messages[s.messages.length - 1];
+      if (last && last.isSystem && last.message === message && last.channelId === currentChannel) {
+        return s;
+      }
       const timestamp = new Date().toLocaleTimeString('pt-BR', {
         hour: '2-digit',
         minute: '2-digit',

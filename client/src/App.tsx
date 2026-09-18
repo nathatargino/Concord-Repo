@@ -330,12 +330,8 @@ export default function App() {
         });
       }
 
-      const currentName = store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
       const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
       socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName, currentAvatar);
-      if (currentName) {
-        socket.emit('set_username', currentName, currentAvatar);
-      }
     };
 
     const timer = setTimeout(tryJoin, 100);
@@ -417,7 +413,6 @@ export default function App() {
     );
 
     if (isDuplicate) {
-      notifyInChat(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`);
       setLoginError(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`);
       setShowLogin(true);
     }
@@ -452,7 +447,6 @@ export default function App() {
     );
 
     if (isDuplicate) {
-      notifyInChat(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário. Escolha outro nome.`);
       setLoginError(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário.`);
       setShowLogin(true);
       return;

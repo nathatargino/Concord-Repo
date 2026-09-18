@@ -9,6 +9,10 @@ interface NotificationPayload {
  * Exibe notificação nativa do Windows (via Electron) ou Web Notification API.
  */
 export function showNativeChatNotification({ userName, message, roomName, avatarUrl }: NotificationPayload) {
+  if (typeof document !== 'undefined' && document.hasFocus && document.hasFocus()) {
+    return;
+  }
+
   const electron = (window as any).electron;
 
   if (electron?.showNotification) {

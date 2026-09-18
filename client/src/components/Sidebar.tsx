@@ -11,6 +11,7 @@ import {
   deleteChannelInSupabase,
   updateChannelNameInSupabase,
   registerServerMember,
+  saveLocalServerMember,
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
   updateMemberRoleInSupabase,
@@ -106,6 +107,13 @@ export const Sidebar: React.FC<Props> = ({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
+  const isEffectiveServer = Boolean(
+    isServer || 
+    room?.isServer || 
+    room?.id?.toUpperCase().startsWith('SRV-') || 
+    room?.code?.toUpperCase().startsWith('SRV-')
+  );
+
   const myMember = serverMembers.find(m => m.username.toLowerCase() === (myName || '').toLowerCase());
   const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId);
   const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
@@ -128,7 +136,7 @@ export const Sidebar: React.FC<Props> = ({
 
   // Carregar canais e membros do servidor se for servidor permanente
   useEffect(() => {
-    if (!room?.id || !isServer) return;
+    if (!room?.id || !isEffectiveServer) return;
 
     let isMounted = true;
     let memberSub: any = null;
@@ -145,14 +153,25 @@ export const Sidebar: React.FC<Props> = ({
     const loadMembers = async (actualServerId: string) => {
       const mems = await fetchServerMembers(actualServerId);
       if (isMounted && mems) {
-        setServerMembers(mems.map(m => ({
-          id: m.id,
-          username: m.username,
-          avatarUrl: (m as any).avatar_url || null,
-          isOnline: false,
-          inVoice: false,
-          role: m.role as any,
-        })));
+        setServerMembers((prev) => {
+          const map = new Map<string, typeof serverMembers[0]>();
+          for (const m of prev) {
+            map.set(m.username.trim().toLowerCase(), m);
+          }
+          for (const m of mems) {
+            const key = m.username.trim().toLowerCase();
+            const existing = map.get(key);
+            map.set(key, {
+              id: m.id || existing?.id || m.username,
+              username: m.username,
+              avatarUrl: (m as any).avatar_url || (m as any).avatarUrl || existing?.avatarUrl || null,
+              isOnline: existing?.isOnline ?? false,
+              inVoice: existing?.inVoice ?? false,
+              role: (m.role as any) || existing?.role || 'member',
+            });
+          }
+          return Array.from(map.values());
+        });
       }
     };
 
@@ -232,7 +251,7 @@ export const Sidebar: React.FC<Props> = ({
       isMounted = false;
       cleanupSub();
     };
-  }, [room?.id, isServer, myName, isOwner, isSubOwner, setChannels, setServerMembers, serverName, serverIconUrl]);
+  }, [room?.id, isEffectiveServer, myName, isOwner, isSubOwner, setChannels, setServerMembers, serverName, serverIconUrl]);
 
   // Fechar menu de contexto no clique fora
   useEffect(() => {
@@ -259,14 +278,68 @@ export const Sidebar: React.FC<Props> = ({
     callMuted: false
   }] : []);
 
+  // Manter serverMembers atualizado com qualquer usuário que esteja online na sala
+  useEffect(() => {
+    if (!isEffectiveServer || effectiveUsers.length === 0) return;
+
+    setServerMembers((prev) => {
+      let changed = false;
+      const map = new Map(prev.map(m => [m.username.trim().toLowerCase(), m]));
+
+      for (const u of effectiveUsers) {
+        if (!u.name) continue;
+        const key = u.name.trim().toLowerCase();
+        const existing = map.get(key);
+        if (!existing) {
+          changed = true;
+          map.set(key, {
+            id: u.id,
+            username: u.name,
+            avatarUrl: u.avatarUrl || null,
+            isOnline: true,
+            inVoice: Boolean(u.inVoice),
+            role: (u as any).role || 'member',
+          });
+          if (room?.id) {
+            saveLocalServerMember(room.id, {
+              username: u.name,
+              user_id: u.id,
+              role: (u as any).role || 'member',
+              avatar_url: u.avatarUrl || null,
+            });
+          }
+        } else if (u.avatarUrl && !existing.avatarUrl) {
+          changed = true;
+          map.set(key, { ...existing, avatarUrl: u.avatarUrl });
+        }
+      }
+
+      return changed ? Array.from(map.values()) : prev;
+    });
+  }, [effectiveUsers, isEffectiveServer, room?.id, setServerMembers]);
+
   const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
   // Regra de Presença: Usuários na call aparecem em "Na Call", outros em "Online"
   const onlineMembers = effectiveUsers.filter((u) => !u.inVoice);
   
   // Offline = Membro registrado no servidor que não está presente na lista ativa (app fechado ou no lobby)
-  const offlineMembers = serverMembers.filter(
-    (m) => !effectiveUsers.some((u) => u.name && u.name.trim().toLowerCase() === m.username.trim().toLowerCase())
-  );
+  const offlineMembers = React.useMemo(() => {
+    const activeNames = new Set(
+      effectiveUsers.map((u) => (u.name || '').trim().toLowerCase()).filter(Boolean)
+    );
+    const seen = new Set<string>();
+    const list: typeof serverMembers = [];
+
+    for (const m of serverMembers) {
+      const cleanName = (m.username || '').trim().toLowerCase();
+      if (!cleanName) continue;
+      if (activeNames.has(cleanName)) continue;
+      if (seen.has(cleanName)) continue;
+      seen.add(cleanName);
+      list.push(m);
+    }
+    return list;
+  }, [serverMembers, effectiveUsers]);
 
   // ─── CRIAÇÃO DE NOVO CANAL ─────────────────────────────────────────
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
@@ -506,7 +579,7 @@ export const Sidebar: React.FC<Props> = ({
               <i className="fa-regular fa-comments" style={{ fontSize: '12px' }} />
               <span>Canais de Texto</span>
             </div>
-            {isServer && canManageServer && (
+            {isEffectiveServer && canManageServer && (
               <button 
                 className={styles.addChannelBtn} 
                 onClick={() => setShowCreateChannelModal(true)}
@@ -544,7 +617,7 @@ export const Sidebar: React.FC<Props> = ({
                       </span>
                     )}
                   </button>
-                  {isServer && !isGeral && (
+                  {isEffectiveServer && !isGeral && (
                     <div className={styles.channelActions}>
                       {canManageServer && (
                         <button
@@ -589,7 +662,7 @@ export const Sidebar: React.FC<Props> = ({
               <i className="fa-solid fa-headset" style={{ fontSize: '12px' }} />
               <span>Canais de Voz</span>
             </div>
-            {isServer && canManageServer && (
+            {isEffectiveServer && canManageServer && (
               <button className={styles.addChannelBtn} title="Criar canal de voz">
                 <i className="fa-solid fa-plus" />
               </button>
@@ -707,7 +780,7 @@ export const Sidebar: React.FC<Props> = ({
         </section>
 
         {/* ── 3. USUÁRIOS OFFLINE (Apenas para Servidores) ── */}
-        {isServer && (
+        {isEffectiveServer && (
           <section className={styles.section}>
             <div 
               className={`${styles.sectionLabel} ${styles.clickable}`} 

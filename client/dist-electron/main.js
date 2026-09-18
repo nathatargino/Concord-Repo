@@ -179,6 +179,98 @@ electron_1.app.on('widevine-ready', (version, lastVersion) => {
 let mainWindow = null;
 let localServerPort = 0;
 let previousBounds = null;
+let tray = null;
+let isQuitting = false;
+const startHidden = process.argv.includes('--hidden') || (electron_1.app.getLoginItemSettings ? electron_1.app.getLoginItemSettings().wasOpenedAsHidden : false);
+function createTray() {
+    if (tray)
+        return;
+    const appIcon = getAppIconPath();
+    if (!appIcon || !fs.existsSync(appIcon))
+        return;
+    try {
+        tray = new electron_1.Tray(appIcon);
+        tray.setToolTip('Concord');
+        const contextMenu = electron_1.Menu.buildFromTemplate([
+            {
+                label: 'Abrir Concord',
+                click: () => {
+                    if (mainWindow) {
+                        if (mainWindow.isMinimized())
+                            mainWindow.restore();
+                        mainWindow.show();
+                        mainWindow.focus();
+                    }
+                    else {
+                        createWindow();
+                    }
+                }
+            },
+            {
+                label: 'Verificar atualizações',
+                click: () => {
+                    if (!isDev) {
+                        electron_updater_1.autoUpdater.checkForUpdates().catch(() => { });
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                label: 'Sair do Concord',
+                click: () => {
+                    isQuitting = true;
+                    electron_1.app.quit();
+                }
+            }
+        ]);
+        tray.setContextMenu(contextMenu);
+        tray.on('click', () => {
+            if (mainWindow) {
+                if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+                    mainWindow.hide();
+                }
+                else {
+                    if (mainWindow.isMinimized())
+                        mainWindow.restore();
+                    mainWindow.show();
+                    mainWindow.focus();
+                }
+            }
+            else {
+                createWindow();
+            }
+        });
+        tray.on('double-click', () => {
+            if (mainWindow) {
+                if (mainWindow.isMinimized())
+                    mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+            }
+            else {
+                createWindow();
+            }
+        });
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[Tray] Error creating tray: ${err}\n`);
+    }
+}
+function setupAutoLaunch() {
+    if (process.platform === 'win32' && !isDev) {
+        try {
+            electron_1.app.setLoginItemSettings({
+                openAtLogin: true,
+                openAsHidden: true,
+                path: process.execPath,
+                args: ['--hidden']
+            });
+        }
+        catch (e) {
+            fs.appendFileSync(logFile, `[AutoLaunch] Error setting login items: ${e}\n`);
+        }
+    }
+}
 function startLocalServer() {
     return new Promise((resolve) => {
         const server = http.createServer((req, res) => {
@@ -232,7 +324,7 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#0e0e18',
-        show: true,
+        show: !startHidden,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
@@ -263,8 +355,10 @@ function createWindow() {
             }
             catch (e) { }
         }
-        mainWindow?.show();
-        mainWindow?.focus();
+        if (!startHidden) {
+            mainWindow?.show();
+            mainWindow?.focus();
+        }
         if (pendingDeepLink) {
             mainWindow?.webContents.send('deep-link', pendingDeepLink);
             pendingDeepLink = null;
@@ -274,6 +368,12 @@ function createWindow() {
             if (deepLinkUrl) {
                 mainWindow?.webContents.send('deep-link', deepLinkUrl);
             }
+        }
+    });
+    mainWindow.on('close', (event) => {
+        if (!isQuitting) {
+            event.preventDefault();
+            mainWindow?.hide();
         }
     });
     if (isDev) {
@@ -565,6 +665,8 @@ electron_1.app.whenReady().then(async () => {
         }
         callback({ responseHeaders: headers });
     });
+    createTray();
+    setupAutoLaunch();
     if (!isDev) {
         startLocalServer().then(port => {
             localServerPort = port;
@@ -576,9 +678,13 @@ electron_1.app.whenReady().then(async () => {
         createWindow();
     }
 }).catch(err => fs.appendFileSync(logFile, `app.whenReady() ERROR: ${err}\n`));
+electron_1.app.on('before-quit', () => {
+    isQuitting = true;
+});
 electron_1.app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin')
+    if (process.platform !== 'darwin' && !tray) {
         electron_1.app.quit();
+    }
 });
 electron_1.app.on('activate', () => {
     if (mainWindow === null)
@@ -594,6 +700,13 @@ electron_1.ipcMain.on('copy-to-clipboard', (event, text) => {
 // Native Windows Notifications for Chat Messages
 electron_1.ipcMain.on('show-chat-notification', async (_event, data) => {
     try {
+        // Se a janela principal estiver visível, em foco e não minimizada, NÃO disparar notificação nativa
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            const isFocused = mainWindow.isFocused() && !mainWindow.isMinimized() && mainWindow.isVisible();
+            if (isFocused) {
+                return;
+            }
+        }
         let iconImage = undefined;
         if (data.avatarUrl) {
             try {

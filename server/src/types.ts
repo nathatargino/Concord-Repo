@@ -8,6 +8,7 @@ export interface UserInfo {
   micMuted: boolean;
   callMuted: boolean;
   role?: 'owner' | 'sub_owner' | 'member';
+  hasAnnouncedJoin?: boolean;
 }
 
 export interface MusicItem {
@@ -90,6 +91,7 @@ export interface ClientToServerEvents {
 // Server → Client events
 export interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
+  server_members: (members: any[]) => void;
   receive_message: (
     userName: string,
     message: string,

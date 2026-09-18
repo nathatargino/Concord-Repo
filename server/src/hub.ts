@@ -50,6 +50,7 @@ export interface RoomState {
   currentMusicVideoId: string | null;
   currentMusicStartTime: number | null;
   messageHistory: StoredMessage[];
+  knownMembers?: Map<string, any>;
 }
 
 const rooms = new Map<string, RoomState>();
@@ -105,6 +106,7 @@ export function createRoom(
     currentMusicVideoId: null,
     currentMusicStartTime: null,
     messageHistory: [],
+    knownMembers: new Map(),
   };
   rooms.set(id, room);
   codeToRoomId.set(code, id);
@@ -209,6 +211,9 @@ function extractVideoId(url: string): string | null {
 
 function broadcastUserList(io: IoServer, room: RoomState) {
   io.to(room.id).emit('user_list', Array.from(room.users.values()));
+  if (room.isServer && room.knownMembers) {
+    (io.to(room.id) as any).emit('server_members', Array.from(room.knownMembers.values()));
+  }
 }
 
 function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState) {
@@ -382,6 +387,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 currentMusicVideoId: null,
                 currentMusicStartTime: null,
                 messageHistory: [],
+                knownMembers: new Map(),
               };
               rooms.set(restored.id, restored);
               codeToRoomId.set(restored.code, restored.id);
@@ -502,8 +508,26 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       room.users.set(socket.id, user);
 
+      if (room.isServer) {
+        if (!room.knownMembers) room.knownMembers = new Map();
+        if (user.name) {
+          room.knownMembers.set(user.name.toLowerCase(), {
+            id: user.id,
+            username: user.name,
+            avatarUrl: user.avatarUrl || null,
+            role: user.role || 'member',
+          });
+        }
+      }
+
       socket.emit('room_joined', toRoomInfo(room));
       broadcastUserList(io, room);
+
+      if (user.name && !user.hasAnnouncedJoin) {
+        user.hasAnnouncedJoin = true;
+        socket.to(room.id).emit('toast_notification', `${user.name} entrou`, 'success');
+      }
+
       socket.emit('music_queue_update', [...room.musicQueue]);
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
         const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
@@ -557,14 +581,28 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('set_username', (name: string, avatarUrl?: string | null) => {
       const room = getCurrentRoom();
       const trimmed = name.trim().slice(0, 32) || `User_${socket.id.slice(0, 4)}`;
+      const oldName = user.name;
       user.name = trimmed;
       if (avatarUrl !== undefined) {
         user.avatarUrl = avatarUrl;
       }
 
       if (room) {
+        if (room.isServer) {
+          if (!room.knownMembers) room.knownMembers = new Map();
+          room.knownMembers.set(trimmed.toLowerCase(), {
+            id: user.id,
+            username: trimmed,
+            avatarUrl: user.avatarUrl || null,
+            role: user.role || 'member',
+          });
+        }
         broadcastUserList(io, room);
-        socket.to(room.id).emit('toast_notification', `${trimmed} entrou`, 'success');
+
+        if (!oldName && !user.hasAnnouncedJoin) {
+          user.hasAnnouncedJoin = true;
+          socket.to(room.id).emit('toast_notification', `${trimmed} entrou`, 'success');
+        }
       }
     });
 
