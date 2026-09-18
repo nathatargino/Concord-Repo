@@ -8,6 +8,7 @@ import {
   ServerToClientEvents,
   SocketData,
   UserInfo,
+  WatchSession,
 } from './types';
 
 type IoServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -49,6 +50,7 @@ export interface RoomState {
   currentMusicToken: number | null;
   currentMusicVideoId: string | null;
   currentMusicStartTime: number | null;
+  watchSession: WatchSession | null;
   messageHistory: StoredMessage[];
 }
 
@@ -104,6 +106,7 @@ export function createRoom(
     currentMusicToken: null,
     currentMusicVideoId: null,
     currentMusicStartTime: null,
+    watchSession: null,
     messageHistory: [],
   };
   rooms.set(id, room);
@@ -381,6 +384,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 currentMusicToken: null,
                 currentMusicVideoId: null,
                 currentMusicStartTime: null,
+                watchSession: null,
                 messageHistory: [],
               };
               rooms.set(restored.id, restored);
@@ -508,6 +512,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
         const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
         socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
+      }
+      if (room.watchSession) {
+        socket.emit('watch_session_sync', room.watchSession);
       }
       console.log(`[Room] ${socket.id} (${user.name || 'anon'}) joined ${room.isServer ? 'server' : 'room'} ${room.id} (code: ${room.code})`);
 
@@ -890,6 +897,81 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       broadcastQueueUpdate(io, room);
     });
 
+    // ─── WATCH PARTY (STREAMING SYNC) ──────────────────────────────
+    socket.on('watch_session_start', (data) => {
+      const room = getCurrentRoom();
+      if (!room) return;
+      if (!room.voiceUsers.has(socket.id)) {
+        socket.emit('toast_notification', 'Você precisa estar na call de voz para iniciar uma Watch Party.', 'error');
+        return;
+      }
+
+      const now = Date.now();
+      const session: WatchSession = {
+        roomId: room.id,
+        platform: data.platform,
+        titleUrl: data.titleUrl,
+        positionSeconds: typeof data.positionSeconds === 'number' ? data.positionSeconds : 0,
+        isPlaying: data.isPlaying ?? true,
+        lastUpdated: now,
+        startedBy: socket.id,
+        startedByName: user.name,
+      };
+
+      room.watchSession = session;
+      io.to(room.id).emit('watch_session_sync', session);
+      const platLabel = data.platform === 'netflix' ? 'Netflix' : 'Prime Video';
+      io.to(room.id).emit('toast_notification', `🎉 ${user.name} iniciou uma Watch Party de ${platLabel}!`, 'info');
+    });
+
+    socket.on('watch_session_action', (data) => {
+      const room = getCurrentRoom();
+      if (!room || !room.watchSession) return;
+      if (!room.voiceUsers.has(socket.id)) return;
+
+      const now = Date.now();
+      if (data.action === 'play') {
+        room.watchSession.isPlaying = true;
+        if (typeof data.positionSeconds === 'number') {
+          room.watchSession.positionSeconds = data.positionSeconds;
+        }
+        room.watchSession.lastUpdated = now;
+      } else if (data.action === 'pause') {
+        room.watchSession.isPlaying = false;
+        if (typeof data.positionSeconds === 'number') {
+          room.watchSession.positionSeconds = data.positionSeconds;
+        }
+        room.watchSession.lastUpdated = now;
+      } else if (data.action === 'seek') {
+        if (typeof data.positionSeconds === 'number') {
+          room.watchSession.positionSeconds = data.positionSeconds;
+        }
+        room.watchSession.lastUpdated = now;
+      }
+
+      // Broadcast to other participants in the room
+      socket.to(room.id).emit('watch_session_action', {
+        action: data.action,
+        positionSeconds: data.positionSeconds,
+        senderId: socket.id,
+        timestamp: now,
+      });
+    });
+
+    socket.on('watch_session_end', () => {
+      const room = getCurrentRoom();
+      if (!room || !room.watchSession) return;
+      room.watchSession = null;
+      io.to(room.id).emit('watch_session_sync', null);
+      io.to(room.id).emit('toast_notification', `${user.name} encerrou a Watch Party.`, 'info');
+    });
+
+    socket.on('watch_session_query', () => {
+      const room = getCurrentRoom();
+      if (!room) return;
+      socket.emit('watch_session_sync', room.watchSession);
+    });
+
     // ─── JOIN VOICE ────────────────────────────────────────────────
     socket.on('join_voice', () => {
       const room = getCurrentRoom();
@@ -906,6 +988,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
         const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
         socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
+      }
+      if (room.watchSession) {
+        socket.emit('watch_session_sync', room.watchSession);
       }
     });
 
@@ -1055,5 +1140,15 @@ function handleLeaveVoice(
       room.currentMusicVideoId = null;
       room.currentMusicStartTime = null;
     }
+    if (room.watchSession) {
+      room.watchSession = null;
+      io.to(room.id).emit('watch_session_sync', null);
+    }
+  } else if (room.watchSession && room.watchSession.startedBy === socket.id) {
+    const nextVoiceUser = Array.from(room.voiceUsers)[0];
+    room.watchSession.startedBy = nextVoiceUser;
+    const u = room.users.get(nextVoiceUser);
+    if (u) room.watchSession.startedByName = u.name;
+    io.to(room.id).emit('watch_session_sync', room.watchSession);
   }
 }

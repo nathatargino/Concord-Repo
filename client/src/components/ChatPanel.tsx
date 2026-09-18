@@ -69,9 +69,25 @@ interface ChatPanelProps {
   onSetQuality?: (quality: string) => void;
   getYtAvailableQualities?: () => string[];
   getYtQuality?: () => string;
+  onWatchSessionStart?: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
+  onWatchSessionAction?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
+  onWatchSessionEnd?: () => void;
 }
 
-export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurrentTime, getYtDuration, onSetCC, onSetQuality, getYtAvailableQualities, getYtQuality }: ChatPanelProps) {
+export function ChatPanel({
+  onSendMessage,
+  onMusicAction,
+  onMusicSeek,
+  getYtCurrentTime,
+  getYtDuration,
+  onSetCC,
+  onSetQuality,
+  getYtAvailableQualities,
+  getYtQuality,
+  onWatchSessionStart,
+  onWatchSessionAction,
+  onWatchSessionEnd,
+}: ChatPanelProps) {
   const {
     messages,
     setMessages,
@@ -98,6 +114,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     setShowVideoPlayer,
     setIsYouTubeSearchOpen,
     inVoice,
+    watchSession,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -145,11 +162,25 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
           if (event.service) {
             setStreamingSession(event.service, true);
           }
+        } else if (event.type === 'playback-event' && inVoice) {
+          if (event.playbackType === 'title-started') {
+            onWatchSessionStart?.({
+              platform: event.service,
+              titleUrl: event.url,
+              positionSeconds: event.positionSeconds || 0,
+              isPlaying: event.isPlaying ?? true,
+            });
+          } else if (event.playbackType === 'play' || event.playbackType === 'pause' || event.playbackType === 'seek') {
+            onWatchSessionAction?.({
+              action: event.playbackType,
+              positionSeconds: event.positionSeconds,
+            });
+          }
         }
       });
       return unsub;
     }
-  }, [setActiveStreaming, setActiveMediaTab, setStreamingSession]);
+  }, [setActiveStreaming, setActiveMediaTab, setStreamingSession, inVoice, onWatchSessionStart, onWatchSessionAction]);
 
   // ── Video Player Flip ──
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
@@ -198,9 +229,13 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
       };
 
       if (electron.openStreamingView) {
+        const targetUrl = (watchSession?.platform === activeMediaTab && watchSession.titleUrl)
+          ? watchSession.titleUrl
+          : (activeStreaming?.service === activeMediaTab ? activeStreaming.url : undefined);
+
         await electron.openStreamingView({
           service: activeMediaTab,
-          url: activeStreaming?.service === activeMediaTab ? activeStreaming.url : undefined,
+          url: targetUrl,
           bounds,
           borderRadius: 16,
         });
@@ -1299,9 +1334,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 >
                   <NetflixIcon />
                   <span className={styles.mediaTabTitle}>Netflix</span>
-                  {streamingSessions.netflix && (
+                  {watchSession?.platform === 'netflix' ? (
+                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
+                  ) : streamingSessions.netflix ? (
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
-                  )}
+                  ) : null}
                 </button>
 
                 {/* Prime Video Tab */}
@@ -1318,9 +1355,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                 >
                   <PrimeIcon />
                   <span className={styles.mediaTabTitle}>Prime Video</span>
-                  {streamingSessions.prime && (
+                  {watchSession?.platform === 'prime' ? (
+                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
+                  ) : streamingSessions.prime ? (
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
-                  )}
+                  ) : null}
                 </button>
               </div>
 
@@ -1336,7 +1375,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               >
                 {(() => {
                   const currentService = activeMediaTab === 'netflix' || activeMediaTab === 'prime' ? activeMediaTab : 'prime';
-                  const isSessionActive = Boolean(streamingSessions[currentService] || activeStreaming?.service === currentService);
+                  const isSessionActive = Boolean(streamingSessions[currentService] || activeStreaming?.service === currentService || (watchSession?.platform === currentService));
                   const platformLabel = currentService === 'netflix' ? 'Netflix' : 'Prime Video';
 
                   if (!isSessionActive) {
@@ -1375,6 +1414,51 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
                   return (
                     <>
+                      {watchSession && watchSession.platform === currentService && (
+                        <div className={styles.watchPartyBanner}>
+                          <div className={styles.watchPartyLeft}>
+                            <span className={styles.watchPartyDot} />
+                            <span className={styles.watchPartyTitle}>
+                              <strong>Watch Party</strong> • Sincronizado por {watchSession.startedByName || 'Participante'}
+                            </span>
+                            <span className={styles.watchPartyState}>
+                              ({watchSession.isPlaying ? 'Reproduzindo' : 'Pausado'})
+                            </span>
+                          </div>
+                          <div className={styles.watchPartyActions}>
+                            <button
+                              className={styles.watchPartyResyncBtn}
+                              onClick={() => {
+                                const electron = (window as any).electron;
+                                const elapsed = watchSession.isPlaying
+                                  ? Math.max(0, (Date.now() - watchSession.lastUpdated) / 1000)
+                                  : 0;
+                                const pos = watchSession.positionSeconds + elapsed;
+                                electron?.syncStreamingPlayback?.({
+                                  action: watchSession.isPlaying ? 'play' : 'pause',
+                                  positionSeconds: pos,
+                                  service: watchSession.platform,
+                                });
+                                toast.success('Sincronização forçada!');
+                              }}
+                              title="Forçar sincronização de reprodução"
+                            >
+                              <i className="fa-solid fa-arrows-rotate"></i>
+                              <span>Ressincronizar</span>
+                            </button>
+                            <button
+                              className={styles.watchPartyEndBtn}
+                              onClick={() => {
+                                onWatchSessionEnd?.();
+                              }}
+                              title="Encerrar Watch Party para todos"
+                            >
+                              <i className="fa-solid fa-xmark"></i>
+                              <span>Encerrar</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div
                         className={styles.videoSlotWrapper}
                         style={{

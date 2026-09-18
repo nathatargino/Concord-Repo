@@ -37,6 +37,8 @@ declare global {
             setStreamingVolume?: (volume: number) => void;
             setModalActive?: (active: boolean) => void;
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
+            syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => void;
+            navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
             /** Screen Share Source Picker */
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
@@ -105,6 +107,8 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('streaming-event', subscription);
         return () => ipcRenderer.removeListener('streaming-event', subscription);
     },
+    syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => ipcRenderer.send('sync-streaming-playback', data),
+    navigateStreamingView: (service: 'netflix' | 'prime', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
 });

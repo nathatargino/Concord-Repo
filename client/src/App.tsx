@@ -578,6 +578,15 @@ export default function App() {
             onSetQuality={yt.setQuality}
             getYtAvailableQualities={yt.getAvailableQualities}
             getYtQuality={yt.getQuality}
+            onWatchSessionStart={(data) => {
+              socket.emit('watch_session_start', data);
+            }}
+            onWatchSessionAction={(data) => {
+              socket.emit('watch_session_action', data);
+            }}
+            onWatchSessionEnd={() => {
+              socket.emit('watch_session_end');
+            }}
           />
         </div>
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, ServerMember, UserInfo } from '../types';
+import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, ServerMember, UserInfo, WatchSession } from '../types';
 
 interface AppState {
   // Connection
@@ -86,6 +86,8 @@ interface AppState {
   setShowVideoPlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
   isYouTubeSearchOpen: boolean;
   setIsYouTubeSearchOpen: (open: boolean) => void;
+  watchSession: WatchSession | null;
+  setWatchSession: (watchSession: WatchSession | null) => void;
 
   // Screen share
   screenShareUserId: string | null;
@@ -222,6 +224,8 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   isYouTubeSearchOpen: false,
   setIsYouTubeSearchOpen: (isYouTubeSearchOpen) => set({ isYouTubeSearchOpen }),
+  watchSession: null,
+  setWatchSession: (watchSession) => set({ watchSession }),
 
   // Screen share
   screenShareUserId: null,
@@ -256,6 +260,7 @@ export const useAppStore = create<AppState>((set) => ({
       streamingSessions: { netflix: false, prime: false },
       activeStreaming: null,
       showVideoPlayer: false,
+      watchSession: null,
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,
