@@ -521,6 +521,31 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
 
+      if (supabaseClient && room.isServer && user.name) {
+        supabaseClient
+          .from('server_members')
+          .select('role')
+          .eq('server_id', room.id)
+          .ilike('username', user.name)
+          .maybeSingle()
+          .then(({ data: mem }: any) => {
+            if (mem?.role) {
+              user.role = mem.role;
+              if (mem.role === 'sub_owner') {
+                if (!room.subOwnerIds) room.subOwnerIds = [];
+                if (!room.subOwnerIds.includes(socket.id)) room.subOwnerIds.push(socket.id);
+                if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+              } else if (mem.role === 'owner') {
+                if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+              }
+              socket.emit('user_role_updated', { userId: socket.id, role: mem.role });
+              io.to(room.id).emit('room_info', toRoomInfo(room));
+              broadcastUserList(io, room);
+            }
+          })
+          .catch(() => {});
+      }
+
       socket.emit('room_joined', toRoomInfo(room));
       broadcastUserList(io, room);
 
@@ -677,18 +702,46 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── UPDATE SERVER (Nome e Logo) ───────────────────────────────
-    socket.on('update_server', (serverId: string, newName?: string, newIconUrl?: string) => {
+    socket.on('update_server', async (serverId: string, newName?: string, newIconUrl?: string) => {
       const room = rooms.get(serverId) || getCurrentRoom();
       if (!room || !room.isServer) return;
 
-      if (!room.adminIds.includes(socket.id)) {
-        socket.emit('toast_notification', 'Apenas administradores podem alterar as configurações do servidor.', 'error');
+      const user = room.users.get(socket.id);
+      let isOwner = (room.adminIds.includes(socket.id) && !room.subOwnerIds?.includes(socket.id)) || (Boolean(room.ownerId) && socket.data.persistentId === room.ownerId);
+      let isSubOwner = Boolean(room.subOwnerIds?.includes(socket.id) || user?.role === 'sub_owner');
+
+      // Se ainda não confirmado em memória, verificar diretamente na tabela server_members do Supabase
+      if (!isOwner && !isSubOwner && supabaseClient && user?.name) {
+        try {
+          const { data: member } = await supabaseClient
+            .from('server_members')
+            .select('role')
+            .eq('server_id', room.id)
+            .ilike('username', user.name)
+            .maybeSingle();
+
+          if (member?.role === 'owner') {
+            isOwner = true;
+            if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+          } else if (member?.role === 'sub_owner') {
+            isSubOwner = true;
+            if (!room.subOwnerIds) room.subOwnerIds = [];
+            if (!room.subOwnerIds.includes(socket.id)) room.subOwnerIds.push(socket.id);
+          }
+        } catch {}
+      }
+
+      if (!isOwner && !isSubOwner) {
+        socket.emit('toast_notification', 'Apenas o dono e os subdonos podem alterar as configurações do servidor.', 'error');
         return;
       }
 
-      if (newName) {
+      // Apenas o Dono pode alterar o nome do servidor
+      if (newName && isOwner) {
         room.name = newName.trim().slice(0, 40);
       }
+
+      // Tanto o Dono quanto o Sub Dono têm permissão para alterar a foto do servidor
       if (newIconUrl !== undefined) {
         room.iconUrl = newIconUrl;
       }
@@ -699,7 +752,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         iconUrl: room.iconUrl,
       });
 
-      console.log(`[Server] Server ${room.id} updated -> name: ${room.name}, icon: ${room.iconUrl}`);
+      console.log(`[Server] Server ${room.id} updated by ${user?.name || socket.id} (${isOwner ? 'owner' : 'sub_owner'}) -> name: ${room.name}, icon: ${room.iconUrl ? '(updated)' : '(none)'}`);
     });
 
     // ─── DELETE CHANNEL (Apenas Dono) ──────────────────────────────

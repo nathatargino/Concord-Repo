@@ -33,12 +33,28 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     serverMembers,
     myId,
     myName, 
-    myAvatarUrl 
+    myAvatarUrl,
+    myRole,
+    users
   } = useAppStore();
 
-  const myMember = serverMembers.find(m => m.username?.toLowerCase() === (myName || '').toLowerCase());
-  const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || room?.ownerId === myId;
-  const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
+  const cleanMyName = (myName || '').trim().toLowerCase();
+  const myMember = serverMembers.find(m => (m.username || '').trim().toLowerCase() === cleanMyName);
+  const isOwner = 
+    (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || 
+    myMember?.role === 'owner' || 
+    myRole === 'owner' || 
+    users.find(u => u.id === myId)?.role === 'owner' || 
+    (Boolean(room?.ownerId) && room?.ownerId === myId);
+
+  const isSubOwner = 
+    !isOwner && (
+      Boolean(room?.subOwnerIds?.includes(myId)) || 
+      myMember?.role === 'sub_owner' || 
+      myRole === 'sub_owner' || 
+      users.find(u => u.id === myId)?.role === 'sub_owner'
+    );
+
   const canEditServer = isOwner || isSubOwner;
 
   const [serverEditName, setServerEditName] = useState(room?.name || serverName || '');
@@ -525,7 +541,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                   setServerIconUrl(serverEditLogo);
                 }
                 if (onUpdateServer) {
-                  onUpdateServer(room.id, cleanName || undefined, serverEditLogo || undefined);
+                  onUpdateServer(room.id, isOwner ? (cleanName || undefined) : undefined, serverEditLogo || undefined);
                 }
                 toast.success('Servidor atualizado com sucesso!');
               } catch (err) {
@@ -620,7 +636,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                   <button 
                     type="submit" 
                     className={styles.serverSaveBtn}
-                    disabled={savingServer || (!serverEditName.trim())}
+                    disabled={savingServer || (isOwner && !serverEditName.trim())}
                   >
                     {savingServer ? 'Salvando...' : 'Salvar Alterações'}
                   </button>

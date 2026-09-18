@@ -547,12 +547,14 @@
   padding: 6px 8px;
   border-radius: 12px;
   opacity: 0.65;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, background-color 0.2s;
+  cursor: pointer;
+  user-select: none;
 }
 
 .offlineUserItem:hover {
   opacity: 1;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .offlineUserName {

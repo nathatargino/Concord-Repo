@@ -14,6 +14,7 @@ import {
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
   updateMemberRoleInSupabase,
+  leaveServerFromSupabase,
   findRoomInSupabase,
   isUuid,
   supabase
@@ -72,6 +73,7 @@ export const Sidebar: React.FC<Props> = ({
     setActiveChannelId,
     serverMembers,
     setServerMembers,
+    myRole,
     inVoice,
     amSharing,
     messages,
@@ -82,7 +84,13 @@ export const Sidebar: React.FC<Props> = ({
   const [showOnline, setShowOnline] = useState(true);
   const [showOffline, setShowOffline] = useState(true);
   const [showVoice, setShowVoice] = useState(true);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; targetId: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ 
+    x: number; 
+    y: number; 
+    targetId: string;
+    targetName?: string;
+    isOffline?: boolean;
+  } | null>(null);
 
   // Modal para criação de novos canais
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
@@ -113,9 +121,24 @@ export const Sidebar: React.FC<Props> = ({
     room?.code?.toUpperCase().startsWith('SRV-')
   );
 
-  const myMember = serverMembers.find(m => m.username.toLowerCase() === (myName || '').toLowerCase());
-  const isOwner = (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || myMember?.role === 'owner' || (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId);
-  const isSubOwner = room?.subOwnerIds?.includes(myId) || myMember?.role === 'sub_owner';
+  const cleanMyName = (myName || '').trim().toLowerCase();
+  const myMember = serverMembers.find(m => (m.username || '').trim().toLowerCase() === cleanMyName);
+  const isOwner = 
+    (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || 
+    myMember?.role === 'owner' || 
+    (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId) || 
+    myRole === 'owner' || 
+    users.find(u => u.id === myId)?.role === 'owner' || 
+    (Boolean(room?.ownerId) && room?.ownerId === myId);
+
+  const isSubOwner = 
+    !isOwner && (
+      Boolean(room?.subOwnerIds?.includes(myId)) || 
+      myMember?.role === 'sub_owner' || 
+      myRole === 'sub_owner' || 
+      users.find(u => u.id === myId)?.role === 'sub_owner'
+    );
+
   const canManageServer = isOwner || isSubOwner;
 
   // ── CONTROLE DE MENSAGENS NÃO LIDAS POR CANAL ──
@@ -260,11 +283,24 @@ export const Sidebar: React.FC<Props> = ({
     return () => window.removeEventListener('click', close);
   }, []);
 
-  const handleContextMenu = (e: React.MouseEvent, id: string) => {
-    if (id !== myId) {
-      e.preventDefault();
-      setContextMenu({ x: e.clientX, y: e.clientY, targetId: id });
-    }
+  const handleContextMenu = (e: React.MouseEvent, id: string, name?: string, isOffline?: boolean) => {
+    e.preventDefault();
+    if (id === myId) return;
+    if (name && myName && name.trim().toLowerCase() === myName.trim().toLowerCase()) return;
+
+    // Ajustar posicionamento para não cortar na borda da tela
+    const menuWidth = 220;
+    const menuHeight = 340;
+    const x = Math.min(e.clientX, window.innerWidth - menuWidth);
+    const y = Math.min(e.clientY, window.innerHeight - menuHeight);
+
+    setContextMenu({ 
+      x: Math.max(10, x), 
+      y: Math.max(10, y), 
+      targetId: id,
+      targetName: name,
+      isOffline: Boolean(isOffline)
+    });
   };
 
   // Categorias de Usuários com fallback imediato para o usuário atual
@@ -476,24 +512,76 @@ export const Sidebar: React.FC<Props> = ({
   };
 
   // ─── GERENCIAMENTO DE CARGOS ─────────────────────────────────────────
-  const handleSetRole = async (targetId: string, role: 'owner' | 'sub_owner' | 'member') => {
-    const targetUser = users.find(u => u.id === targetId);
-    if (!targetUser) return;
+  const handleSetRole = async (targetId: string, role: 'owner' | 'sub_owner' | 'member', targetName?: string) => {
+    const name = targetName || 
+      users.find(u => u.id === targetId)?.name || 
+      serverMembers.find(m => m.id === targetId || m.username.trim().toLowerCase() === targetId.trim().toLowerCase())?.username;
+    
+    if (!name) return;
 
-    if (onSetUserRole) {
-      onSetUserRole(targetId, role);
+    // Se o usuário estiver online no socket, emitir atualização em tempo real
+    const onlineUser = users.find(u => u.id === targetId || (u.name || '').trim().toLowerCase() === name.trim().toLowerCase());
+    if (onlineUser && onSetUserRole) {
+      onSetUserRole(onlineUser.id, role);
     }
 
-    if (room?.id && targetUser.name) {
-      await updateMemberRoleInSupabase(room.id, targetUser.name, role);
+    // Persistir papel no Supabase se for servidor permanente
+    if (room?.id) {
+      await updateMemberRoleInSupabase(room.id, name, role);
     }
 
-    notifyInChat(`Cargo de ${targetUser.name} atualizado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`);
+    // Atualizar estado local de membros imediatamente
+    setServerMembers((prev) =>
+      prev.map((m) =>
+        m.username.trim().toLowerCase() === name.trim().toLowerCase() ? { ...m, role } : m
+      )
+    );
+
+    notifyInChat(`Cargo de ${name} atualizado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`);
   };
 
-  const targetUserInContextMenu = users.find(u => u.id === contextMenu?.targetId);
-  const targetMemberEntry = targetUserInContextMenu ? serverMembers.find(m => m.username.toLowerCase() === targetUserInContextMenu.name.toLowerCase()) : null;
-  const isTargetSubOwner = targetMemberEntry?.role === 'sub_owner' || room?.subOwnerIds?.includes(contextMenu?.targetId || '');
+  // ─── EXPULSÃO DA SALA / SERVIDOR ─────────────────────────────────────
+  const handleKickUser = async (targetId: string, targetName: string, isOffline: boolean) => {
+    // Se estiver online na sala, desconectar via socket
+    if (!isOffline) {
+      onAdminAction('kick_room', targetId);
+    }
+
+    // Se for servidor, remover membro do Supabase e da lista local
+    if (isEffectiveServer && room?.id && targetName) {
+      await leaveServerFromSupabase(room.id, targetName);
+      setServerMembers((prev) =>
+        prev.filter((m) => m.username.trim().toLowerCase() !== targetName.trim().toLowerCase())
+      );
+    }
+
+    notifyInChat(`${targetName} foi expulso ${isEffectiveServer ? 'do servidor' : 'da sala'}.`);
+  };
+
+  // Resolução unificada de dados do usuário clicado (online ou offline)
+  const targetUserInContextMenu = users.find(u => u.id === contextMenu?.targetId) ||
+    (contextMenu?.targetName ? users.find(u => (u.name || '').trim().toLowerCase() === contextMenu.targetName?.trim().toLowerCase()) : undefined);
+
+  const targetMemberEntry = serverMembers.find(m =>
+    (contextMenu?.targetName && m.username.trim().toLowerCase() === contextMenu.targetName.trim().toLowerCase()) ||
+    m.id === contextMenu?.targetId ||
+    (targetUserInContextMenu?.name && m.username.trim().toLowerCase() === targetUserInContextMenu.name.trim().toLowerCase()) ||
+    m.username.trim().toLowerCase() === (contextMenu?.targetId || '').trim().toLowerCase()
+  );
+
+  const targetDisplayName = targetUserInContextMenu?.name || targetMemberEntry?.username || contextMenu?.targetName || 'Anônimo';
+  
+  const isTargetOwner = 
+    targetMemberEntry?.role === 'owner' || 
+    (room?.adminIds?.includes(contextMenu?.targetId || '') && !room?.subOwnerIds?.includes(contextMenu?.targetId || '')) ||
+    (Boolean(room?.ownerId) && room?.ownerId === contextMenu?.targetId);
+
+  const isTargetSubOwner = 
+    targetMemberEntry?.role === 'sub_owner' || 
+    Boolean(room?.subOwnerIds?.includes(contextMenu?.targetId || ''));
+
+  const isTargetOffline = Boolean(contextMenu?.isOffline || (!targetUserInContextMenu && targetMemberEntry));
+  const canModerateTarget = isOwner ? !isTargetOwner : (isSubOwner && !isTargetOwner && !isTargetSubOwner);
 
   return (
     <aside className={styles.sidebar}>
@@ -690,7 +778,7 @@ export const Sidebar: React.FC<Props> = ({
                       isOwner={isUserOwner}
                       isSubOwner={isUserSubOwner}
                       onScreenShareClick={onScreenShareClick}
-                      onContextMenu={handleContextMenu}
+                      onContextMenu={(e, id, name, isOffline) => handleContextMenu(e, id, name, isOffline)}
                     />
                   );
                 })
@@ -735,7 +823,7 @@ export const Sidebar: React.FC<Props> = ({
                     isOwner={isUserOwner}
                     isSubOwner={isUserSubOwner}
                     onScreenShareClick={onScreenShareClick}
-                    onContextMenu={handleContextMenu}
+                    onContextMenu={(e, id, name, isOffline) => handleContextMenu(e, id, name, isOffline)}
                   />
                 );
               })}
@@ -763,7 +851,11 @@ export const Sidebar: React.FC<Props> = ({
                   <div className={styles.emptyCategory}>Nenhum membro offline</div>
                 ) : (
                   offlineMembers.map((member) => (
-                    <div key={member.id} className={styles.offlineUserItem}>
+                    <div 
+                      key={member.id} 
+                      className={styles.offlineUserItem}
+                      onContextMenu={(e) => handleContextMenu(e, member.id, member.username, true)}
+                    >
                       <div className={styles.avatarWrapper}>
                         {member.avatarUrl ? (
                           <img src={member.avatarUrl} alt={member.username} className={styles.offlineUserAvatarImg} />
@@ -1075,9 +1167,9 @@ export const Sidebar: React.FC<Props> = ({
         >
           {/* Header: nome + cargo */}
           <div className={styles.contextMenuHeader}>
-            <span>{targetUserInContextMenu?.name ?? '...'}</span>
+            <span>{targetDisplayName}</span>
             <span className={styles.contextMenuUserTag}>
-              {isTargetSubOwner ? '🛡 Sub Dono' : '👤 Membro'}
+              {isTargetOwner ? '👑 Dono' : isTargetSubOwner ? '🛡 Sub Dono' : '👤 Membro'}
             </span>
           </div>
 
@@ -1113,14 +1205,14 @@ export const Sidebar: React.FC<Props> = ({
           </button>
 
           {/* Promoção / rebaixamento (só Dono) */}
-          {isOwner && (
+          {isOwner && !isTargetOwner && (
             <>
               <div className={styles.contextMenuDivider} />
               {!isTargetSubOwner ? (
                 <button 
                   className={styles.contextMenuItem}
                   onClick={() => {
-                    handleSetRole(contextMenu.targetId, 'sub_owner');
+                    handleSetRole(contextMenu.targetId, 'sub_owner', targetDisplayName);
                     setContextMenu(null);
                   }}
                 >
@@ -1131,7 +1223,7 @@ export const Sidebar: React.FC<Props> = ({
                 <button 
                   className={styles.contextMenuItem}
                   onClick={() => {
-                    handleSetRole(contextMenu.targetId, 'member');
+                    handleSetRole(contextMenu.targetId, 'member', targetDisplayName);
                     setContextMenu(null);
                   }}
                 >
@@ -1142,14 +1234,18 @@ export const Sidebar: React.FC<Props> = ({
             </>
           )}
 
-          {/* Ações de moderação (Dono + Sub Dono) */}
-          {canManageServer && (
+          {/* Ações de moderação (Dono + Sub Dono respeitando hierarquia) */}
+          {canManageServer && canModerateTarget && (
             <>
               <div className={styles.contextMenuDivider} />
               <button 
                 className={styles.contextMenuItem}
                 onClick={() => {
-                  onAdminAction('mute', contextMenu.targetId);
+                  if (isTargetOffline) {
+                    notifyInChat(`${targetDisplayName} está offline.`);
+                  } else {
+                    onAdminAction('mute', contextMenu.targetId);
+                  }
                   setContextMenu(null);
                 }}
               >
@@ -1159,7 +1255,11 @@ export const Sidebar: React.FC<Props> = ({
               <button 
                 className={styles.contextMenuItem}
                 onClick={() => {
-                  onAdminAction('unmute', contextMenu.targetId);
+                  if (isTargetOffline) {
+                    notifyInChat(`${targetDisplayName} está offline.`);
+                  } else {
+                    onAdminAction('unmute', contextMenu.targetId);
+                  }
                   setContextMenu(null);
                 }}
               >
@@ -1170,7 +1270,11 @@ export const Sidebar: React.FC<Props> = ({
               <button 
                 className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
                 onClick={() => {
-                  onAdminAction('kick_voice', contextMenu.targetId);
+                  if (isTargetOffline) {
+                    notifyInChat(`${targetDisplayName} não está conectado a nenhuma chamada.`);
+                  } else {
+                    onAdminAction('kick_voice', contextMenu.targetId);
+                  }
                   setContextMenu(null);
                 }}
               >
@@ -1180,7 +1284,7 @@ export const Sidebar: React.FC<Props> = ({
               <button 
                 className={`${styles.contextMenuItem} ${styles.contextMenuDanger}`}
                 onClick={() => {
-                  onAdminAction('kick_room', contextMenu.targetId);
+                  handleKickUser(contextMenu.targetId, targetDisplayName, isTargetOffline);
                   setContextMenu(null);
                 }}
               >
@@ -1209,7 +1313,7 @@ interface UserCardProps {
   isOwner: boolean;
   isSubOwner: boolean;
   onScreenShareClick: (userId: string) => void;
-  onContextMenu: (e: React.MouseEvent, id: string) => void;
+  onContextMenu: (e: React.MouseEvent, id: string, name?: string, isOffline?: boolean) => void;
 }
 
 const UserCard: React.FC<UserCardProps> = ({
@@ -1236,7 +1340,7 @@ const UserCard: React.FC<UserCardProps> = ({
       id={`user-${id}`}
       data-user-id={id}
       className={`${styles.userCard} ${isMe ? styles.isMe : ''}`}
-      onContextMenu={(e) => onContextMenu(e, id)}
+      onContextMenu={(e) => onContextMenu(e, id, name, false)}
     >
       <div className={styles.userCardLeft}>
         <div className={styles.avatarWrapper}>
