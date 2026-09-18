@@ -27,6 +27,7 @@ export interface StoredMessage {
   filename?: string;
   channelId?: string;
   avatarUrl?: string | null;
+  sentAt?: number;
 }
 
 export interface RoomState {
@@ -540,7 +541,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (room.messageHistory.length > 0) {
           // Use cached in-memory history (already loaded by a previous joiner this session)
           for (const msg of room.messageHistory) {
-            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId);
+            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0);
           }
         } else if (supabaseClient) {
           // First join this session — load history from Supabase
@@ -550,7 +551,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             if (roomIdForQuery) {
               const { data, error } = await supabaseClient
                 .from('messages')
-                .select('sender_name, content, created_at, msg_type, file_url, file_name, channel_id')
+                .select('sender_name, content, created_at, msg_type, file_url, file_name, channel_id, avatar_url')
                 .eq('room_id', roomIdForQuery)
                 .order('created_at', { ascending: true })
                 .limit(300);
@@ -564,9 +565,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                   url: m.file_url || undefined,
                   filename: m.file_name || undefined,
                   channelId: m.channel_id || undefined,
+                  avatarUrl: m.avatar_url || null,
+                  sentAt: new Date(m.created_at).getTime(),
                 }));
                 for (const msg of room.messageHistory) {
-                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId);
+                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0);
                 }
               }
             }
@@ -796,12 +799,13 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         timeZone: 'America/Sao_Paulo'
       });
 
+      const now = Date.now();
       // Persist message in history for server rooms (up to 500 in-memory)
       if (room.isServer) {
         if (room.messageHistory.length >= 500) {
           room.messageHistory.shift();
         }
-        room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId, avatarUrl });
+        room.messageHistory.push({ userName: user.name, message: safe, timestamp, type, url, filename, channelId, avatarUrl, sentAt: now });
 
         // Save to Supabase asynchronously (fire-and-forget)
         if (supabaseClient) {
@@ -824,7 +828,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
 
-      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId, avatarUrl);
+      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId, avatarUrl, false, now);
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────

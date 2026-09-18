@@ -2,7 +2,7 @@
   "name": "client",
   "productName": "Concord",
   "private": true,
-  "version": "1.0.82",
+  "version": "1.0.83",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",

@@ -17,7 +17,9 @@ interface ServerToClientEvents {
     url?: string,
     filename?: string,
     channelId?: string,
-    avatarUrl?: string | null
+    avatarUrl?: string | null,
+    isHistory?: boolean,
+    sentAt?: number
   ) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
@@ -126,11 +128,13 @@ export interface SocketCallbacks {
 // In production (both web and Electron packaged app), always connect to the Render cloud backend.
 // In local development (Vite dev server), connect to localhost:3001 unless VITE_SERVER_URL is specified.
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
+const APP_SOCKET_START_TIME = Date.now();
 
 export function useSocket(callbacks: SocketCallbacks) {
   const socketRef = useRef<ConcordSocket | null>(null);
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
+  const joinGracePeriodUntilRef = useRef<number>(Date.now() + 4000);
 
   const store = useAppStore();
 
@@ -187,6 +191,7 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('room_joined', (room) => {
+      joinGracePeriodUntilRef.current = Date.now() + 3500;
       store.setRoom(room);
       if (room.isServer) {
         store.setIsServer(true);
@@ -226,7 +231,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setUsers(users);
     });
 
-    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl) => {
+    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl, isHistory, sentAt) => {
       const isSystem = userName === 'Sistema' || (type as string) === 'system' || (typeof message === 'string' && message.startsWith('O usuário ') && message.includes(' executou o comando /'));
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -241,6 +246,21 @@ export function useSocket(callbacks: SocketCallbacks) {
         avatarUrl: isSystem ? null : (avatarUrl || null),
       };
       store.addMessage(newMsg);
+
+      // NUNCA notificar mensagens históricas recebidas ao carregar ou entrar na sala
+      if (isHistory) {
+        return;
+      }
+
+      // NUNCA notificar mensagens enviadas antes de abrir o aplicativo Concord
+      if (typeof sentAt === 'number' && sentAt > 0 && sentAt < APP_SOCKET_START_TIME) {
+        return;
+      }
+
+      // Durante a conexão e sincronização inicial da sala, suprimir notificações de mensagens antigas
+      if (Date.now() < joinGracePeriodUntilRef.current && (!sentAt || sentAt < APP_SOCKET_START_TIME)) {
+        return;
+      }
 
       // Notificação nativa do Windows para mensagens enviadas por outros usuários
       const myName = (store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
@@ -266,6 +286,7 @@ export function useSocket(callbacks: SocketCallbacks) {
           roomName: roomDisplay,
           message: displayMessage,
           avatarUrl: avatarUrl || null,
+          sentAt: typeof sentAt === 'number' && sentAt > 0 ? sentAt : Date.now(),
         });
       }
     });

@@ -181,6 +181,7 @@ let localServerPort = 0;
 let previousBounds = null;
 let tray = null;
 let isQuitting = false;
+const appStartTime = Date.now();
 const startHidden = process.argv.includes('--hidden') || (electron_1.app.getLoginItemSettings ? electron_1.app.getLoginItemSettings().wasOpenedAsHidden : false);
 function createTray() {
     if (tray)
@@ -700,6 +701,10 @@ electron_1.ipcMain.on('copy-to-clipboard', (event, text) => {
 // Native Windows Notifications for Chat Messages
 electron_1.ipcMain.on('show-chat-notification', async (_event, data) => {
     try {
+        // Ignorar mensagens antigas que foram enviadas antes do Concord ser aberto
+        if (typeof data.sentAt === 'number' && data.sentAt > 0 && data.sentAt < appStartTime) {
+            return;
+        }
         // Se a janela principal estiver visível, em foco e não minimizada, NÃO disparar notificação nativa
         if (mainWindow && !mainWindow.isDestroyed()) {
             const isFocused = mainWindow.isFocused() && !mainWindow.isMinimized() && mainWindow.isVisible();

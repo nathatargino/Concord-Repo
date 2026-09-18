@@ -3,12 +3,20 @@ interface NotificationPayload {
   message: string;
   roomName?: string;
   avatarUrl?: string | null;
+  sentAt?: number;
 }
+
+export const APP_START_TIME = Date.now();
 
 /**
  * Exibe notificação nativa do Windows (via Electron) ou Web Notification API.
  */
-export function showNativeChatNotification({ userName, message, roomName, avatarUrl }: NotificationPayload) {
+export function showNativeChatNotification({ userName, message, roomName, avatarUrl, sentAt }: NotificationPayload) {
+  // Ignorar notificações de mensagens enviadas antes de abrir o aplicativo
+  if (typeof sentAt === 'number' && sentAt > 0 && sentAt < APP_START_TIME) {
+    return;
+  }
+
   if (typeof document !== 'undefined' && document.hasFocus && document.hasFocus()) {
     return;
   }
@@ -21,6 +29,7 @@ export function showNativeChatNotification({ userName, message, roomName, avatar
       message,
       roomName,
       avatarUrl: avatarUrl || null,
+      sentAt,
     });
     return;
   }

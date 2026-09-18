@@ -100,7 +100,9 @@ export interface ServerToClientEvents {
     url?: string,
     filename?: string,
     channelId?: string,
-    avatarUrl?: string | null
+    avatarUrl?: string | null,
+    isHistory?: boolean,
+    sentAt?: number
   ) => void;
   channel_created: (channel: ServerChannel) => void;
   channel_updated: (channel: ServerChannel) => void;
