@@ -1,6 +1,6 @@
 /// <reference types="youtube" />
 import { useCallback, useRef, useMemo, useEffect } from 'react';
-import toast from 'react-hot-toast';
+import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 
@@ -520,7 +520,7 @@ export function useYouTube(
             } else if (code === 2) {
               msg = 'ID do vídeo inválido.';
             }
-            toast.error(msg);
+            notifyInChat(msg);
             useAppStore.getState().setIsPlaying(false);
             useAppStore.getState().setIsBuffering(false);
             if (currentTokenRef.current !== null) {

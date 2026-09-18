@@ -40,6 +40,8 @@ declare global {
             /** Screen Share Source Picker */
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
+            /** Native Windows Notifications */
+            showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) => void;
         }
     }
 }
@@ -107,4 +109,6 @@ contextBridge.exposeInMainWorld('electron', {
     },
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
+    showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) =>
+        ipcRenderer.send('show-chat-notification', options),
 });

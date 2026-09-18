@@ -178,12 +178,16 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
     if (!showVideoPlayer || !isStreamingTab || !renderMedia) {
       if (electron.setActiveMediaTab) {
-        electron.setActiveMediaTab(showVideoPlayer ? activeMediaTab : 'youtube');
+        electron.setActiveMediaTab('youtube');
       }
       return;
     }
 
     let isCancelled = false;
+
+    if (electron.setActiveMediaTab) {
+      electron.setActiveMediaTab(activeMediaTab);
+    }
 
     const mountAndSyncView = async () => {
       if (!streamingHostRef.current || !electron) return;
@@ -414,11 +418,11 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
         else if (action === 'volume') setYtVol(payload);
       });
       const unsubClosed = electron.onPipClosed(() => {
-         useAppStore.getState().setPiPActive(false);
+        useAppStore.getState().setPiPActive(false);
       });
       return () => {
-         unsubAction();
-         unsubClosed();
+        unsubAction();
+        unsubClosed();
       };
     }
   }, [onMusicAction, onMusicSeek, setYtVol]);
@@ -452,11 +456,24 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     }
   };
 
-  const applyCommand = (cmd: string) => {
-    const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
+  const executeMusicCommand = useCallback((action: 'skip' | 'pause' | 'play' | 'clear') => {
+    broadcastAudioCommandNotice(action);
     if (onMusicAction) onMusicAction(action);
+    if (action === 'clear') {
+      const store = useAppStore.getState();
+      if (store.isPiPActive) {
+        const electron = (window as any).electron;
+        if (electron?.closePipWindow) electron.closePipWindow();
+        store.setPiPActive(false);
+      }
+    }
     setInput('');
     setShowCmdMenu(false);
+  }, [broadcastAudioCommandNotice, onMusicAction]);
+
+  const applyCommand = (cmd: string) => {
+    const action = cmd.replace('/', '').trim().toLowerCase() as 'skip' | 'pause' | 'play' | 'clear';
+    executeMusicCommand(action);
   };
 
   // Navegação por teclado no menu de comandos
@@ -570,7 +587,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
     if (!isServer) return messages;
     const currentChannel = activeChannelId || 'ch-geral';
     return messages.filter(
-      (m) => (m.channelId || 'ch-geral') === currentChannel || (currentChannel === 'ch-geral' && !m.channelId)
+      (m) => (!m.channelId && m.isSystem) || (m.channelId || 'ch-geral') === currentChannel
     );
   }, [messages, isServer, activeChannelId]);
 
@@ -652,22 +669,10 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
 
     // Interceptação direta dos comandos de música
     if (!stagedFile && trimmed.startsWith('/')) {
-      const cmd = trimmed.toLowerCase();
-      if (cmd === '/pause' || cmd === '/play' || cmd === '/skip' || cmd === '/clear') {
-        const action = cmd.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
-        broadcastAudioCommandNotice(action);
-        if (onMusicAction) {
-          onMusicAction(action);
-        }
-        if (action === 'clear') {
-          const store = useAppStore.getState();
-          if (store.isPiPActive) {
-            const electron = (window as any).electron;
-            if (electron?.closePipWindow) electron.closePipWindow();
-            store.setPiPActive(false);
-          }
-        }
-        setInput('');
+      const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
+      if (firstWord === '/pause' || firstWord === '/play' || firstWord === '/skip' || firstWord === '/clear') {
+        const action = firstWord.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
+        executeMusicCommand(action);
         return;
       }
     }
@@ -864,6 +869,8 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
                 if (showVideoPlayer) {
+                  const electron = (window as any).electron;
+                  if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
                   setRenderMedia(false);
                   setShowVideoPlayer(false);
                 } else {
@@ -873,7 +880,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
               title={showVideoPlayer ? 'Voltar ao Chat' : 'Voltar ao Streaming'}
             >
               <i className={`fa-solid ${showVideoPlayer ? 'fa-arrow-left' : 'fa-tv'}`}></i>
-              <span>{showVideoPlayer ? 'Chat' : 'Streaming'}</span>
+              <span>{showVideoPlayer ? 'Chat' : 'Assistir'}</span>
             </button>
           )}
         </div>
@@ -934,7 +941,9 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     >
                       {isSystemMsg ? (
                         <div className={styles.systemMessage}>
-                          <span className={styles.systemMessageIcon}>⚙️</span>
+                          {!/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u.test(msg.message) && (
+                            <span className={styles.systemMessageIcon}>⚙️</span>
+                          )}
                           <span>{msg.message}</span>
                         </div>
                       ) : (
@@ -1293,7 +1302,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     setActiveStreaming({ service: 'netflix' });
                     setStreamingSession('netflix', true);
                     const electron = (window as any).electron;
-                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('netflix');
+                    if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('netflix');
                   }}
                   title="Netflix"
                 >
@@ -1312,7 +1321,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                     setActiveStreaming({ service: 'prime' });
                     setStreamingSession('prime', true);
                     const electron = (window as any).electron;
-                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('prime');
+                    if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('prime');
                   }}
                   title="Prime Video"
                 >
@@ -1499,6 +1508,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit', { service: currentService });
                               else if (electron?.streamingCommand) electron.streamingCommand('exit', { service: currentService });
+                              if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
                               setRenderMedia(false);
                               setShowVideoPlayer(false);
                             }}
@@ -1537,49 +1547,48 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                   width: '100%',
                 }}
               >
-                  {(() => {
-                    const videoPlayerContent = (
-                  <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
-                    {/* Global YT Host - stays visible only when on YouTube tab */}
-                    <div
-                      style={{
-                        display: isPiPActive ? 'none' : 'block',
-                        visibility: 'visible',
-                        opacity: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 1 : 0,
-                        pointerEvents: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'auto' : 'none',
-                        width: '100%',
-                        height: '100%'
-                      }}
-                    >
-                      <div id="yt-host" className={styles.ytHostContainer} />
-                    </div>
-                    {isPiPActive && currentVideoId && (
-                      <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                         <div className={styles.videoEmptyIcon}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg></div>
-                         <p className={styles.videoEmptyTitle}>Reproduzindo no PiP</p>
+                {(() => {
+                  const videoPlayerContent = (
+                    <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
+                      {/* Global YT Host - stays visible only when on YouTube tab */}
+                      <div
+                        style={{
+                          display: isPiPActive ? 'none' : 'block',
+                          visibility: 'visible',
+                          opacity: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 1 : 0,
+                          pointerEvents: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'auto' : 'none',
+                          width: '100%',
+                          height: '100%'
+                        }}
+                      >
+                        <div id="yt-host" className={styles.ytHostContainer} />
                       </div>
-                    )}
-
-                    {/* Custom Overlay Controls - always above YouTube iframe */}
-                    {currentVideoId && (
-                      <div className={styles.customVideoOverlay} style={{ zIndex: 100, pointerEvents: 'none' }}>
-                        <div className={styles.videoOverlayTop}>
-                          <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
+                      {isPiPActive && currentVideoId && (
+                        <div className={styles.videoEmptyState} style={{ zIndex: 1, position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <div className={styles.videoEmptyIcon}><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><rect x="12" y="14" width="7" height="5" rx="1" ry="1" /></svg></div>
+                          <p className={styles.videoEmptyTitle}>Reproduzindo no PiP</p>
                         </div>
+                      )}
 
-                        <button
-                          className={styles.centerPlayBtn}
-                          onClick={() => {
-                            const nextAction = isPlaying ? 'pause' : 'play';
-                            broadcastAudioCommandNotice(nextAction);
-                            onMusicAction?.(nextAction);
-                          }}
-                          title={isPlaying ? 'Pausar' : 'Reproduzir'}
-                        >
-                          <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`} style={{ fontSize: '24px' }}></i>
-                        </button>
+                      {/* Custom Overlay Controls - always above YouTube iframe */}
+                      {currentVideoId && (
+                        <div className={styles.customVideoOverlay} style={{ zIndex: 100, pointerEvents: 'none' }}>
+                          <div className={styles.videoOverlayTop}>
+                            <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
+                          </div>
 
-                        <div className={styles.videoOverlayBottom}>
+                          <button
+                            className={styles.centerPlayBtn}
+                            onClick={() => {
+                              const nextAction = isPlaying ? 'pause' : 'play';
+                              executeMusicCommand(nextAction);
+                            }}
+                            title={isPlaying ? 'Pausar' : 'Reproduzir'}
+                          >
+                            <i className={`fa-solid ${isPlaying ? 'fa-pause' : 'fa-play'}`} style={{ fontSize: '24px' }}></i>
+                          </button>
+
+                          <div className={styles.videoOverlayBottom}>
                             <span className={styles.timeText}>{formatTime(isDraggingSeek ? seekValue : currentTime)}</span>
 
                             <div className={styles.seekContainer}>
@@ -1714,7 +1723,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                           <span className={styles.settingsValueText}>
                                             {formatQualityLabel(selectedQuality)}
                                           </span>
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6" /></svg>
                                         </div>
                                       </button>
                                     </div>
@@ -1725,7 +1734,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                         className={styles.settingsMenuBack}
                                         onClick={() => setSettingsSubMenu('main')}
                                       >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6" /></svg>
                                         <span>Qualidade</span>
                                       </button>
                                       {(() => {
@@ -1746,7 +1755,7 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                                           >
                                             <span>{formatQualityLabel(q)}</span>
                                             {selectedQuality === q && (
-                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>
                                             )}
                                           </button>
                                         ));
@@ -1765,117 +1774,99 @@ export function ChatPanel({ onSendMessage, onMusicAction, onMusicSeek, getYtCurr
                               <i className="fa-solid fa-expand" style={{ fontSize: '13px' }}></i>
                             </button>
                           </div>
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
+                  );
+
+                  return videoPlayerContent;
+                })()}
+
+                {!currentVideoId && (
+                  <div className={styles.videoEmptyState}>
+                    <div className={styles.videoEmptyIcon}>
+                      <IconNoVideo />
+                    </div>
+                    <p className={styles.videoEmptyTitle}>Nenhum vídeo tocando</p>
+                    <p className={styles.videoEmptySubtitle}>
+                      Adicione um vídeo do YouTube na fila do painel de streaming para assistir aqui.
+                    </p>
+                    <button
+                      type="button"
+                      className={styles.searchYouTubeEmptyBtn}
+                      onClick={() => {
+                        if (!inVoice) {
+                          toast.error('Você precisa estar em uma call de voz para buscar e reproduzir vídeos.');
+                          return;
+                        }
+                        setIsYouTubeSearchOpen(true);
+                      }}
+                    >
+                      <i className="fa-solid fa-magnifying-glass"></i>
+                      <span>Buscar Vídeo no YouTube</span>
+                    </button>
+                    <div className={styles.videoEmptyPulse} />
                   </div>
-                );
+                )}
 
-                return videoPlayerContent;
-              })()}
-
-              {!currentVideoId && (
-                <div className={styles.videoEmptyState}>
-                  <div className={styles.videoEmptyIcon}>
-                    <IconNoVideo />
+                {/* Shortcut buttons — controles de música YouTube */}
+                <div className={styles.videoShortcutWrapper}>
+                  <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
+                  <div className={styles.videoShortcutGrid}>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
+                      onClick={() => executeMusicCommand('play')}
+                      title="Retomar música"
+                    >
+                      <i className="fa-solid fa-play"></i>
+                      <span>/play</span>
+                    </button>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
+                      onClick={() => executeMusicCommand('pause')}
+                      title="Pausar música"
+                    >
+                      <i className="fa-solid fa-pause"></i>
+                      <span>/pause</span>
+                    </button>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
+                      onClick={() => executeMusicCommand('skip')}
+                      title="Pular música"
+                    >
+                      <i className="fa-solid fa-forward-step"></i>
+                      <span>/skip</span>
+                    </button>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                      onClick={() => executeMusicCommand('clear')}
+                      title="Limpar fila"
+                    >
+                      <i className="fa-solid fa-trash-can"></i>
+                      <span>/clear</span>
+                    </button>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                      onClick={() => {
+                        setRenderMedia(false);
+                        setShowVideoPlayer(false);
+                      }}
+                      title="Voltar ao chat"
+                    >
+                      <i className="fa-solid fa-arrow-left"></i>
+                      <span>Sair</span>
+                    </button>
+                    <button
+                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
+                      onClick={toggleFullscreen}
+                      title="Tela Cheia"
+                    >
+                      <i className="fa-solid fa-expand"></i>
+                      <span>Tela Cheia</span>
+                    </button>
                   </div>
-                  <p className={styles.videoEmptyTitle}>Nenhum vídeo tocando</p>
-                  <p className={styles.videoEmptySubtitle}>
-                    Adicione um vídeo do YouTube na fila do painel de streaming para assistir aqui.
-                  </p>
-                  <button
-                    type="button"
-                    className={styles.searchYouTubeEmptyBtn}
-                    onClick={() => {
-                      if (!inVoice) {
-                        toast.error('Você precisa estar em uma call de voz para buscar e reproduzir vídeos.');
-                        return;
-                      }
-                      setIsYouTubeSearchOpen(true);
-                    }}
-                  >
-                    <i className="fa-solid fa-magnifying-glass"></i>
-                    <span>Buscar Vídeo no YouTube</span>
-                  </button>
-                  <div className={styles.videoEmptyPulse} />
-                </div>
-              )}
-
-              {/* Shortcut buttons — controles de música YouTube */}
-              <div className={styles.videoShortcutWrapper}>
-                <p className={styles.videoShortcutLabel}>⎯⎯ Comandos de Controle ⎯⎯</p>
-                <div className={styles.videoShortcutGrid}>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutPlay}`}
-                    onClick={() => {
-                      broadcastAudioCommandNotice('play');
-                      onMusicAction?.('play');
-                    }}
-                    title="Retomar música"
-                  >
-                    <i className="fa-solid fa-play"></i>
-                    <span>/play</span>
-                  </button>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutPause}`}
-                    onClick={() => {
-                      broadcastAudioCommandNotice('pause');
-                      onMusicAction?.('pause');
-                    }}
-                    title="Pausar música"
-                  >
-                    <i className="fa-solid fa-pause"></i>
-                    <span>/pause</span>
-                  </button>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutSkip}`}
-                    onClick={() => {
-                      broadcastAudioCommandNotice('skip');
-                      onMusicAction?.('skip');
-                    }}
-                    title="Pular música"
-                  >
-                    <i className="fa-solid fa-forward-step"></i>
-                    <span>/skip</span>
-                  </button>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
-                    onClick={() => {
-                      broadcastAudioCommandNotice('clear');
-                      onMusicAction?.('clear');
-                      const store = useAppStore.getState();
-                      if (store.isPiPActive) {
-                        const electron = (window as any).electron;
-                        if (electron?.closePipWindow) electron.closePipWindow();
-                        store.setPiPActive(false);
-                      }
-                    }}
-                    title="Limpar fila"
-                  >
-                    <i className="fa-solid fa-trash-can"></i>
-                    <span>/clear</span>
-                  </button>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
-                    onClick={() => {
-                      setRenderMedia(false);
-                      setShowVideoPlayer(false);
-                    }}
-                    title="Voltar ao chat"
-                  >
-                    <i className="fa-solid fa-arrow-left"></i>
-                    <span>Sair</span>
-                  </button>
-                  <button
-                    className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
-                    onClick={toggleFullscreen}
-                    title="Tela Cheia"
-                  >
-                    <i className="fa-solid fa-expand"></i>
-                    <span>Tela Cheia</span>
-                  </button>
                 </div>
               </div>
-            </div>
 
             </div>
           </div>{/* end flipCardBack */}

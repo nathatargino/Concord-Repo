@@ -47,6 +47,9 @@ const electron_updater_1 = require("electron-updater");
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
 electron_1.app.name = 'Concord';
+if (process.platform === 'win32') {
+    electron_1.app.setAppUserModelId('com.concord.app');
+}
 const isDev = !electron_1.app.isPackaged;
 function cleanOldWidevineVersions(baseDir, currentVersion) {
     try {
@@ -556,6 +559,54 @@ electron_1.ipcMain.handle('get-app-version', () => {
 electron_1.ipcMain.on('copy-to-clipboard', (event, text) => {
     electron_1.clipboard.writeText(text);
 });
+// Native Windows Notifications for Chat Messages
+electron_1.ipcMain.on('show-chat-notification', async (_event, data) => {
+    try {
+        let iconImage = undefined;
+        if (data.avatarUrl) {
+            try {
+                if (data.avatarUrl.startsWith('data:image/')) {
+                    iconImage = electron_1.nativeImage.createFromDataURL(data.avatarUrl);
+                }
+                else if (data.avatarUrl.startsWith('http://') || data.avatarUrl.startsWith('https://')) {
+                    const res = await electron_1.net.fetch(data.avatarUrl);
+                    if (res.ok) {
+                        const buffer = Buffer.from(await res.arrayBuffer());
+                        iconImage = electron_1.nativeImage.createFromBuffer(buffer);
+                    }
+                }
+            }
+            catch (imgErr) {
+                fs.appendFileSync(logFile, `[Notification] Failed to load avatar: ${imgErr}\n`);
+            }
+        }
+        if (!iconImage || iconImage.isEmpty()) {
+            const defaultIconPath = path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png');
+            if (fs.existsSync(defaultIconPath)) {
+                iconImage = electron_1.nativeImage.createFromPath(defaultIconPath);
+            }
+        }
+        const title = data.roomName ? `${data.userName} (${data.roomName})` : data.userName;
+        const notification = new electron_1.Notification({
+            title,
+            body: data.message || 'Nova mensagem recebida',
+            icon: iconImage && !iconImage.isEmpty() ? iconImage : undefined,
+            silent: false,
+        });
+        notification.on('click', () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                if (mainWindow.isMinimized())
+                    mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        });
+        notification.show();
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[Notification] Error showing notification: ${err}\n`);
+    }
+});
 // Window controls IPC
 electron_1.ipcMain.on('window-minimize', () => {
     if (mainWindow)
@@ -605,6 +656,46 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
             preload: path.join(__dirname, 'preload.js'),
             autoplayPolicy: 'no-user-gesture-required'
         }
+    });
+    // Enforce 16:9 aspect ratio for the video area on resize.
+    // NOTE: setAspectRatio's extraSize param is macOS-only.
+    // On Windows we use the 'will-resize' event (primary) and 'resize' (fallback).
+    // EXTRA_HEIGHT = dragHeader (30px) + commandsBar (~70px) = 100px
+    const PIP_EXTRA_HEIGHT = 100;
+    const MIN_WIDTH = 280;
+    const MIN_HEIGHT = Math.round(MIN_WIDTH * 9 / 16) + PIP_EXTRA_HEIGHT;
+    pipWindow.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+    // Primary: intercept resize and enforce aspect ratio before it happens
+    pipWindow.on('will-resize', (e, bounds) => {
+        e.preventDefault();
+        const newWidth = Math.max(MIN_WIDTH, bounds.width);
+        const newHeight = Math.round(newWidth * 9 / 16) + PIP_EXTRA_HEIGHT;
+        pipWindow?.setBounds({
+            x: bounds.x,
+            y: bounds.y,
+            width: newWidth,
+            height: newHeight,
+        });
+    });
+    // Fallback: correct aspect ratio after resize in case will-resize was bypassed
+    let isResizing = false;
+    let resizeTimer = null;
+    pipWindow.on('resize', () => {
+        if (isResizing)
+            return;
+        if (resizeTimer)
+            clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (!pipWindow || pipWindow.isDestroyed())
+                return;
+            const [w, h] = pipWindow.getSize();
+            const targetH = Math.round(w * 9 / 16) + PIP_EXTRA_HEIGHT;
+            if (Math.abs(h - targetH) > 4) {
+                isResizing = true;
+                pipWindow.setSize(w, targetH);
+                setTimeout(() => { isResizing = false; }, 100);
+            }
+        }, 150);
     });
     pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     // Ensure it uses a hash route to render just the PiP

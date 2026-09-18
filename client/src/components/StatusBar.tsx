@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import styles from './StatusBar.module.css';
 import { leaveServerFromSupabase, removeMyServer } from '../lib/supabase';
@@ -61,12 +61,12 @@ export const StatusBar: React.FC = () => {
           (window as any).electron.copyToClipboard(text);
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
-          toast.success(label);
+          notifyInChat(label);
         } else {
           navigator.clipboard.writeText(text).then(() => {
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
-            toast.success(label);
+            notifyInChat(label);
           });
         }
       } catch (err) {
@@ -82,10 +82,10 @@ export const StatusBar: React.FC = () => {
     try {
       if ((window as any).electron?.copyToClipboard) {
         (window as any).electron.copyToClipboard(code);
-        toast.success('Código copiado!');
+        notifyInChat('Código de convite copiado!');
       } else {
         navigator.clipboard.writeText(code).then(() => {
-          toast.success('Código copiado!');
+          notifyInChat('Código de convite copiado!');
         });
       }
     } catch (err) {
@@ -106,9 +106,6 @@ export const StatusBar: React.FC = () => {
         await leaveServerFromSupabase(room.id, myName);
         removeMyServer(room.id);
         removeMyServer(room.code);
-        toast.success('Você saiu do servidor.');
-      } else {
-        toast.success('Você saiu da sala.');
       }
     } catch (err) {
       console.warn('Erro ao sair do servidor:', err);

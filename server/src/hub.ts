@@ -825,9 +825,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicStartTime = Date.now();
         io.to(room.id).emit('play_youtube', videoId, 0, token);
         broadcastQueueUpdate(io, room);
+        io.to(room.id).emit('toast_notification', `${user.name} iniciou a reprodução de "${title || videoId}"`, 'info');
       } else {
         room.musicQueue.push(item);
         broadcastQueueUpdate(io, room);
+        io.to(room.id).emit('toast_notification', `${user.name} adicionou "${title || videoId}" à fila`, 'info');
       }
     });
 

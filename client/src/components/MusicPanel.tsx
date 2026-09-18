@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import toast from 'react-hot-toast';
+import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { YouTubeSearchModal } from './YouTubeSearchModal';
 import styles from './MusicPanel.module.css';
@@ -82,7 +82,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
 
   const handleOpenStreaming = async (service: 'netflix' | 'prime', targetUrl?: string) => {
     if (!inVoice) {
-      toast.error(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : 'o Prime Video'}.`);
+      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : 'o Prime Video'}.`);
       return;
     }
     setIsOpeningStreaming(true);
@@ -91,10 +91,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       setActiveMediaTab(service);
       setStreamingSession(service, true);
       setShowVideoPlayer(true);
-      const electron = (window as any).electron;
-      if (electron?.setActiveMediaTab) {
-        electron.setActiveMediaTab(service);
-      }
     } finally {
       setIsOpeningStreaming(false);
     }
@@ -170,24 +166,22 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!inVoice) {
-      toast.error('Você precisa estar em uma call de voz para adicionar vídeos.');
+      notifyInChat('Você precisa estar em uma call de voz para adicionar vídeos.');
       return;
     }
     if (!url.trim()) return;
-    onRequestMusic(url.trim(), undefined, true);
+    onRequestMusic(url.trim(), undefined, false);
     setSelectedPlatform('youtube');
-    setShowVideoPlayer(true);
     setUrl('');
   };
 
   const handleSelectSearchVideo = (videoId: string, title?: string) => {
     if (!inVoice) {
-      toast.error('Você precisa estar em uma call de voz para reproduzir vídeos.');
+      notifyInChat('Você precisa estar em uma call de voz para reproduzir vídeos.');
       return;
     }
-    onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title, true);
+    onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title, false);
     setSelectedPlatform('youtube');
-    setShowVideoPlayer(true);
     setIsSearchModalOpen(false);
     setIsYouTubeSearchOpen(false);
   };
@@ -275,7 +269,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
               className={styles.searchModalBtn}
               onClick={() => {
                 if (!inVoice) {
-                  toast.error('Você precisa estar em uma call de voz para buscar no YouTube.');
+                  notifyInChat('Você precisa estar em uma call de voz para buscar no YouTube.');
                   return;
                 }
                 setIsSearchModalOpen(true);

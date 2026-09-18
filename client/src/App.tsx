@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import toast, { Toaster } from 'react-hot-toast';
+import { notifyInChat } from './utils/systemMessage';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
 import { useAudio, monitorSpeaking, stopSpeaking, playChimeSound } from './hooks/useAudio';
@@ -88,7 +88,7 @@ export default function App() {
             if (access_token && refresh_token) {
               supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
                 if (!error) {
-                  toast.success('Login sincronizado com a Web!');
+                  notifyInChat('Login sincronizado com a Web!');
                   setTimeout(() => window.location.reload(), 1000);
                 }
               });
@@ -202,7 +202,7 @@ export default function App() {
     },
     onScreenViewerJoined: (viewer) => {
       playChimeSound();
-      toast(`👁️ ${viewer.name} começou a assistir sua transmissão!`, { icon: '📺' });
+      notifyInChat(`👁️ ${viewer.name} começou a assistir sua transmissão!`);
     },
     onScreenShareStopped: (userId) => {
       rtc.clearRemoteScreen(userId);
@@ -417,7 +417,7 @@ export default function App() {
     );
 
     if (isDuplicate) {
-      toast.error(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`, { duration: 5000 });
+      notifyInChat(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`);
       setLoginError(`O nome "${store.myName}" já está em uso nesta chamada/servidor por outro usuário. Escolha outro nome.`);
       setShowLogin(true);
     }
@@ -452,7 +452,7 @@ export default function App() {
     );
 
     if (isDuplicate) {
-      toast.error(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário. Escolha outro nome.`, { duration: 5000 });
+      notifyInChat(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário. Escolha outro nome.`);
       setLoginError(`O nome "${store.myName}" já está em uso nesta chamada por outro usuário.`);
       setShowLogin(true);
       return;
@@ -521,9 +521,6 @@ export default function App() {
 
   return (
     <div className={`${styles.appContainer}`}>
-      <Toaster position="top-right" toastOptions={{ style: { background: '#1A1A28', color: '#fff', border: '1px solid #7C3AED' } }} />
-
-
       {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
 
       <div className={styles.mainLayout}>
@@ -585,7 +582,7 @@ export default function App() {
           <MusicPanel
             onRequestMusic={(url, title, playNow) => {
               if (!store.inVoice) {
-                toast.error('Você precisa estar em uma call de voz para colocar vídeos.');
+                notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
                 return;
               }
               socket.emit('request_music', url, title, playNow);

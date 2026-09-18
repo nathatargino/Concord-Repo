@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, protocol, net, BrowserView, WebContentsView } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, nativeImage, protocol, net, BrowserView, WebContentsView } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
@@ -18,6 +18,9 @@ import { autoUpdater } from 'electron-updater';
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
 app.name = 'Concord';
+if (process.platform === 'win32') {
+    app.setAppUserModelId('com.concord.app');
+}
 const isDev = !app.isPackaged;
 
 function cleanOldWidevineVersions(baseDir: string, currentVersion: string): void {
@@ -570,6 +573,61 @@ ipcMain.handle('get-app-version', () => {
 
 ipcMain.on('copy-to-clipboard', (event, text) => {
     clipboard.writeText(text);
+});
+
+// Native Windows Notifications for Chat Messages
+ipcMain.on('show-chat-notification', async (_event, data: {
+    userName: string;
+    roomName?: string;
+    message: string;
+    avatarUrl?: string | null;
+}) => {
+    try {
+        let iconImage: any = undefined;
+
+        if (data.avatarUrl) {
+            try {
+                if (data.avatarUrl.startsWith('data:image/')) {
+                    iconImage = nativeImage.createFromDataURL(data.avatarUrl);
+                } else if (data.avatarUrl.startsWith('http://') || data.avatarUrl.startsWith('https://')) {
+                    const res = await net.fetch(data.avatarUrl);
+                    if (res.ok) {
+                        const buffer = Buffer.from(await res.arrayBuffer());
+                        iconImage = nativeImage.createFromBuffer(buffer);
+                    }
+                }
+            } catch (imgErr) {
+                fs.appendFileSync(logFile, `[Notification] Failed to load avatar: ${imgErr}\n`);
+            }
+        }
+
+        if (!iconImage || iconImage.isEmpty()) {
+            const defaultIconPath = path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png');
+            if (fs.existsSync(defaultIconPath)) {
+                iconImage = nativeImage.createFromPath(defaultIconPath);
+            }
+        }
+
+        const title = data.roomName ? `${data.userName} (${data.roomName})` : data.userName;
+        const notification = new Notification({
+            title,
+            body: data.message || 'Nova mensagem recebida',
+            icon: iconImage && !iconImage.isEmpty() ? iconImage : undefined,
+            silent: false,
+        });
+
+        notification.on('click', () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        });
+
+        notification.show();
+    } catch (err) {
+        fs.appendFileSync(logFile, `[Notification] Error showing notification: ${err}\n`);
+    }
 });
 
 // Window controls IPC

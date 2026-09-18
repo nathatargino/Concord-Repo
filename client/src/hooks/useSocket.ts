@@ -1,9 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
-import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
+import { showNativeChatNotification } from '../utils/nativeNotification';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
@@ -241,6 +241,33 @@ export function useSocket(callbacks: SocketCallbacks) {
         avatarUrl: isSystem ? null : (avatarUrl || null),
       };
       store.addMessage(newMsg);
+
+      // Notificação nativa do Windows para mensagens enviadas por outros usuários
+      const myName = (store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
+      const isMe = !isSystem && Boolean(myName && userName.trim().toLowerCase() === myName);
+
+      if (!isMe && !isSystem) {
+        const serverOrRoomName = store.serverName || store.room?.name || 'Concord';
+        const channelObj = store.channels.find((c) => c.id === channelId);
+        const channelName = channelObj ? `#${channelObj.name}` : '';
+        const roomDisplay = channelName ? `${serverOrRoomName} (${channelName})` : serverOrRoomName;
+
+        let displayMessage = message;
+        if (type === 'image') {
+          displayMessage = message ? `📷 ${message}` : '📷 Enviou uma imagem';
+        } else if (type === 'giphy') {
+          displayMessage = '🎬 Enviou um GIF';
+        } else if (type === 'file') {
+          displayMessage = filename ? `📎 Arquivo: ${filename}` : '📎 Enviou um arquivo';
+        }
+
+        showNativeChatNotification({
+          userName,
+          roomName: roomDisplay,
+          message: displayMessage,
+          avatarUrl: avatarUrl || null,
+        });
+      }
     });
 
     socket.on('channel_created', (channel) => {
@@ -277,7 +304,6 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
       store.setActiveMediaTab('youtube');
-      store.setShowVideoPlayer(true);
       const electron = (window as any).electron;
       if (electron?.setActiveMediaTab) {
         electron.setActiveMediaTab('youtube');
@@ -343,7 +369,7 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('user_started_screen_share', (_userId, userName) => {
       playScreenShareStartSound();
-      toast.success(`${userName} começou a compartilhar tela`);
+      store.addSystemMessage(`🖥️ ${userName} começou a compartilhar tela`);
     });
 
     socket.on('user_stopped_screen_share', (userId: string) => {
@@ -354,29 +380,27 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
     });
 
-    socket.on('toast_notification', (msg, type) => {
-      if (type === 'success') toast.success(msg);
-      else if (type === 'error') toast.error(msg);
-      else toast(msg, { icon: 'ℹ️' });
+    socket.on('toast_notification', (msg) => {
+      store.addSystemMessage(msg);
     });
 
     socket.on('server_muted', () => {
       useAudioStore.getState().setServerMuted(true);
-      toast.error('Você foi silenciado por um administrador.');
+      store.addSystemMessage('Você foi silenciado por um administrador.');
     });
 
     socket.on('server_unmuted', () => {
       useAudioStore.getState().setServerMuted(false);
-      toast.success('Você foi desmutado por um administrador.');
+      store.addSystemMessage('Você foi desmutado por um administrador.');
     });
 
     socket.on('kicked_from_voice', () => {
-      toast.error('Você foi desconectado da chamada por um administrador.');
+      store.addSystemMessage('Você foi desconectado da chamada por um administrador.');
       callbacksRef.current.onKickedFromVoice?.();
     });
 
     socket.on('kicked_from_room', () => {
-      toast.error('Você foi expulso da sala por um administrador.');
+      store.addSystemMessage('Você foi expulso da sala por um administrador.');
       callbacksRef.current.onKickedFromRoom?.();
     });
 

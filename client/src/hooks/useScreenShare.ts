@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import toast from 'react-hot-toast';
+import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { EchoFilter } from '../utils/echoFilter';
@@ -37,10 +37,7 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
           },
           audio: false,
         });
-        toast('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.', {
-          icon: '⚠️',
-          duration: 4000,
-        });
+        notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
         return fallbackStream;
       }
     } else {
@@ -83,10 +80,7 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
           },
           audio: false,
         });
-        toast('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.', {
-          icon: '⚠️',
-          duration: 4000,
-        });
+        notifyInChat('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.');
         return fallbackStream;
       } catch {
         throw err;
@@ -129,7 +123,7 @@ export function useScreenShare(
     emit('stop_screen_share');
     useAppStore.getState().setAmSharing(false);
     playScreenShareStopSound();
-    toast('🖥️ Compartilhamento encerrado', { duration: 2000 });
+    notifyInChat('🖥️ Compartilhamento de tela encerrado');
   }, [emit, removeScreenShareTrack, disposeEchoFilter]);
 
   const doStartScreenShare = useCallback(async (withAudio: boolean = true) => {
@@ -159,20 +153,17 @@ export function useScreenShare(
 
       const hasAudio = stream.getAudioTracks().length > 0;
       if (hasAudio) {
-        toast.success('🖥️ Compartilhando tela com áudio!');
+        notifyInChat('🖥️ Compartilhando tela com áudio!');
       } else {
-        toast('🖥️ Compartilhando tela sem áudio', {
-          icon: '🖥️',
-          duration: 3500,
-        });
+        notifyInChat('🖥️ Compartilhando tela sem áudio');
       }
     } catch (err: unknown) {
       // NotAllowedError / AbortError = usuário cancelou o picker → silencioso
       if (err instanceof Error) {
         if (err.name === 'NotReadableError') {
-          toast.error('Erro no compartilhamento com áudio. Tente compartilhar sem som.');
+          notifyInChat('Erro no compartilhamento com áudio. Tente compartilhar sem som.');
         } else if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-          toast.error('Erro ao compartilhar tela');
+          notifyInChat('Erro ao compartilhar tela');
         }
         if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
           console.error('[ScreenShare] startScreenShare error:', err);
@@ -205,10 +196,10 @@ export function useScreenShare(
         };
       }
 
-      toast.success('🖥️ Transmissão de tela alterada!');
+      notifyInChat('🖥️ Transmissão de tela alterada!');
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
-        toast.error('Erro ao trocar tela');
+        notifyInChat('Erro ao trocar tela');
         console.error('[ScreenShare] changeScreenShare error:', err);
       }
     } finally {

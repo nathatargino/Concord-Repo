@@ -19,7 +19,7 @@ import {
   supabase
 } from '../lib/supabase';
 import type { ServerChannel } from '../types';
-import toast from 'react-hot-toast';
+import { notifyInChat } from '../utils/systemMessage';
 
 interface Props {
   onScreenShareClick: (userId: string) => void;
@@ -272,18 +272,18 @@ export const Sidebar: React.FC<Props> = ({
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManageServer) {
-      toast.error('Você não tem permissão para criar canais');
+      notifyInChat('Você não tem permissão para criar canais');
       return;
     }
 
     const cleanName = newChannelName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 25);
     if (!cleanName) {
-      toast.error('Digite um nome válido para o canal');
+      notifyInChat('Digite um nome válido para o canal');
       return;
     }
 
     if (channels.some(c => c.name.toLowerCase() === cleanName.toLowerCase())) {
-      toast.error('Já existe um canal com esse nome');
+      notifyInChat('Já existe um canal com esse nome');
       return;
     }
 
@@ -299,11 +299,11 @@ export const Sidebar: React.FC<Props> = ({
         addChannel({ id: `ch-${Date.now()}`, name: cleanName, serverId: room?.id });
       }
 
-      toast.success(`Canal #${cleanName} criado!`);
+      notifyInChat(`Canal #${cleanName} criado!`);
       setNewChannelName('');
       setShowCreateChannelModal(false);
     } catch (err) {
-      toast.error('Erro ao criar canal');
+      notifyInChat('Erro ao criar canal');
     } finally {
       setIsCreatingChannel(false);
     }
@@ -313,18 +313,18 @@ export const Sidebar: React.FC<Props> = ({
   const handleEditChannelSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingChannel || !canManageServer) {
-      toast.error('Você não tem permissão para renomear canais');
+      notifyInChat('Você não tem permissão para renomear canais');
       return;
     }
 
     const cleanName = editChannelName.trim().toLowerCase().replace(/\s+/g, '-').slice(0, 25);
     if (!cleanName) {
-      toast.error('Digite um nome válido para o canal');
+      notifyInChat('Digite um nome válido para o canal');
       return;
     }
 
     if (channels.some(c => c.id !== editingChannel.id && c.name.toLowerCase() === cleanName.toLowerCase())) {
-      toast.error('Já existe um canal com esse nome');
+      notifyInChat('Já existe um canal com esse nome');
       return;
     }
 
@@ -340,11 +340,11 @@ export const Sidebar: React.FC<Props> = ({
         updateChannel(editingChannel.id, cleanName);
       }
 
-      toast.success(`Canal renomeado para #${cleanName}!`);
+      notifyInChat(`Canal renomeado para #${cleanName}!`);
       setShowEditChannelModal(false);
       setEditingChannel(null);
     } catch (err) {
-      toast.error('Erro ao renomear canal');
+      notifyInChat('Erro ao renomear canal');
     } finally {
       setIsEditingChannel(false);
     }
@@ -353,7 +353,7 @@ export const Sidebar: React.FC<Props> = ({
   // ─── EXCLUSÃO DE CANAL (Apenas Dono) ────────────────────────────────
   const handleDeleteChannel = async (channelId: string) => {
     if (!isOwner) {
-      toast.error('Apenas o Dono pode excluir canais');
+      notifyInChat('Apenas o Dono pode excluir canais');
       return;
     }
 
@@ -366,9 +366,9 @@ export const Sidebar: React.FC<Props> = ({
       } else {
         removeChannel(channelId);
       }
-      toast.success('Canal excluído com sucesso!');
+      notifyInChat('Canal excluído com sucesso!');
     } catch (err) {
-      toast.error('Erro ao excluir canal');
+      notifyInChat('Erro ao excluir canal');
     }
   };
 
@@ -383,7 +383,7 @@ export const Sidebar: React.FC<Props> = ({
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      toast.error('A imagem deve ter no máximo 2MB');
+      notifyInChat('A imagem deve ter no máximo 2MB');
       return;
     }
 
@@ -401,7 +401,7 @@ export const Sidebar: React.FC<Props> = ({
 
     const trimmedName = editName.trim();
     if (isOwner && (!trimmedName || trimmedName.length < 2 || trimmedName.length > 40)) {
-      toast.error('O nome do servidor deve ter entre 2 e 40 caracteres');
+      notifyInChat('O nome do servidor deve ter entre 2 e 40 caracteres');
       return;
     }
 
@@ -411,7 +411,7 @@ export const Sidebar: React.FC<Props> = ({
       if (isOwner && trimmedName && trimmedName !== (room.name || serverName)) {
         const nameRes = await updateServerNameInSupabase(room.id, trimmedName);
         if (!nameRes.success) {
-          toast.error(nameRes.message || 'Erro ao alterar o nome do servidor');
+          notifyInChat(nameRes.message || 'Erro ao alterar o nome do servidor');
           setIsSavingSettings(false);
           return;
         }
@@ -429,10 +429,10 @@ export const Sidebar: React.FC<Props> = ({
         onUpdateServer(room.id, isOwner ? trimmedName : undefined, editLogoUrl);
       }
 
-      toast.success('Servidor atualizado com sucesso!');
+      notifyInChat('Servidor atualizado com sucesso!');
       setShowSettingsModal(false);
     } catch (err) {
-      toast.error('Erro ao salvar alterações');
+      notifyInChat('Erro ao salvar alterações');
     } finally {
       setIsSavingSettings(false);
     }
@@ -451,7 +451,7 @@ export const Sidebar: React.FC<Props> = ({
       await updateMemberRoleInSupabase(room.id, targetUser.name, role);
     }
 
-    toast.success(`Cargo de ${targetUser.name} atualizado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`);
+    notifyInChat(`Cargo de ${targetUser.name} atualizado para ${role === 'sub_owner' ? 'Sub Dono' : role === 'owner' ? 'Dono' : 'Membro'}`);
   };
 
   const targetUserInContextMenu = users.find(u => u.id === contextMenu?.targetId);

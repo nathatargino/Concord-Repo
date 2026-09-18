@@ -870,6 +870,9 @@
   transform: rotateY(0deg);
   z-index: 2;
   pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+  transition: visibility 0s 0.3s, opacity 0.2s ease;
 }
 
 .flipCardBack {
@@ -877,14 +880,23 @@
   z-index: 1;
   pointer-events: none;
   background: transparent;
+  visibility: hidden;
+  opacity: 0;
+  transition: visibility 0s 0.3s, opacity 0.2s ease;
 }
 
 .flipCard.flipped .flipCardFront {
   pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: visibility 0s 0.3s, opacity 0.2s ease;
 }
 
 .flipCard.flipped .flipCardBack {
   pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+  transition: visibility 0s 0.3s, opacity 0.2s ease;
 }
 
 /* ═══════════════════════════════════════════════

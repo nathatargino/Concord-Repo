@@ -47,6 +47,7 @@ interface AppState {
   messages: ChatMessage[];
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (msg: ChatMessage) => void;
+  addSystemMessage: (message: string, channelId?: string) => void;
   clearMessages: () => void;
 
   // Voice
@@ -167,6 +168,26 @@ export const useAppStore = create<AppState>((set) => ({
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) =>
     set((s) => ({ messages: [...s.messages.slice(-500), msg] })),
+  addSystemMessage: (message, channelId) =>
+    set((s) => {
+      const currentChannel = channelId || s.activeChannelId || 'ch-geral';
+      const timestamp = new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      });
+      const newMsg: ChatMessage = {
+        id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        userName: 'Sistema',
+        message,
+        timestamp,
+        isSystem: true,
+        type: 'text',
+        channelId: currentChannel,
+        avatarUrl: null,
+      };
+      return { messages: [...s.messages.slice(-500), newMsg] };
+    }),
   clearMessages: () => set({ messages: [] }),
 
   // Voice
