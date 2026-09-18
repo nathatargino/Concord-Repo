@@ -11,7 +11,6 @@ import {
   deleteChannelInSupabase,
   updateChannelNameInSupabase,
   registerServerMember,
-  saveLocalServerMember,
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
   updateMemberRoleInSupabase,
@@ -251,7 +250,8 @@ export const Sidebar: React.FC<Props> = ({
       isMounted = false;
       cleanupSub();
     };
-  }, [room?.id, isEffectiveServer, myName, isOwner, isSubOwner, setChannels, setServerMembers, serverName, serverIconUrl]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.id, isEffectiveServer, myName, setChannels, setServerMembers, serverName, serverIconUrl]);
 
   // Fechar menu de contexto no clique fora
   useEffect(() => {
@@ -268,55 +268,19 @@ export const Sidebar: React.FC<Props> = ({
   };
 
   // Categorias de Usuários com fallback imediato para o usuário atual
-  const effectiveUsers = users.length > 0 ? users : (myName ? [{
-    id: myId || 'me',
-    name: myName,
-    avatarUrl: myAvatarUrl || null,
-    inVoice: useAppStore.getState().inVoice,
-    screenSharing: false,
-    micMuted: false,
-    callMuted: false
-  }] : []);
-
-  // Manter serverMembers atualizado com qualquer usuário que esteja online na sala
-  useEffect(() => {
-    if (!isEffectiveServer || effectiveUsers.length === 0) return;
-
-    setServerMembers((prev) => {
-      let changed = false;
-      const map = new Map(prev.map(m => [m.username.trim().toLowerCase(), m]));
-
-      for (const u of effectiveUsers) {
-        if (!u.name) continue;
-        const key = u.name.trim().toLowerCase();
-        const existing = map.get(key);
-        if (!existing) {
-          changed = true;
-          map.set(key, {
-            id: u.id,
-            username: u.name,
-            avatarUrl: u.avatarUrl || null,
-            isOnline: true,
-            inVoice: Boolean(u.inVoice),
-            role: (u as any).role || 'member',
-          });
-          if (room?.id) {
-            saveLocalServerMember(room.id, {
-              username: u.name,
-              user_id: u.id,
-              role: (u as any).role || 'member',
-              avatar_url: u.avatarUrl || null,
-            });
-          }
-        } else if (u.avatarUrl && !existing.avatarUrl) {
-          changed = true;
-          map.set(key, { ...existing, avatarUrl: u.avatarUrl });
-        }
-      }
-
-      return changed ? Array.from(map.values()) : prev;
-    });
-  }, [effectiveUsers, isEffectiveServer, room?.id, setServerMembers]);
+  const effectiveUsers = React.useMemo(() => {
+    if (users.length > 0) return users;
+    if (!myName) return [];
+    return [{
+      id: myId || 'me',
+      name: myName,
+      avatarUrl: myAvatarUrl || null,
+      inVoice: Boolean(inVoice),
+      screenSharing: false,
+      micMuted: false,
+      callMuted: false
+    }];
+  }, [users, myName, myId, myAvatarUrl, inVoice]);
 
   const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
   // Regra de Presença: Usuários na call aparecem em "Na Call", outros em "Online"
