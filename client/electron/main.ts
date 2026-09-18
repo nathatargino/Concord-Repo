@@ -161,6 +161,16 @@ const appStartTime = Date.now();
 
 const startHidden = process.argv.includes('--hidden') || (app.getLoginItemSettings ? app.getLoginItemSettings().wasOpenedAsHidden : false);
 
+function showMainWindow() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    } else {
+        createWindow(true);
+    }
+}
+
 function createTray() {
     if (tray) return;
     const appIcon = getAppIconPath();
@@ -174,13 +184,7 @@ function createTray() {
             {
                 label: 'Abrir Concord',
                 click: () => {
-                    if (mainWindow) {
-                        if (mainWindow.isMinimized()) mainWindow.restore();
-                        mainWindow.show();
-                        mainWindow.focus();
-                    } else {
-                        createWindow();
-                    }
+                    showMainWindow();
                 }
             },
             {
@@ -204,27 +208,19 @@ function createTray() {
         tray.setContextMenu(contextMenu);
 
         tray.on('click', () => {
-            if (mainWindow) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
                 if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
                     mainWindow.hide();
                 } else {
-                    if (mainWindow.isMinimized()) mainWindow.restore();
-                    mainWindow.show();
-                    mainWindow.focus();
+                    showMainWindow();
                 }
             } else {
-                createWindow();
+                showMainWindow();
             }
         });
 
         tray.on('double-click', () => {
-            if (mainWindow) {
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.show();
-                mainWindow.focus();
-            } else {
-                createWindow();
-            }
+            showMainWindow();
         });
     } catch (err) {
         fs.appendFileSync(logFile, `[Tray] Error creating tray: ${err}\n`);
@@ -286,7 +282,7 @@ function startLocalServer(): Promise<number> {
     });
 }
 
-function createWindow() {
+function createWindow(showWindow = !startHidden) {
     fs.appendFileSync(logFile, 'createWindow called!\n');
     const appIcon = getAppIconPath();
     mainWindow = new BrowserWindow({
@@ -295,7 +291,7 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#0e0e18',
-        show: !startHidden,
+        show: showWindow,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
@@ -328,7 +324,7 @@ function createWindow() {
                 mainWindow?.setIcon(appIcon);
             } catch (e) {}
         }
-        if (!startHidden) {
+        if (showWindow) {
             mainWindow?.show();
             mainWindow?.focus();
         }
@@ -500,10 +496,7 @@ if (!gotTheLock) {
 }
 
 app.on('second-instance', (event, commandLine, workingDirectory) => {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
-  }
+  showMainWindow();
   const url = commandLine.find(arg => arg.startsWith('concord://'));
   if (url && mainWindow) {
       mainWindow.webContents.send('deep-link', url);
@@ -702,7 +695,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-    if (mainWindow === null) createWindow();
+    showMainWindow();
 });
 
 // Basic IPC handlers
@@ -770,11 +763,7 @@ ipcMain.on('show-chat-notification', async (_event, data: {
         });
 
         notification.on('click', () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                if (mainWindow.isMinimized()) mainWindow.restore();
-                mainWindow.show();
-                mainWindow.focus();
-            }
+            showMainWindow();
         });
 
         notification.show();
