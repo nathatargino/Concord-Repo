@@ -183,6 +183,17 @@ let tray = null;
 let isQuitting = false;
 const appStartTime = Date.now();
 const startHidden = process.argv.includes('--hidden') || (electron_1.app.getLoginItemSettings ? electron_1.app.getLoginItemSettings().wasOpenedAsHidden : false);
+function showMainWindow() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized())
+            mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+    }
+    else {
+        createWindow(true);
+    }
+}
 function createTray() {
     if (tray)
         return;
@@ -196,15 +207,7 @@ function createTray() {
             {
                 label: 'Abrir Concord',
                 click: () => {
-                    if (mainWindow) {
-                        if (mainWindow.isMinimized())
-                            mainWindow.restore();
-                        mainWindow.show();
-                        mainWindow.focus();
-                    }
-                    else {
-                        createWindow();
-                    }
+                    showMainWindow();
                 }
             },
             {
@@ -226,31 +229,20 @@ function createTray() {
         ]);
         tray.setContextMenu(contextMenu);
         tray.on('click', () => {
-            if (mainWindow) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
                 if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
                     mainWindow.hide();
                 }
                 else {
-                    if (mainWindow.isMinimized())
-                        mainWindow.restore();
-                    mainWindow.show();
-                    mainWindow.focus();
+                    showMainWindow();
                 }
             }
             else {
-                createWindow();
+                showMainWindow();
             }
         });
         tray.on('double-click', () => {
-            if (mainWindow) {
-                if (mainWindow.isMinimized())
-                    mainWindow.restore();
-                mainWindow.show();
-                mainWindow.focus();
-            }
-            else {
-                createWindow();
-            }
+            showMainWindow();
         });
     }
     catch (err) {
@@ -316,7 +308,7 @@ function startLocalServer() {
         });
     });
 }
-function createWindow() {
+function createWindow(showWindow = !startHidden) {
     fs.appendFileSync(logFile, 'createWindow called!\n');
     const appIcon = getAppIconPath();
     mainWindow = new electron_1.BrowserWindow({
@@ -325,7 +317,7 @@ function createWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#0e0e18',
-        show: !startHidden,
+        show: showWindow,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
@@ -337,6 +329,7 @@ function createWindow() {
         titleBarStyle: 'hidden',
         icon: appIcon,
     });
+    mainWindow.maximize();
     if (appIcon && fs.existsSync(appIcon)) {
         try {
             mainWindow.setIcon(appIcon);
@@ -356,7 +349,8 @@ function createWindow() {
             }
             catch (e) { }
         }
-        if (!startHidden) {
+        if (showWindow) {
+            mainWindow?.maximize();
             mainWindow?.show();
             mainWindow?.focus();
         }
@@ -511,11 +505,7 @@ if (!gotTheLock) {
     electron_1.app.quit();
 }
 electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
-    if (mainWindow) {
-        if (mainWindow.isMinimized())
-            mainWindow.restore();
-        mainWindow.focus();
-    }
+    showMainWindow();
     const url = commandLine.find(arg => arg.startsWith('concord://'));
     if (url && mainWindow) {
         mainWindow.webContents.send('deep-link', url);
@@ -688,8 +678,7 @@ electron_1.app.on('window-all-closed', () => {
     }
 });
 electron_1.app.on('activate', () => {
-    if (mainWindow === null)
-        createWindow();
+    showMainWindow();
 });
 // Basic IPC handlers
 electron_1.ipcMain.handle('get-app-version', () => {
@@ -744,12 +733,7 @@ electron_1.ipcMain.on('show-chat-notification', async (_event, data) => {
             silent: false,
         });
         notification.on('click', () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                if (mainWindow.isMinimized())
-                    mainWindow.restore();
-                mainWindow.show();
-                mainWindow.focus();
-            }
+            showMainWindow();
         });
         notification.show();
     }
@@ -787,12 +771,18 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         return;
     }
     const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+    const MIN_WIDTH = 280;
+    const MIN_HEIGHT = 200;
+    const MAX_WIDTH = Math.min(1280, Math.round(width * 0.85));
+    const MAX_HEIGHT = Math.min(800, Math.round(height * 0.85));
     const appIcon = getAppIconPath();
     pipWindow = new electron_1.BrowserWindow({
         width: 380,
         height: 320,
-        minWidth: 320,
-        minHeight: 240,
+        minWidth: MIN_WIDTH,
+        minHeight: MIN_HEIGHT,
+        maxWidth: MAX_WIDTH,
+        maxHeight: MAX_HEIGHT,
         x: width - 400,
         y: height - 340,
         alwaysOnTop: true,
@@ -815,46 +805,8 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         }
         catch (e) { }
     }
-    // Enforce 16:9 aspect ratio for the video area on resize.
-    // NOTE: setAspectRatio's extraSize param is macOS-only.
-    // On Windows we use the 'will-resize' event (primary) and 'resize' (fallback).
-    // EXTRA_HEIGHT = dragHeader (30px) + commandsBar (~70px) = 100px
-    const PIP_EXTRA_HEIGHT = 100;
-    const MIN_WIDTH = 280;
-    const MIN_HEIGHT = Math.round(MIN_WIDTH * 9 / 16) + PIP_EXTRA_HEIGHT;
     pipWindow.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
-    // Primary: intercept resize and enforce aspect ratio before it happens
-    pipWindow.on('will-resize', (e, bounds) => {
-        e.preventDefault();
-        const newWidth = Math.max(MIN_WIDTH, bounds.width);
-        const newHeight = Math.round(newWidth * 9 / 16) + PIP_EXTRA_HEIGHT;
-        pipWindow?.setBounds({
-            x: bounds.x,
-            y: bounds.y,
-            width: newWidth,
-            height: newHeight,
-        });
-    });
-    // Fallback: correct aspect ratio after resize in case will-resize was bypassed
-    let isResizing = false;
-    let resizeTimer = null;
-    pipWindow.on('resize', () => {
-        if (isResizing)
-            return;
-        if (resizeTimer)
-            clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(() => {
-            if (!pipWindow || pipWindow.isDestroyed())
-                return;
-            const [w, h] = pipWindow.getSize();
-            const targetH = Math.round(w * 9 / 16) + PIP_EXTRA_HEIGHT;
-            if (Math.abs(h - targetH) > 4) {
-                isResizing = true;
-                pipWindow.setSize(w, targetH);
-                setTimeout(() => { isResizing = false; }, 100);
-            }
-        }, 150);
-    });
+    pipWindow.setMaximumSize(MAX_WIDTH, MAX_HEIGHT);
     pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     // Ensure it uses a hash route to render just the PiP
     const pipUrl = isDev
