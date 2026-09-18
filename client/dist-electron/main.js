@@ -48,9 +48,28 @@ const electron_updater_1 = require("electron-updater");
 const path = require('path');
 electron_1.app.name = 'Concord';
 if (process.platform === 'win32') {
-    electron_1.app.setAppUserModelId('com.concord.app');
+    electron_1.app.setAppUserModelId('com.concord.desktop');
 }
 const isDev = !electron_1.app.isPackaged;
+function getAppIconPath() {
+    const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
+    const candidates = [
+        path.join(__dirname, isDev ? '../public' : '../dist', iconFile),
+        path.join(__dirname, '../public', iconFile),
+        path.join(__dirname, '../dist', iconFile),
+        path.join(electron_1.app.getAppPath(), isDev ? 'public' : 'dist', iconFile),
+        path.join(electron_1.app.getAppPath(), 'public', iconFile),
+        path.join(electron_1.app.getAppPath(), iconFile),
+        path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
+        path.join(__dirname, '../public/logo.png'),
+        path.join(__dirname, '../dist/logo.png'),
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c))
+            return c;
+    }
+    return path.join(__dirname, '../public/logo.png');
+}
 function cleanOldWidevineVersions(baseDir, currentVersion) {
     try {
         if (!fs.existsSync(baseDir))
@@ -206,6 +225,7 @@ function startLocalServer() {
 }
 function createWindow() {
     fs.appendFileSync(logFile, 'createWindow called!\n');
+    const appIcon = getAppIconPath();
     mainWindow = new electron_1.BrowserWindow({
         width: 1200,
         height: 800,
@@ -222,8 +242,14 @@ function createWindow() {
         },
         frame: false,
         titleBarStyle: 'hidden',
-        icon: path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
+        icon: appIcon,
     });
+    if (appIcon && fs.existsSync(appIcon)) {
+        try {
+            mainWindow.setIcon(appIcon);
+        }
+        catch (e) { }
+    }
     // Spoof User-Agent to bypass YouTube's Electron blocks
     // Already done globally via app.userAgentFallback
     const url = isDev
@@ -231,6 +257,12 @@ function createWindow() {
         : `http://127.0.0.1:${localServerPort}`;
     mainWindow.once('ready-to-show', () => {
         fs.appendFileSync(logFile, 'ready-to-show fired!\n');
+        if (appIcon && fs.existsSync(appIcon)) {
+            try {
+                mainWindow?.setIcon(appIcon);
+            }
+            catch (e) { }
+        }
         mainWindow?.show();
         mainWindow?.focus();
         if (pendingDeepLink) {
@@ -637,6 +669,7 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         return;
     }
     const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+    const appIcon = getAppIconPath();
     pipWindow = new electron_1.BrowserWindow({
         width: 380,
         height: 320,
@@ -649,6 +682,7 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         backgroundColor: '#0a0a14',
         resizable: true,
         skipTaskbar: false,
+        icon: appIcon,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -657,6 +691,12 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
             autoplayPolicy: 'no-user-gesture-required'
         }
     });
+    if (appIcon && fs.existsSync(appIcon)) {
+        try {
+            pipWindow.setIcon(appIcon);
+        }
+        catch (e) { }
+    }
     // Enforce 16:9 aspect ratio for the video area on resize.
     // NOTE: setAspectRatio's extraSize param is macOS-only.
     // On Windows we use the 'will-resize' event (primary) and 'resize' (fallback).

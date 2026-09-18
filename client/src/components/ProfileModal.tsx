@@ -58,6 +58,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       (window as any).electron.getAppVersion?.().then((v: string) => setAppVersion(v));
       const unsub = (window as any).electron.onUpdateMessage?.((msg: string) => {
         setUpdateMessage(msg);
+        setIsCheckingUpdates(false);
         if (msg.includes('encontrada') || msg.includes('disponível') || msg.includes('baixada') || msg.includes('Baixando')) {
           setUpdateAvailable(true);
         } else if (msg.includes('atualizado')) {
@@ -420,6 +422,16 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     }
   };
 
+  const handleCheckUpdates = () => {
+    if (isCheckingUpdates) return;
+    setIsCheckingUpdates(true);
+    setUpdateMessage('Verificando atualizações...');
+    (window as any).electron?.checkForUpdates?.();
+    setTimeout(() => {
+      setIsCheckingUpdates(false);
+    }, 6000);
+  };
+
   return createPortal(
     <>
       <div className={styles.overlay} onClick={handleClose}>
@@ -716,7 +728,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                     {updateMessage || (updateAvailable ? 'Nova versão disponível!' : 'Aplicativo atualizado')}
                   </span>
                 </div>
-                {updateAvailable && (
+                {updateAvailable ? (
                   <button
                     type="button"
                     className={styles.updateAppBtn}
@@ -726,6 +738,17 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                   >
                     <i className="fa-solid fa-arrow-up-from-bracket"></i>
                     <span>Atualizar App</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={styles.checkUpdateBtn}
+                    onClick={handleCheckUpdates}
+                    disabled={isCheckingUpdates}
+                    title="Verificar atualizações do Concord"
+                  >
+                    <i className={`fa-solid ${isCheckingUpdates ? 'fa-arrows-rotate fa-spin' : 'fa-rotate-right'}`}></i>
+                    <span>{isCheckingUpdates ? 'Verificando...' : 'Verificar atualizações'}</span>
                   </button>
                 )}
               </div>

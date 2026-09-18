@@ -739,3 +739,32 @@
   box-shadow: 0 4px 14px rgba(124, 92, 255, 0.5);
 }
 
+.checkUpdateBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.checkUpdateBtn:hover:not(:disabled) {
+  background: rgba(124, 92, 255, 0.15);
+  border-color: rgba(124, 92, 255, 0.4);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(124, 92, 255, 0.2);
+}
+
+.checkUpdateBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+

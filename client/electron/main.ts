@@ -19,9 +19,28 @@ import { autoUpdater } from 'electron-updater';
 const path = require('path');
 app.name = 'Concord';
 if (process.platform === 'win32') {
-    app.setAppUserModelId('com.concord.app');
+    app.setAppUserModelId('com.concord.desktop');
 }
 const isDev = !app.isPackaged;
+
+function getAppIconPath(): string {
+    const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
+    const candidates = [
+        path.join(__dirname, isDev ? '../public' : '../dist', iconFile),
+        path.join(__dirname, '../public', iconFile),
+        path.join(__dirname, '../dist', iconFile),
+        path.join(app.getAppPath(), isDev ? 'public' : 'dist', iconFile),
+        path.join(app.getAppPath(), 'public', iconFile),
+        path.join(app.getAppPath(), iconFile),
+        path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
+        path.join(__dirname, '../public/logo.png'),
+        path.join(__dirname, '../dist/logo.png'),
+    ];
+    for (const c of candidates) {
+        if (fs.existsSync(c)) return c;
+    }
+    return path.join(__dirname, '../public/logo.png');
+}
 
 function cleanOldWidevineVersions(baseDir: string, currentVersion: string): void {
     try {
@@ -179,6 +198,7 @@ function startLocalServer(): Promise<number> {
 
 function createWindow() {
     fs.appendFileSync(logFile, 'createWindow called!\n');
+    const appIcon = getAppIconPath();
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
@@ -195,8 +215,14 @@ function createWindow() {
         },
         frame: false,
         titleBarStyle: 'hidden',
-        icon: path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
+        icon: appIcon,
     });
+
+    if (appIcon && fs.existsSync(appIcon)) {
+        try {
+            mainWindow.setIcon(appIcon);
+        } catch (e) {}
+    }
 
     // Spoof User-Agent to bypass YouTube's Electron blocks
     // Already done globally via app.userAgentFallback
@@ -207,6 +233,11 @@ function createWindow() {
 
     mainWindow.once('ready-to-show', () => {
         fs.appendFileSync(logFile, 'ready-to-show fired!\n');
+        if (appIcon && fs.existsSync(appIcon)) {
+            try {
+                mainWindow?.setIcon(appIcon);
+            } catch (e) {}
+        }
         mainWindow?.show();
         mainWindow?.focus();
         
@@ -663,6 +694,7 @@ ipcMain.on('open-pip-window', (event, initialState) => {
 
     const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
 
+    const appIcon = getAppIconPath();
     pipWindow = new BrowserWindow({
         width: 380,
         height: 320,
@@ -675,6 +707,7 @@ ipcMain.on('open-pip-window', (event, initialState) => {
         backgroundColor: '#0a0a14',
         resizable: true,
         skipTaskbar: false,
+        icon: appIcon,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -683,6 +716,12 @@ ipcMain.on('open-pip-window', (event, initialState) => {
             autoplayPolicy: 'no-user-gesture-required'
         }
     });
+
+    if (appIcon && fs.existsSync(appIcon)) {
+        try {
+            pipWindow.setIcon(appIcon);
+        } catch (e) {}
+    }
 
     // Enforce 16:9 aspect ratio for the video area on resize.
     // NOTE: setAspectRatio's extraSize param is macOS-only.
