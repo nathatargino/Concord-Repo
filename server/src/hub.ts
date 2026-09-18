@@ -849,7 +849,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicVideoId = null;
         room.currentMusicStartTime = null;
         playNextInQueue(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} pulou a música`, 'info');
       } else if (action === 'pause') {
         io.to(room.id).emit('music_pause');
       } else if (action === 'play') {
@@ -861,7 +860,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicStartTime = null;
         io.to(room.id).emit('stop_youtube', 0);
         broadcastQueueUpdate(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} limpou a fila de música`, 'info');
       }
     });
 

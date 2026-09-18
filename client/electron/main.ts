@@ -626,6 +626,46 @@ ipcMain.on('open-pip-window', (event, initialState) => {
         }
     });
 
+    // Enforce 16:9 aspect ratio for the video area on resize.
+    // NOTE: setAspectRatio's extraSize param is macOS-only.
+    // On Windows we use the 'will-resize' event (primary) and 'resize' (fallback).
+    // EXTRA_HEIGHT = dragHeader (30px) + commandsBar (~70px) = 100px
+    const PIP_EXTRA_HEIGHT = 100;
+    const MIN_WIDTH = 280;
+    const MIN_HEIGHT = Math.round(MIN_WIDTH * 9 / 16) + PIP_EXTRA_HEIGHT;
+    pipWindow.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+
+    // Primary: intercept resize and enforce aspect ratio before it happens
+    pipWindow.on('will-resize', (e: any, bounds: any) => {
+        e.preventDefault();
+        const newWidth = Math.max(MIN_WIDTH, bounds.width);
+        const newHeight = Math.round(newWidth * 9 / 16) + PIP_EXTRA_HEIGHT;
+        pipWindow?.setBounds({
+            x: bounds.x,
+            y: bounds.y,
+            width: newWidth,
+            height: newHeight,
+        });
+    });
+
+    // Fallback: correct aspect ratio after resize in case will-resize was bypassed
+    let isResizing = false;
+    let resizeTimer: NodeJS.Timeout | null = null;
+    pipWindow.on('resize', () => {
+        if (isResizing) return;
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (!pipWindow || pipWindow.isDestroyed()) return;
+            const [w, h] = pipWindow.getSize();
+            const targetH = Math.round(w * 9 / 16) + PIP_EXTRA_HEIGHT;
+            if (Math.abs(h - targetH) > 4) {
+                isResizing = true;
+                pipWindow.setSize(w, targetH);
+                setTimeout(() => { isResizing = false; }, 100);
+            }
+        }, 150);
+    });
+
     pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
     // Ensure it uses a hash route to render just the PiP

@@ -455,6 +455,54 @@ export function useYouTube(
                playerRef.current?.unMute();
                playerRef.current?.setVolume(targetVol);
              }
+
+              // Inject CSS to hide YouTube native overlay UI elements.
+              // Works in Electron because webSecurity:false lifts same-origin restrictions.
+              const injectYTOverrideCSS = () => {
+                try {
+                  const iframe = playerRef.current?.getIframe?.() as HTMLIFrameElement | undefined;
+                  const doc = iframe?.contentDocument ?? (iframe?.contentWindow as any)?.document;
+                  if (doc?.head && !doc.getElementById('concord-yt-override')) {
+                    const s = doc.createElement('style');
+                    s.id = 'concord-yt-override';
+                    s.textContent = [
+                      '.ytp-chrome-top',
+                      '.ytp-show-cards-title',
+                      '.ytp-watermark',
+                      '.ytp-youtube-button',
+                      '.ytp-title',
+                      '.ytp-title-text',
+                      '.ytp-title-channel',
+                      '.ytp-title-expand-button',
+                      '.ytp-title-subtext',
+                      '.ytp-gradient-top',
+                      '.ytp-pause-overlay',
+                      '.ytp-endscreen-content',
+                      '.ytp-ce-element',
+                      '.ytp-chrome-bottom',
+                      '.ytp-gradient-bottom',
+                      '.ytp-pause-overlay-container',
+                      '.ytp-scroll-min',
+                      '.ytp-paid-content-overlay',
+                      '.ytp-bezel-text',
+                      '.ytp-contextmenu',
+                      '.ytp-impression-link',
+                      '.annotation',
+                      '.ytp-cards-teaser',
+                      '.ytp-cards-button',
+                      '.ytp-ce-covering-overlay',
+                      '.ytp-ce-video',
+                      '.ytp-ce-channel',
+                      '.ytp-ce-element-show',
+                      '.ytp-expand-pause-overlay',
+                    ].join(',') + ' { display:none !important; }';
+                    doc.head.appendChild(s);
+                  }
+                } catch { /* cross-origin or not yet loaded — retry below */ }
+              };
+              injectYTOverrideCSS();
+              setTimeout(injectYTOverrideCSS, 2000);
+
              if (!isResolved) {
                isResolved = true;
                playerInitPromiseRef.current = null;
@@ -531,7 +579,12 @@ export function useYouTube(
             if (event.data === window.YT.PlayerState.ENDED) {
               if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
               if (!suppressEndedRef.current && currentTokenRef.current !== null) {
-                onMusicEnded(currentTokenRef.current);
+                // When PiP is active, the PiP window handles queue advancement via
+                // sendAction('skip') on its own ENDED event — suppress here to avoid double-skip
+                const { isPiPActive } = useAppStore.getState();
+                if (!isPiPActive) {
+                  onMusicEnded(currentTokenRef.current);
+                }
               }
               useAppStore.getState().setIsPlaying(false);
             }

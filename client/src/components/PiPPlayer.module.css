@@ -1,16 +1,18 @@
+/* ─── PiP Player — seguindo o design system do Concord ─── */
+
 .pipContainer {
   width: 100vw;
   height: 100vh;
   margin: 0;
   padding: 0;
-  background: #0a0a14;
+  background: #0e0e18;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
   user-select: none;
   font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  border: 1px solid rgba(124, 58, 237, 0.3);
+  border: 1px solid rgba(124, 92, 255, 0.25);
   box-sizing: border-box;
 }
 
@@ -18,8 +20,8 @@
 .dragHeader {
   height: 30px;
   min-height: 30px;
-  background: #0e0e1a;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #111319;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -42,7 +44,7 @@
 }
 
 .gripIcon {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(124, 92, 255, 0.6);
   font-size: 13px;
   display: flex;
   align-items: center;
@@ -51,7 +53,7 @@
 .dragTitle {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.8);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -59,9 +61,9 @@
 
 .closeBtn {
   -webkit-app-region: no-drag;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
   width: 20px;
   height: 20px;
   border-radius: 5px;
@@ -74,8 +76,8 @@
 }
 
 .closeBtn:hover {
-  background: rgba(239, 68, 68, 0.8);
-  border-color: rgba(239, 68, 68, 1);
+  background: rgba(239, 68, 68, 0.75);
+  border-color: rgba(239, 68, 68, 0.9);
   color: #fff;
 }
 
@@ -98,6 +100,61 @@
   pointer-events: none;
 }
 
+.youtubeContainer iframe {
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+  border: none !important;
+}
+
+/* ─── BOTÃO CENTRAL PLAY/PAUSE (Issue 3) ─── */
+.centerPlayOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 35;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.centerPlayOverlayVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.centerPlayBtn {
+  -webkit-app-region: no-drag;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(14, 14, 24, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 2px solid rgba(124, 92, 255, 0.6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 0 rgba(124, 92, 255, 0);
+}
+
+.centerPlayBtn:hover {
+  background: rgba(124, 92, 255, 0.85);
+  border-color: #7c5cff;
+  box-shadow: 0 4px 24px rgba(124, 92, 255, 0.5), 0 0 0 6px rgba(124, 92, 255, 0.15);
+  transform: scale(1.05);
+}
+
+.centerPlayBtn:active {
+  transform: scale(0.97);
+}
+
+/* ─── OVERLAY DE CONTROLES (seek/volume) ─── */
 .videoOverlay {
   position: absolute;
   bottom: 0;
@@ -105,7 +162,7 @@
   right: 0;
   z-index: 40;
   padding: 6px 8px;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(10, 10, 20, 0.9) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(10, 10, 24, 0.95) 100%);
   opacity: 0;
   transition: opacity 0.2s ease;
   -webkit-app-region: no-drag;
@@ -119,19 +176,19 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(14, 14, 26, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  padding: 3px 8px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(17, 19, 25, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .timeLabel {
   font-family: 'Space Mono', monospace;
   font-size: 9px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.65);
   min-width: 26px;
   text-align: center;
 }
@@ -146,11 +203,11 @@
   width: 100%;
   height: 3px;
   -webkit-appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
-  accent-color: #8b5cf6;
+  accent-color: #7c5cff;
 }
 
 .volumeWrapper {
@@ -163,7 +220,7 @@
 .volumeBtn {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -178,20 +235,20 @@
 }
 
 .volumeBar {
-  width: 45px;
+  width: 48px;
   height: 3px;
   -webkit-appearance: none;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
-  accent-color: #8b5cf6;
+  accent-color: #7c5cff;
 }
 
-/* ─── PAINEL COMANDOS DE CONTROLE ─── */
+/* ─── BARRA DE COMANDOS (Issue 5 — design unificado) ─── */
 .commandsBar {
-  background: #0c0c18;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #111319;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
   padding: 6px 10px 8px;
   display: flex;
   flex-direction: column;
@@ -208,9 +265,9 @@
 .commandsLabel {
   font-size: 9px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.3);
   text-align: center;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   margin: 0;
   pointer-events: none;
   user-select: none;
@@ -219,7 +276,7 @@
 .commandsGrid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  gap: 5px;
   -webkit-app-region: no-drag;
 }
 
@@ -227,16 +284,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 6px 2px;
+  gap: 4px;
+  padding: 5px 2px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s ease;
   border: 1px solid transparent;
   outline: none;
   -webkit-app-region: no-drag;
+  letter-spacing: 0.02em;
 }
 
 .cmdBtn svg {
@@ -244,64 +302,68 @@
 }
 
 .cmdBtn:active {
-  transform: scale(0.96);
+  transform: scale(0.95);
 }
 
-/* /play — verde */
+/* /play */
 .btnPlay {
-  border-color: rgba(34, 197, 94, 0.3);
-  background: rgba(34, 197, 94, 0.08);
-  color: #86EFAC;
+  background: rgba(124, 92, 255, 0.1);
+  border-color: rgba(124, 92, 255, 0.25);
+  color: #a78bfa;
 }
 .btnPlay:hover {
-  background: rgba(34, 197, 94, 0.18);
-  border-color: rgba(34, 197, 94, 0.6);
-  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.25);
+  background: rgba(124, 92, 255, 0.22);
+  border-color: rgba(124, 92, 255, 0.55);
+  color: #c4b5fd;
+  box-shadow: 0 2px 10px rgba(124, 92, 255, 0.2);
 }
 
-/* /pause — amarelo */
+/* /pause */
 .btnPause {
-  border-color: rgba(234, 179, 8, 0.3);
-  background: rgba(234, 179, 8, 0.08);
-  color: #FDE68A;
+  background: rgba(124, 92, 255, 0.08);
+  border-color: rgba(124, 92, 255, 0.2);
+  color: rgba(167, 139, 250, 0.85);
 }
 .btnPause:hover {
-  background: rgba(234, 179, 8, 0.18);
-  border-color: rgba(234, 179, 8, 0.6);
-  box-shadow: 0 2px 10px rgba(234, 179, 8, 0.25);
+  background: rgba(124, 92, 255, 0.18);
+  border-color: rgba(124, 92, 255, 0.45);
+  color: #c4b5fd;
+  box-shadow: 0 2px 10px rgba(124, 92, 255, 0.18);
 }
 
-/* /skip — azul */
+/* /skip */
 .btnSkip {
-  border-color: rgba(59, 130, 246, 0.3);
-  background: rgba(59, 130, 246, 0.08);
-  color: #93C5FD;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.55);
 }
 .btnSkip:hover {
-  background: rgba(59, 130, 246, 0.18);
-  border-color: rgba(59, 130, 246, 0.6);
-  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.25);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.85);
 }
 
-/* /clear — vermelho */
+/* /clear */
 .btnClear {
-  border-color: rgba(239, 68, 68, 0.3);
-  background: rgba(239, 68, 68, 0.08);
-  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.07);
+  border-color: rgba(239, 68, 68, 0.2);
+  color: rgba(252, 165, 165, 0.8);
 }
 .btnClear:hover {
-  background: rgba(239, 68, 68, 0.18);
-  border-color: rgba(239, 68, 68, 0.6);
-  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  box-shadow: 0 2px 10px rgba(239, 68, 68, 0.2);
 }
 
+/* ─── EMPTY STATE ─── */
 .emptyState {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.3);
   font-size: 11px;
-  gap: 6px;
+  gap: 8px;
 }

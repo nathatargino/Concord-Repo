@@ -200,39 +200,25 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
 
   return (
     <div className={styles.panel}>
-      {/* Header matching prints */}
+      {/* Header matching original layout */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <span className={styles.headerIcon}>
-            <i className="fa-solid fa-tv" style={{ color: '#a78bfa', fontSize: '15px' }}></i>
-          </span>
-          <h2 className={styles.headerTitle}>Streaming</h2>
+          <i className={`fa-solid fa-compact-disc ${styles.spinDisc}`}></i>
+          <span>Mídia em Grupo</span>
         </div>
-        {activeVideoId ? (
-          isPlaying ? (
-            <div className={styles.nowPlayingBadge}>
-              <span className={styles.eqBar} />
-              <span className={styles.eqBar} />
-              <span className={styles.eqBar} />
-              <span>Tocando</span>
-            </div>
-          ) : (
-            <div className={`${styles.nowPlayingBadge} ${styles.pausedBadge}`}>
-              <span className={styles.pauseIcon}>⏸</span>
-              <span>Pausada</span>
-            </div>
-          )
-        ) : activeStreaming ? (
-          <div className={styles.nowPlayingBadge}>
-            <span className={styles.eqBar} />
-            <span className={styles.eqBar} />
-            <span className={styles.eqBar} />
-            <span>Assistindo</span>
-          </div>
-        ) : null}
+        {isPlaying || activeStreaming ? (
+          <span className={styles.mediaStatusBadge}>
+            <span className={styles.pulseDot} />
+            <span>{activeStreaming ? 'Assistindo' : 'Tocando'}</span>
+          </span>
+        ) : (
+          <span className={styles.mediaStatusBadgePaused}>
+            <span>Pausada</span>
+          </span>
+        )}
       </div>
 
-      {/* Platform Tabs matching prints with authentic brand colors */}
+      {/* Platform Tabs matching 1st image dimensions with 2nd image brand colors */}
       <div className={styles.platformTabs} role="tablist" aria-label="Selecionar plataforma">
         {PLATFORMS.map((p) => {
           const isActive = selectedPlatform === p.id;
@@ -278,74 +264,66 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                   <span className={styles.trackName} title={activeTitle || activeVideoId}>
                     {activeTitle || 'Música do YouTube'}
                   </span>
-                  <a
-                    href={`https://youtube.com/watch?v=${activeVideoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.trackLink}
-                  >
-                    ver no YouTube →
-                  </a>
                 </div>
               </div>
             )}
 
-            {/* Red Search on YouTube button */}
+            {/* 1. Área "Buscar no YouTube" com cores da 2ª imagem e tamanho da 1ª imagem */}
             <button
               type="button"
               id="btnBuscarYouTube"
-              className={styles.searchTriggerBtn}
+              className={styles.searchModalBtn}
               onClick={() => {
-                if (!inVoice) return;
+                if (!inVoice) {
+                  toast.error('Você precisa estar em uma call de voz para buscar no YouTube.');
+                  return;
+                }
                 setIsSearchModalOpen(true);
               }}
               disabled={!inVoice}
               title={inVoice ? "Buscar músicas no YouTube" : "Entre na call de voz para buscar no YouTube"}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={styles.searchTriggerBtnIcon}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
+              <i className="fa-solid fa-magnifying-glass"></i>
               <span>Buscar no YouTube</span>
             </button>
 
-            <div className={styles.orDivider}>
-              <span>ou cole o link</span>
-            </div>
-
-            {/* Add music form with inline button as in Image 2 */}
-            <form onSubmit={handleAdd} className={styles.form}>
+            {/* 2. Input para colar a URL */}
+            <form onSubmit={handleAdd} className={styles.mediaInputWrapper}>
               <input
                 id="musicUrl"
                 type="url"
-                className={styles.input}
+                className={styles.mediaInput}
                 placeholder={inVoice ? "Cole a URL do YouTube..." : "Entre na call para colar links..."}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 disabled={!inVoice}
               />
-              <button
-                id="btnTransmitir"
-                type="submit"
-                className={styles.addBtn}
-                disabled={!url.trim() || !inVoice}
-                title="Adicionar à fila"
-              >
-                <i className="fa-solid fa-plus" style={{ fontSize: '11px' }}></i>
-                <span>Adicionar</span>
-              </button>
             </form>
 
+            {/* 3. Botão "Adicionar à fila" mantendo o padrão da 1ª imagem */}
+            <button
+              id="btnTransmitir"
+              type="button"
+              onClick={handleAdd}
+              className={styles.actionButtonYoutube}
+              disabled={!inVoice || !url.trim()}
+              title={inVoice ? 'Adicionar à fila' : 'Entre na call para adicionar músicas'}
+            >
+              <i className="fa-solid fa-plus"></i>
+              <span>Adicionar à Fila</span>
+            </button>
+
+            {/* Fila com feedback visual de arrastar */}
             {musicQueue.length > 0 && (
               <div className={styles.queue}>
-                <div className={styles.queueLabel}>
-                  Na fila — {musicQueue.length} {musicQueue.length === 1 ? 'música' : 'músicas'}
+                <div className={styles.queueHeader}>
+                  Fila ({musicQueue.length})
                 </div>
                 <div className={styles.queueList}>
                   {musicQueue.map((item, i) => (
                     <div
                       key={item.token}
-                      className={`${styles.queueItem} ${draggedIndex === i ? styles.dragging : ''} ${dragOverIndex === i ? styles.dragOver : ''}`}
+                      className={`${styles.queueItem} ${draggedIndex === i ? styles.queueItemDragging : ''} ${dragOverIndex === i && draggedIndex !== i ? styles.queueItemDragOver : ''}`}
                       draggable
                       onDragStart={(e) => handleDragStart(e, i)}
                       onDragOver={(e) => handleDragOver(e, i)}
@@ -354,14 +332,13 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                       onDragEnd={handleDragEnd}
                     >
                       <span className={styles.dragHandle}>⋮⋮</span>
-                      <span className={styles.queueIndex}>{i + 1}</span>
                       <img
                         src={`https://img.youtube.com/vi/${item.videoId}/default.jpg`}
                         alt=""
                         className={styles.queueThumb}
                       />
                       <div className={styles.queueInfo}>
-                        <span className={styles.queueVideoId} title={item.title || item.videoId}>
+                        <span className={styles.queueTitle} title={item.title || item.videoId}>
                           {item.title || item.videoId}
                         </span>
                         {item.requestedBy && (
@@ -370,7 +347,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                       </div>
                       <button
                         type="button"
-                        className={styles.removeBtn}
+                        className={styles.removeQueueBtn}
                         onClick={() => onRemoveFromQueue(item.token)}
                         title="Remover da fila"
                       >

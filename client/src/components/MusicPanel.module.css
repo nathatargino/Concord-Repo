@@ -1,11 +1,11 @@
-/* ── MusicPanel Styles (Faithful v1.0.75 colors & layout + larger touch targets) ── */
+/* ── Modern Gaming UI MusicPanel (Mídia em Grupo) ── */
 .panel {
-  background: rgba(24, 27, 36, 0.82);
+  background: rgba(24, 27, 36, 0.75);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -25,62 +25,59 @@
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.headerIcon {
-  font-size: 16px;
-  line-height: 1;
-}
-
-.headerTitle {
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  font-size: 14px;
   font-weight: 700;
+  font-size: 14px;
   color: #fff;
-  margin: 0;
 }
 
-.nowPlayingBadge {
+.spinDisc {
+  color: #7c5cff;
+  animation: spin 8s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.mediaStatusBadge {
+  font-size: 10px;
+  background: rgba(124, 92, 255, 0.2);
+  color: #7c5cff;
+  border: 1px solid rgba(124, 92, 255, 0.3);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(34, 211, 238, 0.12);
-  border: 1px solid rgba(34, 211, 238, 0.35);
-  border-radius: 9999px;
-  padding: 2px 8px;
-  color: #22d3ee;
+  gap: 6px;
+}
+
+.pulseDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #7c5cff;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0.4; transform: scale(0.9); }
+}
+
+.mediaStatusBadgePaused {
   font-size: 10px;
+  background: rgba(244, 63, 94, 0.15);
+  color: #f43f5e;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+  padding: 2px 8px;
+  border-radius: 9999px;
   font-weight: 700;
 }
 
-.pausedBadge {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #f87171;
-}
-
-.pauseIcon {
-  font-size: 9px;
-}
-
-.eqBar {
-  display: inline-block;
-  width: 3px;
-  background: #22d3ee;
-  border-radius: 2px;
-  animation: eq 0.8s ease-in-out infinite alternate;
-}
-
-.eqBar:nth-child(1) { height: 7px; animation-delay: 0s; }
-.eqBar:nth-child(2) { height: 11px; animation-delay: 0.2s; }
-.eqBar:nth-child(3) { height: 5px; animation-delay: 0.4s; }
-
-@keyframes eq {
-  from { transform: scaleY(0.3); }
-  to { transform: scaleY(1); }
-}
-
-/* ── Platform Tabs ── */
+/* ── Platform Tabs (Dimensões e Proporções da 1ª Imagem) ── */
 .platformTabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -88,7 +85,7 @@
   background: #111319;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  gap: 5px;
+  gap: 4px;
 }
 
 .platformTab {
@@ -96,46 +93,21 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 6px;
+  padding: 6px 4px;
   border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #9ca3af;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+  color: #9ca3af;
+  background: transparent;
+  border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
-.platformTab:hover:not([class*="platformTabActive_"]) {
-  background: rgba(255, 255, 255, 0.06);
+.platformTab:hover {
   color: #fff;
-}
-
-/* YouTube active tab */
-.platformTabActive_youtube {
-  background: linear-gradient(135deg, rgba(255, 0, 0, 0.25), rgba(200, 0, 0, 0.15)) !important;
-  border: 1px solid rgba(255, 60, 60, 0.45) !important;
-  color: #FF5252 !important;
-  box-shadow: 0 2px 12px rgba(255, 0, 0, 0.2);
-}
-
-/* Netflix active tab */
-.platformTabActive_netflix {
-  background: linear-gradient(135deg, rgba(229, 9, 20, 0.3), rgba(180, 0, 10, 0.15)) !important;
-  border: 1px solid rgba(229, 9, 20, 0.5) !important;
-  color: #E50914 !important;
-  box-shadow: 0 2px 12px rgba(229, 9, 20, 0.25);
-}
-
-/* Prime Video active tab */
-.platformTabActive_prime {
-  background: linear-gradient(135deg, rgba(0, 168, 225, 0.25), rgba(0, 120, 180, 0.15)) !important;
-  border: 1px solid rgba(0, 168, 225, 0.45) !important;
-  color: #00A8E1 !important;
-  box-shadow: 0 2px 12px rgba(0, 168, 225, 0.2);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .platformTabIcon {
@@ -148,6 +120,28 @@
   display: block;
 }
 
+/* ── Cores das Abas Ativas (Padrão da 2ª Imagem) ── */
+.platformTabActive_youtube {
+  background: linear-gradient(135deg, rgba(255, 0, 0, 0.25), rgba(200, 0, 0, 0.15)) !important;
+  border: 1px solid rgba(255, 60, 60, 0.45) !important;
+  color: #FF5252 !important;
+  box-shadow: 0 2px 12px rgba(255, 0, 0, 0.2);
+}
+
+.platformTabActive_netflix {
+  background: linear-gradient(135deg, rgba(229, 9, 20, 0.3), rgba(180, 0, 10, 0.15)) !important;
+  border: 1px solid rgba(229, 9, 20, 0.5) !important;
+  color: #E50914 !important;
+  box-shadow: 0 2px 12px rgba(229, 9, 20, 0.25);
+}
+
+.platformTabActive_prime {
+  background: linear-gradient(135deg, rgba(0, 168, 225, 0.25), rgba(0, 120, 180, 0.15)) !important;
+  border: 1px solid rgba(0, 168, 225, 0.45) !important;
+  color: #00A8E1 !important;
+  box-shadow: 0 2px 12px rgba(0, 168, 225, 0.2);
+}
+
 /* ── Content Section ── */
 .content {
   display: flex;
@@ -155,20 +149,151 @@
   gap: 10px;
 }
 
-/* Current Playing Track */
+.mediaInputWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.mediaInput {
+  width: 100%;
+  background: #111319;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.mediaInput::placeholder {
+  color: #6b7280;
+}
+
+.mediaInput:focus {
+  border-color: #7c5cff;
+}
+
+.actionButtonNetflix {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: #e50914;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(229, 9, 20, 0.3);
+  transition: all 0.2s ease;
+}
+
+.actionButtonNetflix:hover {
+  background: #b20710;
+}
+
+.actionButtonPrime {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: #0284c7;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+  transition: all 0.2s ease;
+}
+
+.actionButtonPrime:hover {
+  background: #0369a1;
+}
+
+.actionButtonYoutube {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: #7c5cff;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(124, 92, 255, 0.25);
+  transition: all 0.2s ease;
+}
+
+.actionButtonYoutube:hover:not(:disabled) {
+  background: #6947f6;
+}
+
+.actionButtonYoutube:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Botão "Buscar no YouTube" (Dimensões da 1ª Imagem + Cores da 2ª Imagem) ── */
+.searchModalBtn {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.32));
+  color: #fff;
+}
+
+.searchModalBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.36), rgba(185, 28, 28, 0.48));
+  border-color: rgba(239, 68, 68, 0.7);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3);
+}
+
+.searchModalBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.searchModalBtn i,
+.searchModalBtn svg {
+  color: #f87171;
+}
+
+/* ── Current Track ── */
 .currentTrack {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(34, 211, 238, 0.06);
-  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 12px;
+  background: rgba(124, 92, 255, 0.1);
+  border: 1px solid rgba(124, 92, 255, 0.2);
 }
 
 .thumbnail {
-  width: 52px;
-  height: 38px;
+  width: 48px;
+  height: 36px;
   border-radius: 6px;
   object-fit: cover;
   flex-shrink: 0;
@@ -177,16 +302,15 @@
 .trackInfo {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 
 .trackLabel {
-  font-size: 9.5px;
+  font-size: 9px;
   text-transform: uppercase;
   font-weight: 700;
-  color: #22d3ee;
+  color: #a78bfa;
   letter-spacing: 0.5px;
 }
 
@@ -199,167 +323,24 @@
   text-overflow: ellipsis;
 }
 
-.trackLink {
+/* ── Info Notice ── */
+.infoNotice {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 11px;
   color: #9ca3af;
-  text-decoration: none;
-  transition: color 0.15s;
-}
-
-.trackLink:hover {
-  color: #fff;
-}
-
-/* ── Red YouTube Search Trigger Button ── */
-.searchTriggerBtn {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   gap: 8px;
-  width: 100%;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(185, 28, 28, 0.32));
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.22);
+  line-height: 1.4;
 }
 
-.searchTriggerBtn:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.36), rgba(185, 28, 28, 0.48));
-  border-color: rgba(239, 68, 68, 0.7);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
-}
-
-.searchTriggerBtn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.searchTriggerBtn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.searchTriggerBtnIcon {
-  display: flex;
-  align-items: center;
-  color: #f87171;
-}
-
-/* Divider */
-.orDivider {
-  display: flex;
-  align-items: center;
-  text-align: center;
-  color: #6b7280;
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  margin: 2px 0;
-}
-
-.orDivider::before,
-.orDivider::after {
-  content: '';
-  flex: 1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.orDivider span {
-  padding: 0 8px;
-  font-weight: 500;
-  text-transform: uppercase;
-  opacity: 0.75;
-}
-
-/* YouTube Input + Add Button Form (Inline layout matching Image 2) */
-.form {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-
-.input {
-  flex: 1;
-  min-width: 0;
-  background: #111319;
-  border: 1.5px solid rgba(255, 255, 255, 0.08);
-  border-radius: 9px;
-  padding: 9px 12px;
-  color: #fff;
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.2s, background 0.2s;
-  box-sizing: border-box;
-}
-
-.input::placeholder {
-  color: #6b7280;
-}
-
-.input:focus {
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.06);
-}
-
-.inputPrime:focus {
-  border-color: rgba(0, 168, 225, 0.6);
-  background: rgba(0, 168, 225, 0.06);
-}
-
-.inputNetflix:focus {
-  border-color: rgba(229, 9, 20, 0.6);
-  background: rgba(229, 9, 20, 0.06);
-}
-
-/* + Adicionar Button (Purple styled button matching Image 2) */
-.addBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 9px 15px;
-  border-radius: 9px;
-  background: rgba(124, 58, 237, 0.25);
-  border: 1px solid rgba(124, 58, 237, 0.45);
-  color: #c4b5fd;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.18s ease;
-}
-
-.addBtn:hover:not(:disabled) {
-  background: rgba(124, 58, 237, 0.45);
-  border-color: rgba(124, 58, 237, 0.7);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
-.addBtn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.addBtn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.hint {
-  font-size: 11px;
-  color: #9ca3af;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.infoNotice i {
+  color: #7c5cff;
+  margin-top: 2px;
+  flex-shrink: 0;
 }
 
 /* ── Queue List ── */
@@ -367,10 +348,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-.queueLabel {
+.queueHeader {
   font-size: 11px;
   font-weight: 700;
   color: #9ca3af;
@@ -394,31 +375,37 @@
   padding: 6px 8px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 11px;
   transition: all 0.15s ease;
-}
-
-.queueItem:hover {
-  background: rgba(255, 255, 255, 0.07);
-}
-
-.dragHandle {
-  cursor: grab;
-  color: rgba(255, 255, 255, 0.25);
-  font-size: 13px;
   user-select: none;
 }
 
-.dragHandle:active {
+.queueItem:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Feedback visual de arraste de músicas na fila */
+.queueItemDragging {
+  opacity: 0.35;
+  border: 1px dashed rgba(124, 92, 255, 0.6);
+  background: rgba(124, 92, 255, 0.08);
   cursor: grabbing;
 }
 
-.queueIndex {
-  font-size: 10px;
-  color: #6b7280;
-  min-width: 14px;
-  text-align: center;
+.queueItemDragOver {
+  border-top: 2px solid #7c5cff !important;
+  background: rgba(124, 92, 255, 0.12);
+  box-shadow: 0 -2px 8px rgba(124, 92, 255, 0.3);
+  transform: translateY(1px);
+}
+
+.dragHandle {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 12px;
+  cursor: grab;
+  flex-shrink: 0;
+  letter-spacing: -1px;
 }
 
 .queueThumb {
@@ -432,212 +419,110 @@
 .queueInfo {
   display: flex;
   flex-direction: column;
-  gap: 1px;
   min-width: 0;
   flex: 1;
 }
 
-.queueVideoId {
+.queueTitle {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   color: #e5e7eb;
-  font-weight: 600;
 }
 
 .queueBy {
-  font-size: 10px;
-  color: #6b7280;
+  font-size: 9px;
+  color: #9ca3af;
 }
 
-.removeBtn {
+.removeQueueBtn {
   background: none;
   border: none;
   color: #6b7280;
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
-  transition: color 0.15s;
+  transition: color 0.15s ease;
 }
 
-.removeBtn:hover {
+.removeQueueBtn:hover {
   color: #f43f5e;
 }
 
-.dragging {
-  opacity: 0.4;
-  transform: scale(0.98);
-}
-
-.dragOver {
-  border-top: 2px solid #7c5cff;
-  background: rgba(124, 92, 255, 0.1);
-}
-
-/* ── Streaming Section (Netflix & Prime) ── */
+/* ── Streaming Section ── */
 .streamingSection {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-/* ── Web Desktop-Only Warning Banner (Exact match to Image 1) ── */
+.desktopBanner,
 .desktopOnlyBanner {
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 8px;
   text-align: center;
-  gap: 10px;
-  padding: 20px 16px;
-  background: linear-gradient(160deg, rgba(124, 58, 237, 0.08), rgba(79, 70, 229, 0.05));
-  border: 1px solid rgba(124, 58, 237, 0.2);
-  border-radius: 12px;
+  align-items: center;
 }
 
 .desktopOnlyIcon {
-  color: rgba(124, 58, 237, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  background: rgba(124, 58, 237, 0.1);
-  border-radius: 50%;
-  flex-shrink: 0;
+  color: #a78bfa;
 }
 
+.desktopTitle,
 .desktopOnlyTitle {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: #fff;
   margin: 0;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  line-height: 1.4;
 }
 
+.desktopDesc,
 .desktopOnlyDesc {
   font-size: 11px;
   color: #9ca3af;
+  line-height: 1.4;
   margin: 0;
-  line-height: 1.6;
 }
 
+.downloadBtn,
 .downloadAppBtn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 18px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #7C3AED, #4F46E5);
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #7c5cff;
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   text-decoration: none;
-  cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
-  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.4);
-  margin-top: 4px;
+  transition: background 0.2s;
 }
 
+.downloadBtn:hover,
 .downloadAppBtn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.55);
-  color: #fff;
+  background: #6947f6;
 }
 
-.downloadAppBtn:active {
-  transform: translateY(0);
-}
-
-/* ── Streaming Controls (Desktop Electron) ── */
 .streamingControls {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.mediaInputWrapper {
-  width: 100%;
-}
-
-/* Netflix Action Button */
-.actionButtonNetflix {
-  width: 100%;
-  padding: 11px 16px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #E50914 0%, #B81D24 100%);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(229, 9, 20, 0.35);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.actionButtonNetflix:hover:not(:disabled) {
-  background: linear-gradient(135deg, #f40612 0%, #c41018 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(229, 9, 20, 0.5);
-}
-
-.actionButtonNetflix:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.actionButtonNetflix:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Prime Video Action Button (Vibrant Amazon Prime Blue) */
-.actionButtonPrime {
-  width: 100%;
-  padding: 11px 16px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #00A8E1 0%, #007EB9 100%);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  font-family: 'Space Grotesk', system-ui, -apple-system, sans-serif;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 4px 15px rgba(0, 168, 225, 0.35);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.actionButtonPrime:hover:not(:disabled) {
-  background: linear-gradient(135deg, #00bdfd 0%, #008ece 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(0, 168, 225, 0.5);
-}
-
-.actionButtonPrime:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.actionButtonPrime:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .closeStreamingBtn {
   width: 100%;
   padding: 8px 12px;
-  border-radius: 9px;
-  background: rgba(244, 63, 94, 0.08);
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  color: #fb7185;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #9ca3af;
   font-size: 11px;
   font-weight: 600;
   display: flex;
@@ -649,36 +534,7 @@
 }
 
 .closeStreamingBtn:hover {
-  background: rgba(244, 63, 94, 0.18);
-  border-color: rgba(244, 63, 94, 0.5);
-}
-
-.streamingHint {
-  font-size: 11px;
-  color: #9ca3af;
-  line-height: 1.5;
-  margin: 0;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-}
-
-.infoNotice {
-  padding: 9px 12px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 11px;
-  color: #9ca3af;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  line-height: 1.4;
-}
-
-.infoNotice i {
-  color: #7c5cff;
-  font-size: 13px;
-  flex-shrink: 0;
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
 }
