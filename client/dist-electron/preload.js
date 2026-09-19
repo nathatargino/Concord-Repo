@@ -67,4 +67,6 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     getScreenSources: () => electron_1.ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data) => electron_1.ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options) => electron_1.ipcRenderer.send('show-chat-notification', options),
+    openGoogleAuth: (url) => electron_1.ipcRenderer.invoke('open-google-auth', url),
+    cancelGoogleAuth: () => electron_1.ipcRenderer.send('cancel-google-auth'),
 });

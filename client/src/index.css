@@ -326,8 +326,7 @@ input, button, textarea {
     height: 20px;
 }
 
-.auth-rodape {
-    text-align: center;
+.fechar-modal {
   position: absolute;
   top: 15px;
   right: 20px;

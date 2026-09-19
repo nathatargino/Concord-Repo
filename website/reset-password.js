@@ -79,7 +79,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check if URL hash or query contains recovery token
     const hash = window.location.hash;
     const search = window.location.search;
-    const isRecoveryHash = hash.includes('type=recovery') || hash.includes('access_token=') || search.includes('type=recovery');
+    const isRecoveryHash = hash.includes('type=recovery') || search.includes('type=recovery');
+    const hasOAuthTokens = hash.includes('access_token=') || search.includes('code=');
+
+    // Se tiver tokens de autenticação mas NÃO for recuperação de senha: é login com Google/OAuth!
+    if (hasOAuthTokens && !isRecoveryHash) {
+        if (resetPasswordForm) resetPasswordForm.style.display = 'none';
+        if (cardHeader) {
+            cardHeader.innerHTML = '<h2>✨ Autenticado com Sucesso!</h2><p>Login realizado com sucesso. Retornando ao aplicativo Concord...</p>';
+        }
+        if (resetFooter) {
+            resetFooter.innerHTML = '<a href="concord://auth/callback' + search + hash + '" class="btn btn-primary" style="display:inline-block;padding:12px 24px;border-radius:12px;text-decoration:none;color:#fff;background:#7c5cff;font-weight:600;margin-top:12px;">Abrir Concord Desktop</a>';
+        }
+        try {
+            fetch('http://127.0.0.1:54321/auth/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hash, search })
+            }).catch(() => {});
+        } catch (e) {}
+
+        window.location.href = 'concord://auth/callback' + search + hash;
+        setTimeout(() => {
+            try { window.close(); } catch(e) {}
+        }, 1500);
+        return;
+    }
 
     // Listen for Auth state changes (Supabase handles recovery session automatically from hash)
     supabaseClient.auth.onAuthStateChange(async (event, session) => {

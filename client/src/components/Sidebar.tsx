@@ -17,7 +17,8 @@ import {
   leaveServerFromSupabase,
   findRoomInSupabase,
   isUuid,
-  supabase
+  supabase,
+  removeLocalServerMember
 } from '../lib/supabase';
 import type { ServerChannel } from '../types';
 import { notifyInChat } from '../utils/systemMessage';
@@ -77,6 +78,7 @@ export const Sidebar: React.FC<Props> = ({
     inVoice,
     amSharing,
     messages,
+    openUserProfile,
   } = useAppStore();
 
   const { localMutedUsers, userVolumes, setUserVolume, micMuted, callMuted, toggleMicMute, toggleCallMute } = useAudioStore();
@@ -123,6 +125,29 @@ export const Sidebar: React.FC<Props> = ({
 
   const cleanMyName = (myName || '').trim().toLowerCase();
   const myMember = serverMembers.find(m => (m.username || '').trim().toLowerCase() === cleanMyName);
+  const effectiveMyAvatar = 
+    myAvatarUrl || 
+    localStorage.getItem('concord_avatar_url') || 
+    users.find(u => u.id === myId || (Boolean(myName) && Boolean(u.name) && u.name.trim().toLowerCase() === cleanMyName))?.avatarUrl || 
+    myMember?.avatarUrl || 
+    null;
+
+  const [avatarLoadError, setAvatarLoadError] = useState(false);
+
+  useEffect(() => {
+    setAvatarLoadError(false);
+  }, [effectiveMyAvatar]);
+
+  useEffect(() => {
+    if (!myAvatarUrl && effectiveMyAvatar) {
+      setMyAvatarUrl(effectiveMyAvatar);
+      try {
+        localStorage.setItem('concord_avatar_url', effectiveMyAvatar);
+      } catch (err) {
+        console.warn('Erro ao salvar concord_avatar_url:', err);
+      }
+    }
+  }, [myAvatarUrl, effectiveMyAvatar, setMyAvatarUrl]);
   const isOwner = 
     (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || 
     myMember?.role === 'owner' || 
@@ -327,6 +352,9 @@ export const Sidebar: React.FC<Props> = ({
     const activeNames = new Set(
       effectiveUsers.map((u) => (u.name || '').trim().toLowerCase()).filter(Boolean)
     );
+    if (myName) {
+      activeNames.add(myName.trim().toLowerCase());
+    }
     const seen = new Set<string>();
     const list: typeof serverMembers = [];
 
@@ -339,7 +367,7 @@ export const Sidebar: React.FC<Props> = ({
       list.push(m);
     }
     return list;
-  }, [serverMembers, effectiveUsers]);
+  }, [serverMembers, effectiveUsers, myName]);
 
   // ─── CRIAÇÃO DE NOVO CANAL ─────────────────────────────────────────
   const handleCreateChannelSubmit = async (e: React.FormEvent) => {
@@ -757,7 +785,7 @@ export const Sidebar: React.FC<Props> = ({
               {voiceUsers.length === 0 ? (
                 <div className={styles.emptyCategory}>Nenhum usuário na call</div>
               ) : (
-                voiceUsers.map((user) => {
+                voiceUsers.map((user, idx) => {
                   const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
                   const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
                   const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
@@ -766,7 +794,7 @@ export const Sidebar: React.FC<Props> = ({
 
                   return (
                     <UserCard
-                      key={user.id}
+                      key={`voice-${user.id}-${idx}`}
                       id={user.id}
                       name={user.name || 'Anônimo'}
                       avatarUrl={userAvatar}
@@ -802,7 +830,7 @@ export const Sidebar: React.FC<Props> = ({
           </div>
           <div className={`${styles.collapsibleWrapper} ${showOnline ? styles.expanded : ''}`}>
             <div className={styles.userList}>
-              {onlineMembers.map((user) => {
+              {onlineMembers.map((user, idx) => {
                 const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
                 const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
                 const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
@@ -811,7 +839,7 @@ export const Sidebar: React.FC<Props> = ({
 
                 return (
                   <UserCard
-                    key={user.id}
+                    key={`online-${user.id}-${idx}`}
                     id={user.id}
                     name={user.name || 'Anônimo'}
                     avatarUrl={userAvatar}
@@ -824,6 +852,15 @@ export const Sidebar: React.FC<Props> = ({
                     isSubOwner={isUserSubOwner}
                     onScreenShareClick={onScreenShareClick}
                     onContextMenu={(e, id, name, isOffline) => handleContextMenu(e, id, name, isOffline)}
+                    onAvatarClick={(id, name, avatar, isOwner, isSubOwner, isMe) => {
+                      openUserProfile({
+                        id,
+                        name,
+                        avatarUrl: avatar,
+                        role: isOwner ? 'owner' : isSubOwner ? 'sub_owner' : 'member',
+                        isMe,
+                      });
+                    }}
                   />
                 );
               })}
@@ -850,13 +887,26 @@ export const Sidebar: React.FC<Props> = ({
                 {offlineMembers.length === 0 ? (
                   <div className={styles.emptyCategory}>Nenhum membro offline</div>
                 ) : (
-                  offlineMembers.map((member) => (
+                  offlineMembers.map((member, idx) => (
                     <div 
-                      key={member.id} 
+                      key={`offline-${member.id || member.username}-${idx}`} 
                       className={styles.offlineUserItem}
                       onContextMenu={(e) => handleContextMenu(e, member.id, member.username, true)}
                     >
-                      <div className={styles.avatarWrapper}>
+                      <div 
+                        className={styles.avatarWrapper}
+                        onClick={() => {
+                          openUserProfile({
+                            id: member.id,
+                            name: member.username,
+                            avatarUrl: member.avatarUrl,
+                            role: member.role as any,
+                            isMe: false,
+                          });
+                        }}
+                        style={{ cursor: 'pointer' }}
+                        title={`Ver perfil de ${member.username}`}
+                      >
                         {member.avatarUrl ? (
                           <img src={member.avatarUrl} alt={member.username} className={styles.offlineUserAvatarImg} />
                         ) : (
@@ -924,10 +974,23 @@ export const Sidebar: React.FC<Props> = ({
 
       {/* ── USER CONTROL BAR (FOOTER) ── */}
       <div className={styles.userControlFooter}>
-        <div className={styles.userControlLeft}>
+        <div 
+          className={styles.userControlLeft}
+          onClick={() => {
+            setProfileModalTab('profile');
+            setShowProfileModal(true);
+          }}
+          style={{ cursor: 'pointer' }}
+          title="Configurações e Meu Perfil"
+        >
           <div className={styles.myAvatarWrapper}>
-            {myAvatarUrl ? (
-              <img src={myAvatarUrl} alt={myName} className={styles.myAvatarImg} />
+            {effectiveMyAvatar && !avatarLoadError ? (
+              <img 
+                src={effectiveMyAvatar} 
+                alt={myName} 
+                className={styles.myAvatarImg} 
+                onError={() => setAvatarLoadError(true)}
+              />
             ) : (
               <div className={styles.myAvatarFallback}>
                 {(myName ? myName.charAt(0).toUpperCase() : '?')}
@@ -946,26 +1009,29 @@ export const Sidebar: React.FC<Props> = ({
             className={`${styles.controlBtn} ${micMuted ? styles.controlBtnDanger : ''}`}
             onClick={toggleMicMute}
             title={micMuted ? "Ativar Microfone" : "Mutar Microfone"}
+            aria-label={micMuted ? "Ativar Microfone" : "Mutar Microfone"}
           >
-            <i className={`fa-solid ${micMuted ? 'fa-microphone-slash' : 'fa-microphone'}`} style={{ fontSize: '12px' }} />
+            <i key={micMuted ? 'mic-off' : 'mic-on'} className={`fa-solid ${micMuted ? 'fa-microphone-slash' : 'fa-microphone'}`} style={{ fontSize: '13px' }} />
           </button>
           <button 
             id="deafenToggleBtn"
             className={`${styles.controlBtn} ${callMuted ? styles.controlBtnDanger : ''}`}
             onClick={toggleCallMute}
             title={callMuted ? "Ativar Áudio" : "Ensurdecer"}
+            aria-label={callMuted ? "Ativar Áudio" : "Ensurdecer"}
           >
-            <i className={`fa-solid ${callMuted ? 'fa-headphones-simple' : 'fa-headphones'}`} style={{ fontSize: '12px' }} />
+            <i key={callMuted ? 'deaf-on' : 'deaf-off'} className={`fa-solid ${callMuted ? 'fa-headphones-simple' : 'fa-headphones'}`} style={{ fontSize: '13px' }} />
           </button>
           <button 
-            className={styles.controlBtn}
+            className={`${styles.controlBtn} ${styles.gearBtn}`}
             onClick={() => {
               setProfileModalTab('profile');
               setShowProfileModal(true);
             }}
-            title="Configurações de Perfil"
+            title="Configurações de Perfil e Servidor"
+            aria-label="Configurações"
           >
-            <i className="fa-solid fa-gear" style={{ fontSize: '12px' }} />
+            <i className="fa-solid fa-gear" style={{ fontSize: '13px' }} />
           </button>
         </div>
       </div>
@@ -977,9 +1043,22 @@ export const Sidebar: React.FC<Props> = ({
           initialTab={profileModalTab}
           onClose={() => setShowProfileModal(false)}
           onUpdate={(newName, newAvatar) => {
+            const prevName = myName;
             setMyName(newName);
             if (newAvatar !== undefined) {
               setMyAvatarUrl(newAvatar || null);
+            }
+            if (prevName && prevName.toLowerCase() !== newName.toLowerCase()) {
+              if (room?.id) {
+                removeLocalServerMember(room.id, prevName);
+              }
+              setServerMembers((prev) =>
+                prev.map((m) =>
+                  m.username.toLowerCase() === prevName.toLowerCase()
+                    ? { ...m, username: newName, avatarUrl: newAvatar ?? m.avatarUrl }
+                    : m
+                )
+              );
             }
             if (onUpdateProfile) {
               onUpdateProfile(newName, newAvatar || null);
@@ -1173,6 +1252,31 @@ export const Sidebar: React.FC<Props> = ({
             </span>
           </div>
 
+          {/* Opção: Ver Perfil */}
+          <button 
+            className={styles.contextMenuItem}
+            onClick={() => {
+              const targetUserObj = users.find(u => u.id === contextMenu.targetId);
+              const targetMember = serverMembers.find(m => m.username.toLowerCase() === (targetDisplayName || '').toLowerCase());
+              const isCurrentUser = contextMenu.targetId === myId || (Boolean(targetDisplayName) && Boolean(myName) && targetDisplayName.trim().toLowerCase() === myName.trim().toLowerCase());
+              const resolvedAvatar = targetUserObj?.avatarUrl || (isCurrentUser ? (myAvatarUrl || localStorage.getItem('concord_avatar_url')) : null) || targetMember?.avatarUrl || null;
+
+              openUserProfile({
+                id: contextMenu.targetId,
+                name: targetDisplayName || 'Usuário',
+                avatarUrl: resolvedAvatar,
+                role: isTargetOwner ? 'owner' : isTargetSubOwner ? 'sub_owner' : 'member',
+                isMe: isCurrentUser,
+              });
+              setContextMenu(null);
+            }}
+          >
+            <i className="fa-solid fa-id-card" style={{ width: 14, color: '#7c5cff' }} />
+            Ver Perfil
+          </button>
+
+          <div className={styles.contextMenuDivider} />
+
           {/* Slider de volume */}
           <div className={styles.contextMenuVolume}>
             <div className={styles.contextMenuVolumeLabel}>
@@ -1314,6 +1418,7 @@ interface UserCardProps {
   isSubOwner: boolean;
   onScreenShareClick: (userId: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string, name?: string, isOffline?: boolean) => void;
+  onAvatarClick?: (id: string, name: string, avatarUrl: string | null, isOwner: boolean, isSubOwner: boolean, isMe: boolean) => void;
 }
 
 const UserCard: React.FC<UserCardProps> = ({
@@ -1329,6 +1434,7 @@ const UserCard: React.FC<UserCardProps> = ({
   isSubOwner,
   onScreenShareClick,
   onContextMenu,
+  onAvatarClick,
 }) => {
   const storeAvatar = useAppStore((s) => s.myAvatarUrl);
   const initials = name ? name.slice(0, 2).toUpperCase() : '??';
@@ -1343,7 +1449,15 @@ const UserCard: React.FC<UserCardProps> = ({
       onContextMenu={(e) => onContextMenu(e, id, name, false)}
     >
       <div className={styles.userCardLeft}>
-        <div className={styles.avatarWrapper}>
+        <div 
+          className={styles.avatarWrapper}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAvatarClick?.(id, name, displayAvatar, isOwner, isSubOwner, isMe);
+          }}
+          style={{ cursor: 'pointer' }}
+          title={`Ver perfil de ${name}`}
+        >
           {displayAvatar ? (
             <img src={displayAvatar} alt={name} className={styles.avatarImg} />
           ) : (

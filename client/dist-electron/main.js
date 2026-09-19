@@ -492,6 +492,182 @@ function initAutoUpdater(window) {
 }
 // Deep Linking Setup
 let pendingDeepLink = null;
+// Local Loopback Server for OAuth Callback (port 54321)
+let authLoopbackServer = null;
+function startAuthLoopbackServer() {
+    if (authLoopbackServer)
+        return;
+    try {
+        const server = http.createServer((req, res) => {
+            const reqUrl = req.url || '';
+            // Endpoint to receive tokens extracted from hash via POST
+            if (req.method === 'POST' && reqUrl.startsWith('/auth/token')) {
+                let body = '';
+                req.on('data', chunk => { body += chunk; });
+                req.on('end', () => {
+                    try {
+                        const data = JSON.parse(body || '{}');
+                        const hash = data.hash || '';
+                        const search = data.search || '';
+                        const fullUrl = `concord://auth/callback${search}${hash}`;
+                        showMainWindow();
+                        if (mainWindow && mainWindow.webContents) {
+                            mainWindow.webContents.send('deep-link', fullUrl);
+                        }
+                        else {
+                            pendingDeepLink = fullUrl;
+                        }
+                        res.writeHead(200, {
+                            'Content-Type': 'application/json',
+                            'Access-Control-Allow-Origin': '*'
+                        });
+                        res.end(JSON.stringify({ ok: true }));
+                    }
+                    catch (err) {
+                        res.writeHead(400);
+                        res.end();
+                    }
+                });
+                return;
+            }
+            // Handle CORS preflight
+            if (req.method === 'OPTIONS') {
+                res.writeHead(204, {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type'
+                });
+                res.end();
+                return;
+            }
+            // Callback landing page
+            if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl === '/' || reqUrl.startsWith('/?')) {
+                if (reqUrl.includes('code=') || reqUrl.includes('access_token=')) {
+                    try {
+                        const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:54321');
+                        const fullUrl = `concord://auth/callback${parsedUrl.search}${parsedUrl.hash}`;
+                        showMainWindow();
+                        if (mainWindow && mainWindow.webContents) {
+                            mainWindow.webContents.send('deep-link', fullUrl);
+                        }
+                        else {
+                            pendingDeepLink = fullUrl;
+                        }
+                    }
+                    catch { }
+                }
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                res.end(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Concord — Autenticado</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #0e0e18;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .card {
+      background: #181b24;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      max-width: 440px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+    }
+    .icon {
+      width: 56px;
+      height: 56px;
+      background: rgba(124, 92, 255, 0.15);
+      border: 1px solid rgba(124, 92, 255, 0.3);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      font-size: 26px;
+    }
+    h2 {
+      color: #f1f2f6;
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 10px;
+    }
+    p {
+      color: #949ba4;
+      font-size: 14px;
+      line-height: 1.5;
+      margin: 0 0 24px;
+    }
+    .btn {
+      display: inline-block;
+      background: #7c5cff;
+      color: #fff;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 14px;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:hover {
+      background: #6842ff;
+      transform: translateY(-1px);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">✨</div>
+    <h2>Autenticado com Sucesso!</h2>
+    <p>Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...</p>
+    <a id="openBtn" class="btn" href="#">Abrir Concord Desktop</a>
+  </div>
+  <script>
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const deepLink = 'concord://auth/callback' + search + hash;
+    const btn = document.getElementById('openBtn');
+    btn.href = deepLink;
+
+    fetch('/auth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hash, search })
+    }).catch(() => {});
+
+    window.location.href = deepLink;
+    setTimeout(() => {
+      try { window.close(); } catch(e) {}
+    }, 1200);
+  </script>
+</body>
+</html>`);
+                return;
+            }
+            res.writeHead(404);
+            res.end();
+        });
+        server.on('error', (err) => {
+            fs.appendFileSync(logFile, `[AuthLoopback] Server error: ${err.message}\n`);
+        });
+        server.listen(54321, '127.0.0.1', () => {
+            authLoopbackServer = server;
+            fs.appendFileSync(logFile, `[AuthLoopback] Escutando em http://127.0.0.1:54321/callback\n`);
+        });
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[AuthLoopback] Start error: ${err.message}\n`);
+    }
+}
 if (process.defaultApp) {
     if (process.argv.length >= 2) {
         electron_1.app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
@@ -506,24 +682,33 @@ if (!gotTheLock) {
 }
 electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
     showMainWindow();
-    const url = commandLine.find(arg => arg.startsWith('concord://'));
-    if (url && mainWindow) {
-        mainWindow.webContents.send('deep-link', url);
+    const rawUrl = commandLine.find(arg => arg.startsWith('concord://'));
+    if (rawUrl) {
+        const url = rawUrl.replace(/^["']|["']$/g, '');
+        if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.send('deep-link', url);
+        }
+        else {
+            pendingDeepLink = url;
+        }
     }
 });
 electron_1.app.on('open-url', (event, url) => {
     event.preventDefault();
+    showMainWindow();
+    const cleanUrl = url.replace(/^["']|["']$/g, '');
     if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('deep-link', url);
+        mainWindow.webContents.send('deep-link', cleanUrl);
     }
     else {
-        pendingDeepLink = url;
+        pendingDeepLink = cleanUrl;
     }
 });
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 let pipWindow = null;
 electron_1.app.whenReady().then(async () => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
+    startAuthLoopbackServer();
     ensureWidevineCdm();
     try {
         const { components } = require('electron');
@@ -679,6 +864,20 @@ electron_1.app.on('window-all-closed', () => {
 });
 electron_1.app.on('activate', () => {
     showMainWindow();
+});
+electron_1.ipcMain.handle('open-google-auth', async (_event, authUrl) => {
+    try {
+        fs.appendFileSync(logFile, `[GoogleAuth] Opening external browser: ${authUrl.substring(0, 100)}\n`);
+        await electron_1.shell.openExternal(authUrl);
+        return { success: true };
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[GoogleAuth] Error opening browser: ${err.message}\n`);
+        return { success: false, error: err.message };
+    }
+});
+electron_1.ipcMain.on('cancel-google-auth', () => {
+    fs.appendFileSync(logFile, `[GoogleAuth] Canceled by user\n`);
 });
 // Basic IPC handlers
 electron_1.ipcMain.handle('get-app-version', () => {

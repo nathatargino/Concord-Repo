@@ -8,8 +8,9 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
-import { supabase, saveMyServer, findRoomInSupabase, isUuid } from './lib/supabase';
+import { supabase, saveMyServer, findRoomInSupabase, isUuid, syncProfileAfterAuth, getOrCreatePersistentId, getSavedUsername, saveUsername } from './lib/supabase';
 import type { UserInfo } from './types';
+import toast from 'react-hot-toast';
 
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
@@ -22,6 +23,7 @@ import { BroadcasterScreenPanel } from './components/BroadcasterScreenPanel';
 import { ScreenSharePanel } from './components/ScreenSharePanel';
 import { ScreenPickerModal } from './components/ScreenPickerModal';
 import { AccountModals } from './components/AccountModals';
+import { UserProfileModal } from './components/UserProfileModal';
 
 import styles from './App.module.css';
 
@@ -79,19 +81,47 @@ export default function App() {
   useEffect(() => {
     const electron = (window as any).electron;
     if (electron && electron.onDeepLink) {
-      const unsubscribe = electron.onDeepLink((url: string) => {
+      const unsubscribe = electron.onDeepLink(async (url: string) => {
         try {
-          const parsed = new URL(url);
-          if (parsed.hostname === 'auth') {
-            const access_token = parsed.searchParams.get('access_token');
-            const refresh_token = parsed.searchParams.get('refresh_token');
+          const rawUrl = url || '';
+          const normalized = rawUrl.startsWith('concord://') 
+            ? rawUrl.replace('concord://', 'https://concord.internal/') 
+            : rawUrl;
+          const parsed = new URL(normalized);
+
+          const isAuth = 
+            parsed.hostname === 'auth' || 
+            parsed.hostname === 'concord.internal' ||
+            parsed.hostname === '127.0.0.1' ||
+            parsed.pathname.includes('callback') ||
+            rawUrl.includes('access_token=') ||
+            rawUrl.includes('code=');
+
+          if (isAuth) {
+            const hashParams = new URLSearchParams(parsed.hash.startsWith('#') ? parsed.hash.substring(1) : parsed.hash);
+            const searchParams = parsed.searchParams;
+            const access_token = hashParams.get('access_token') || searchParams.get('access_token');
+            const refresh_token = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+            const code = searchParams.get('code') || hashParams.get('code');
+
+            const handleAuthenticatedUser = async (user: any) => {
+              const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
+              socket.emit('set_username', finalName, finalAvatar || null);
+              setShowLogin(false);
+              setLoginError('');
+              toast.success(`Autenticado com sucesso como ${finalName}!`);
+            };
+
             if (access_token && refresh_token) {
-              supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
-                if (!error) {
-                  notifyInChat('Login sincronizado com a Web!');
-                  setTimeout(() => window.location.reload(), 1000);
-                }
-              });
+              const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
+              if (!error && data?.user) {
+                await handleAuthenticatedUser(data.user);
+              }
+            } else if (code) {
+              const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+              if (!error && data?.user) {
+                await handleAuthenticatedUser(data.user);
+              }
             }
           } else if (parsed.hostname === 'join') {
             const code = parsed.searchParams.get('code');
@@ -235,27 +265,7 @@ export default function App() {
     }
 
     const tryJoin = async () => {
-      let persistentId = localStorage.getItem('concord_pid');
-      if (!persistentId) {
-        // Try loading from Electron prefs first (survives reinstalls)
-        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-        if (isElectron && (window as any).electron?.loadPreferences) {
-          const prefs = await (window as any).electron.loadPreferences().catch(() => ({}));
-          if (prefs?.concord_pid) {
-            persistentId = prefs.concord_pid;
-            localStorage.setItem('concord_pid', persistentId!);
-          }
-        }
-      }
-      if (!persistentId) {
-        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('concord_pid', persistentId);
-        // Save to Electron prefs so this ID is kept even after reinstall
-        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-        if (isElectron && (window as any).electron?.savePreferences) {
-          (window as any).electron.savePreferences({ concord_pid: persistentId });
-        }
-      }
+      let persistentId = getOrCreatePersistentId();
 
       const searchParams = new URLSearchParams(window.location.search);
       const hashParams = window.location.hash.includes('?')
@@ -345,26 +355,10 @@ export default function App() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          const profileName = profile?.username || user.user_metadata?.username || user.user_metadata?.display_name || user.email?.split('@')[0];
-          const profileAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || null;
-
-          if (profileAvatar) {
-            store.setMyAvatarUrl(profileAvatar);
-            localStorage.setItem('concord_avatar_url', profileAvatar);
-          }
-
-          if (profileName && profileName.trim()) {
-            const cleanName = profileName.trim();
-            store.setMyName(cleanName);
-            localStorage.setItem('concord_username', cleanName);
-            localStorage.setItem('concord_username_v1', cleanName);
-            socket.emit('set_username', cleanName, profileAvatar || store.myAvatarUrl || null);
+          const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
+          if (finalName && finalName.trim()) {
+            store.setMyName(finalName.trim());
+            socket.emit('set_username', finalName.trim(), finalAvatar || store.myAvatarUrl || null);
             setShowLogin(false);
             setLoginError('');
             return;
@@ -374,7 +368,7 @@ export default function App() {
         console.warn('Supabase getUser error:', err);
       }
 
-      const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      const savedName = getSavedUsername();
       const savedAvatar = localStorage.getItem('concord_avatar_url');
       if (savedAvatar) {
         store.setMyAvatarUrl(savedAvatar);
@@ -401,7 +395,7 @@ export default function App() {
     if (!store.myName || !store.users || store.users.length === 0) return;
 
     const currentSocketId = socket.socket?.id;
-    const myPersistentId = localStorage.getItem('concord_pid');
+    const myPersistentId = getOrCreatePersistentId();
     const lowerMyName = store.myName.trim().toLowerCase();
 
     const isDuplicate = store.users.some(
@@ -420,8 +414,7 @@ export default function App() {
 
   const handleLogin = (name: string) => {
     store.setMyName(name);
-    localStorage.setItem('concord_username', name);
-    localStorage.setItem('concord_username_v1', name);
+    saveUsername(name);
     socket.emit('set_username', name);
     setLoginError('');
     setShowLogin(false);
@@ -610,6 +603,12 @@ export default function App() {
       />
 
       <AccountModals />
+      {store.viewingProfileUser && (
+        <UserProfileModal
+          user={store.viewingProfileUser}
+          onClose={store.closeUserProfile}
+        />
+      )}
 
       <ScreenPickerModal
         isOpen={screenShare.isPickerOpen}

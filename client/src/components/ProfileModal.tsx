@@ -8,10 +8,13 @@ import {
   leaveServerFromSupabase, 
   removeMyServer,
   updateServerNameInSupabase,
-  updateServerLogoInSupabase
+  updateServerLogoInSupabase,
+  removeLocalServerMember
 } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
+import { CustomSelect } from './CustomSelect';
+import { LoginModal } from './LoginModal';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -76,6 +79,13 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Autenticação & Feedback de Convite
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
+  const inviteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
@@ -257,10 +267,36 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     }
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     stopMicTest();
     onClose();
-  };
+  }, [stopMicTest, onClose]);
+
+  // Fechar modal ao pressionar a tecla ESC
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showLeaveConfirmModal) {
+          setShowLeaveConfirmModal(false);
+          return;
+        }
+        if (showSignOutConfirm) {
+          setShowSignOutConfirm(false);
+          return;
+        }
+        if (showAuthModal) {
+          setShowAuthModal(false);
+          return;
+        }
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showLeaveConfirmModal, showSignOutConfirm, showAuthModal, handleClose]);
 
   useEffect(() => {
     return () => {
@@ -268,29 +304,63 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     };
   }, [stopMicTest]);
 
-  // Carregar dados
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', user.id)
-            .single();
+  // Carregar dados de autenticação e perfil
+  const checkAuthAndProfile = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+      if (user) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('username, avatar_url')
+          .eq('id', user.id)
+          .single();
 
-          if (data) {
-            if (data.username) setUsername(data.username);
-            if (data.avatar_url) setAvatarUrl(data.avatar_url);
-          }
+        if (data) {
+          if (data.username) setUsername(data.username);
+          if (data.avatar_url) setAvatarUrl(data.avatar_url);
         }
-      } catch (err) {
-        console.warn('Erro ao carregar perfil:', err);
+      }
+    } catch (err) {
+      console.warn('Erro ao carregar perfil/sessão:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkAuthAndProfile();
+  }, [checkAuthAndProfile]);
+
+  // Limpeza de timeout de convite
+  useEffect(() => {
+    return () => {
+      if (inviteTimeoutRef.current) {
+        clearTimeout(inviteTimeoutRef.current);
       }
     };
-    fetchUser();
   }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      setCurrentUser(null);
+      toast.success('Desconectado com sucesso! Você agora está em modo visitante.');
+    } catch (err) {
+      console.warn('Erro ao desconectar:', err);
+      toast.error('Erro ao desconectar.');
+    }
+  };
+
+  const handleAfterLogin = (loggedInName: string) => {
+    setShowAuthModal(false);
+    setUsername(loggedInName);
+    const updatedAvatar = localStorage.getItem('concord_avatar_url');
+    if (updatedAvatar) {
+      setAvatarUrl(updatedAvatar);
+    }
+    checkAuthAndProfile();
+    onUpdate(loggedInName, updatedAvatar || undefined);
+    toast.success(`Conta permanente vinculada como ${loggedInName}!`);
+  };
 
   // ── AÇÕES DO SERVIDOR (PROTÓTIPO) ──
   const handleCopyInvite = () => {
@@ -299,13 +369,20 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     const baseUrl = isElectron ? 'https://concord-olive.vercel.app' : window.location.origin;
     const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
 
+    const triggerSuccess = () => {
+      setInviteCopied(true);
+      toast.success('Link de convite copiado!');
+      if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
+      inviteTimeoutRef.current = setTimeout(() => {
+        setInviteCopied(false);
+      }, 2500);
+    };
+
     if ((window as any).electron?.copyToClipboard) {
       (window as any).electron.copyToClipboard(inviteMessage);
-      toast.success('Link de convite copiado!');
+      triggerSuccess();
     } else {
-      navigator.clipboard.writeText(inviteMessage).then(() => {
-        toast.success('Link de convite copiado!');
-      }).catch(() => {
+      navigator.clipboard.writeText(inviteMessage).then(triggerSuccess).catch(() => {
         toast.error('Erro ao copiar link');
       });
     }
@@ -409,6 +486,9 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       return;
     }
 
+    // Capturar nome antigo ANTES de salvar, para poder limpar entradas anônimas no Supabase
+    const oldName = myName?.trim() || '';
+
     setSaving(true);
     try {
       useAppStore.getState().setMyName(cleanName);
@@ -416,6 +496,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
 
       localStorage.setItem('concord_username', cleanName);
       localStorage.setItem('concord_username_v1', cleanName);
+      localStorage.setItem('concord_is_custom_profile', 'true');
       if (avatarUrl) {
         localStorage.setItem('concord_avatar_url', avatarUrl);
       } else {
@@ -427,8 +508,80 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
         concord_avatar_url: avatarUrl || '',
       });
 
+      // Gravação no Supabase: persiste diretamente na tabela profiles para usuários autenticados
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert({
+              id: user.id,
+              username: cleanName,
+              avatar_url: avatarUrl || null,
+              updated_at: new Date().toISOString(),
+            });
+
+          if (profileError) {
+            console.error('[Supabase] Erro ao persistir perfil no banco:', profileError);
+          }
+
+          // Se estiver conectado em um servidor, atualiza o nome de membro pelo user_id
+          if (room?.id && (room.isServer || isServer)) {
+            await supabase
+              .from('server_members')
+              .update({ username: cleanName })
+              .eq('server_id', room.id)
+              .eq('user_id', user.id);
+
+            // Limpar linhas com o nome antigo para eliminar o "membro offline fantasma"
+            if (oldName && oldName.toLowerCase() !== cleanName.toLowerCase()) {
+              try {
+                await supabase
+                  .from('server_members')
+                  .delete()
+                  .eq('server_id', room.id)
+                  .ilike('username', oldName);
+                console.log(`[ProfileModal] Removidas entradas com nome antigo "${oldName}" do servidor.`);
+              } catch (ghostErr) {
+                console.warn('[ProfileModal] Erro ao limpar membro fantasma:', ghostErr);
+              }
+            }
+          }
+        } else {
+          // Usuário sem login: limpar membro antigo anônimo no Supabase
+          if (room?.id && (room.isServer || isServer) && oldName && oldName.toLowerCase() !== cleanName.toLowerCase()) {
+            try {
+              await supabase
+                .from('server_members')
+                .delete()
+                .eq('server_id', room.id)
+                .ilike('username', oldName)
+                .is('user_id', null);
+            } catch (ghostErr) {
+              console.warn('[ProfileModal] Erro ao limpar membro fantasma anônimo:', ghostErr);
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Supabase] Erro na sincronização remota do perfil:', dbErr);
+      }
+
+      // Remover do cache local e atualizar lista de membros no store imediatamente
+      if (oldName && oldName.toLowerCase() !== cleanName.toLowerCase()) {
+        if (room?.id) {
+          removeLocalServerMember(room.id, oldName);
+        }
+        useAppStore.getState().setServerMembers((prev) =>
+          prev.map((m) =>
+            m.username.toLowerCase() === oldName.toLowerCase()
+              ? { ...m, username: cleanName, avatarUrl: avatarUrl ?? m.avatarUrl }
+              : m
+          )
+        );
+      }
+
       onUpdate(cleanName, avatarUrl);
-      toast.success('Perfil atualizado com sucesso!');
+      toast.success('Perfil atualizado e salvo com sucesso!');
       handleClose();
     } catch (err) {
       console.error('Save profile error:', err);
@@ -648,17 +801,34 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
             <div className={styles.actionsGroup}>
               <p className={styles.actionsTitle}>Ações do Servidor</p>
 
-              {/* Convidar Amigos */}
+              {/* Convidar Amigos com feedback dinâmico */}
               <button
                 type="button"
                 onClick={handleCopyInvite}
-                className={styles.actionBtn}
+                className={`${styles.actionBtn} ${inviteCopied ? styles.actionBtnSuccess : ''}`}
+                title="Copiar link e código de convite"
               >
                 <span className={styles.actionBtnContent}>
-                  <i className="fa-solid fa-link" style={{ color: '#7c5cff' }}></i>
-                  <span>Convidar Amigos</span>
+                  <i 
+                    className={`fa-solid ${inviteCopied ? 'fa-check' : 'fa-link'}`} 
+                    style={{ 
+                      color: inviteCopied ? '#10b981' : '#7c5cff',
+                      transition: 'all 0.2s ease',
+                      transform: inviteCopied ? 'scale(1.15)' : 'scale(1)'
+                    }}
+                  />
+                  <span style={{ color: inviteCopied ? '#10b981' : undefined, fontWeight: inviteCopied ? 600 : undefined }}>
+                    {inviteCopied ? 'Convite Copiado! ✓' : 'Convidar Amigos'}
+                  </span>
                 </span>
-                <i className="fa-solid fa-chevron-right" style={{ fontSize: '11px', color: '#6b7280' }}></i>
+                <i 
+                  className={`fa-solid ${inviteCopied ? 'fa-circle-check' : 'fa-chevron-right'}`} 
+                  style={{ 
+                    fontSize: '11px', 
+                    color: inviteCopied ? '#10b981' : '#6b7280',
+                    transition: 'all 0.2s ease'
+                  }} 
+                />
               </button>
 
               {/* Voltar ao Menu */}
@@ -694,6 +864,53 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
         {/* ══ ABA 2: MEU PERFIL ══ */}
         {activeTab === 'profile' && (
           <form onSubmit={handleSaveProfile} className={styles.form}>
+            {/* Status de Conexão / Autenticação */}
+            <div className={styles.authStatusCard}>
+              {currentUser ? (
+                <div className={styles.authStatusConnected}>
+                  <div className={styles.authStatusHeader}>
+                    <div className={styles.authBadgeSuccess}>
+                      <i className="fa-solid fa-circle-check" />
+                      <span>Conta Permanente Conectada</span>
+                    </div>
+                    <button
+                      type="button"
+                      className={styles.authSignOutBtn}
+                      onClick={() => setShowSignOutConfirm(true)}
+                      title="Desconectar conta e voltar para modo visitante"
+                    >
+                      <i className="fa-solid fa-arrow-right-from-bracket" />
+                      <span>Sair</span>
+                    </button>
+                  </div>
+                  <p className={styles.authStatusEmail}>
+                    Vinculado ao e-mail: <strong>{currentUser.email || 'Conta permanente'}</strong>
+                  </p>
+                </div>
+              ) : (
+                <div className={styles.authStatusGuest}>
+                  <div className={styles.authStatusHeader}>
+                    <div className={styles.authBadgeWarning}>
+                      <i className="fa-solid fa-shield-halved" />
+                      <span>Modo Visitante / Convidado</span>
+                    </div>
+                    <span className={styles.authStatusHint}>Não Logado</span>
+                  </div>
+                  <p className={styles.authStatusDesc}>
+                    Você está navegando com uma sessão temporária. Seu apelido e servidores estão salvos apenas no armazenamento local deste computador.
+                  </p>
+                  <button
+                    type="button"
+                    className={styles.authLoginBtn}
+                    onClick={() => setShowAuthModal(true)}
+                  >
+                    <i className="fa-solid fa-arrow-right-to-bracket" />
+                    <span>Entrar com conta permanente</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div className={styles.avatarPreviewArea}>
               <div
                 className={styles.avatarCircle}
@@ -777,18 +994,16 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
           <div className={styles.audioSection}>
             <div className={styles.inputGroup}>
               <label className={styles.label}>Dispositivo de Microfone</label>
-              <select
-                className={styles.deviceSelect}
-                value={selectedAudioInputId}
-                onChange={(e) => handleMicChange(e.target.value)}
-              >
-                <option value="default">Padrão do Sistema</option>
-                {inputDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
+              <CustomSelect
+                value={selectedAudioInputId || 'default'}
+                options={[
+                  { value: 'default', label: 'Padrão do Sistema' },
+                  ...inputDevices.map((d) => ({ value: d.deviceId, label: d.label }))
+                ]}
+                onChange={handleMicChange}
+                icon="microphone"
+                placeholder="Selecione o microfone..."
+              />
             </div>
 
             <div className={styles.inputGroup}>
@@ -808,18 +1023,16 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
 
             <div className={styles.inputGroup}>
               <label className={styles.label}>Dispositivo de Saída (Headset / Alto-falante)</label>
-              <select
-                className={styles.deviceSelect}
-                value={selectedAudioOutputId}
-                onChange={(e) => handleHeadsetChange(e.target.value)}
-              >
-                <option value="default">Padrão do Sistema</option>
-                {outputDevices.map((d) => (
-                  <option key={d.deviceId} value={d.deviceId}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
+              <CustomSelect
+                value={selectedAudioOutputId || 'default'}
+                options={[
+                  { value: 'default', label: 'Padrão do Sistema' },
+                  ...outputDevices.map((d) => ({ value: d.deviceId, label: d.label }))
+                ]}
+                onChange={handleHeadsetChange}
+                icon="headphones"
+                placeholder="Selecione a saída de áudio..."
+              />
               <button
                 type="button"
                 className={styles.audioActionBtn}
@@ -890,6 +1103,51 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
           </div>
         </div>
       </div>
+    )}
+
+    {/* Modal de Confirmação: Desvincular conta Google/Supabase */}
+    {showSignOutConfirm && (
+      <div
+        className={styles.leaveModalOverlay}
+        onClick={() => setShowSignOutConfirm(false)}
+      >
+        <div className={styles.leaveModalCard} onClick={(e) => e.stopPropagation()}>
+          <div className={styles.leaveModalHeader}>
+            <i className={`fa-solid fa-arrow-right-from-bracket ${styles.leaveModalWarningIcon}`} />
+            <h3 className={styles.leaveModalTitle}>Desvincular conta?</h3>
+          </div>
+          <p className={styles.leaveModalDescription}>
+            Deseja realmente desvincular sua conta permanente? Você será desconectado e
+            passará a navegar como visitante. Seus dados no Concord permanecerão salvos
+            e você poderá fazer login novamente a qualquer momento.
+          </p>
+          <div className={styles.leaveModalActions}>
+            <button
+              type="button"
+              className={styles.leaveModalCancelBtn}
+              onClick={() => setShowSignOutConfirm(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className={styles.leaveModalConfirmBtn}
+              onClick={() => { setShowSignOutConfirm(false); handleSignOut(); }}
+            >
+              Desvincular conta
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Modal de Autenticação / Login para converter sessão anônima em definitiva */}
+    {showAuthModal && (
+      <LoginModal
+        onClose={() => setShowAuthModal(false)}
+        onLogin={handleAfterLogin}
+        initialMode="login"
+      />
     )}
   </>,
   document.body

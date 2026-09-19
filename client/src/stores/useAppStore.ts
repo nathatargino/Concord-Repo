@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, ServerMember, UserInfo, WatchSession } from '../types';
 
+export interface UserProfileData {
+  id: string;
+  name: string;
+  avatarUrl?: string | null;
+  role?: 'owner' | 'sub_owner' | 'member';
+  isMe?: boolean;
+  createdAt?: string;
+}
+
 interface AppState {
   // Connection
   connected: boolean;
@@ -38,6 +47,11 @@ interface AppState {
   setMyId: (id: string) => void;
   setMyName: (name: string) => void;
   setMyAvatarUrl: (url: string | null) => void;
+
+  // User Profile Modal Viewer
+  viewingProfileUser: UserProfileData | null;
+  openUserProfile: (user: UserProfileData) => void;
+  closeUserProfile: () => void;
 
   // Users currently in the room
   users: UserInfo[];
@@ -163,6 +177,11 @@ export const useAppStore = create<AppState>((set) => ({
   setMyId: (id) => set({ myId: id }),
   setMyName: (name) => set({ myName: name }),
   setMyAvatarUrl: (url) => set({ myAvatarUrl: url }),
+
+  // User Profile Modal Viewer
+  viewingProfileUser: null,
+  openUserProfile: (user) => set({ viewingProfileUser: user }),
+  closeUserProfile: () => set({ viewingProfileUser: null }),
 
   // Users
   users: [],

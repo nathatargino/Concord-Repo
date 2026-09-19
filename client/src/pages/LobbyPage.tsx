@@ -9,7 +9,8 @@ import {
   checkServerNameAvailable, 
   createServerInSupabase,
   getMyServers,
-  removeMyServer
+  removeMyServer,
+  getOrCreatePersistentId
 } from '../lib/supabase';
 import type { SavedServer, DbRoom } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
@@ -73,11 +74,7 @@ export const LobbyPage: React.FC = () => {
     setLoading(true);
     setError('');
     try {
-      let persistentId = localStorage.getItem('concord_pid');
-      if (!persistentId) {
-        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('concord_pid', persistentId);
-      }
+      let persistentId = getOrCreatePersistentId();
 
       // Generate room ID & code INSTANTLY on client
       const generatedCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -90,7 +87,7 @@ export const LobbyPage: React.FC = () => {
         body: JSON.stringify({ persistentId, code: generatedCode, id: roomId, isServer: false, name: 'Sala Concord' })
       }).catch((err) => console.warn('Server room creation background ping:', err));
 
-      createRoomInSupabase('Sala Concord', generatedCode).catch((err) =>
+      createRoomInSupabase('Sala Concord', generatedCode, roomId).catch((err) =>
         console.warn('Supabase room creation background:', err)
       );
 
@@ -241,17 +238,13 @@ export const LobbyPage: React.FC = () => {
         return;
       }
 
-      let persistentId = localStorage.getItem('concord_pid');
-      if (!persistentId) {
-        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('concord_pid', persistentId);
-      }
+      let persistentId = getOrCreatePersistentId();
 
       const generatedCode = 'SRV-' + Math.random().toString(36).substring(2, 7).toUpperCase();
       const serverId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
 
-      // 2. Salvar servidor no Supabase
-      const createdServer = await createServerInSupabase(trimmedName, generatedCode);
+      // 2. Salvar servidor no Supabase passando o ID canônico gerado
+      const createdServer = await createServerInSupabase(trimmedName, generatedCode, serverId);
 
       // 3. Registrar servidor no backend Node.js
       fetch(`${SERVER_URL}/api/rooms`, {

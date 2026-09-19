@@ -828,22 +828,66 @@
   background: transparent;
   border: none;
   color: #9ca3af;
-  padding: 6px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  outline: none;
 }
 
 .controlBtn:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.controlBtn:active {
+  transform: scale(0.92);
 }
 
 .controlBtnDanger {
   color: #f43f5e !important;
+  background: rgba(244, 63, 94, 0.12) !important;
+}
+
+.controlBtnDanger:hover {
+  background: rgba(244, 63, 94, 0.22) !important;
+  color: #fb7185 !important;
+}
+
+/* Transição suave e animação de troca de estado de áudio */
+.controlBtn i {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, color 0.2s ease;
+  display: inline-block;
+}
+
+.controlBtnDanger i {
+  animation: controlBtnPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes controlBtnPop {
+  0% { transform: scale(0.8) rotate(-8deg); opacity: 0.6; }
+  50% { transform: scale(1.15) rotate(4deg); }
+  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+
+/* Microinteração na engrenagem de configurações */
+.gearBtn i {
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), color 0.2s ease;
+}
+
+.gearBtn:hover i {
+  transform: rotate(60deg);
+  color: #a78bfa;
+}
+
+.gearBtn:active i {
+  transform: rotate(120deg) scale(0.9);
 }
 
 /* Context Menu */

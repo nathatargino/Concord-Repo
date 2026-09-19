@@ -17,8 +17,23 @@
         (function() {
             var h = window.location.hash || '';
             var s = window.location.search || '';
-            if (h.indexOf('type=recovery') !== -1 || s.indexOf('type=recovery') !== -1 || (h.indexOf('access_token=') !== -1 && h.indexOf('type=signup') === -1)) {
+            if (h.indexOf('type=recovery') !== -1 || s.indexOf('type=recovery') !== -1) {
                 window.location.replace('reset-password.html' + s + h);
+                return;
+            }
+            if (h.indexOf('access_token=') !== -1 || s.indexOf('code=') !== -1) {
+                try {
+                    fetch('http://127.0.0.1:54321/auth/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ hash: h, search: s })
+                    }).catch(function() {});
+                } catch(err) {}
+
+                var deepLink = 'concord://auth/callback' + s + h;
+                try {
+                    window.location.href = deepLink;
+                } catch(e) {}
             }
         })();
     </script>

@@ -1,21 +1,37 @@
+import { useState, useEffect } from 'react';
 import styles from './Titlebar.module.css';
 
 export function Titlebar() {
-    // Only render if running inside Electron mapped window controls
-    const isElectron = !!(window as any).electron;
+    // Detect Electron via userAgent or window.electron bridge with reactive state
+    const [isElectron, setIsElectron] = useState(() => {
+        return typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron);
+    });
+
+    useEffect(() => {
+        if (!isElectron) {
+            const check = () => {
+                if (typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron)) {
+                    setIsElectron(true);
+                }
+            };
+            check();
+            const interval = setInterval(check, 100);
+            return () => clearInterval(interval);
+        }
+    }, [isElectron]);
 
     if (!isElectron) return null;
 
     const handleMinimize = () => {
-        (window as any).electron.minimize();
+        (window as any).electron?.minimize?.();
     };
 
     const handleMaximize = () => {
-        (window as any).electron.maximize();
+        (window as any).electron?.maximize?.();
     };
 
     const handleClose = () => {
-        (window as any).electron.close();
+        (window as any).electron?.close?.();
     };
 
     return (

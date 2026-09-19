@@ -415,13 +415,24 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
 
+      // Garantir que aliases (cleanIdOrCode e fallbackCode) apontem para a mesma RoomState canônica
+      if (room) {
+        if (cleanIdOrCode && cleanIdOrCode !== room.id && !rooms.has(cleanIdOrCode)) {
+          rooms.set(cleanIdOrCode, room);
+        }
+        if (fallbackCode && fallbackCode.toUpperCase() !== room.code) {
+          codeToRoomId.set(fallbackCode.toUpperCase(), room.id);
+        }
+      }
 
       // Consultar dados oficiais no DB do Supabase se o servidor for permanente
       if (supabaseClient && room.isServer) {
+        const isRoomUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(room.id);
+        const filterStr = isRoomUuid ? `code.eq.${room.code},id.eq.${room.id}` : `code.eq.${room.code}`;
         supabaseClient
           .from('rooms')
           .select('name, icon_url, created_by')
-          .or(`code.eq.${room.code},id.eq.${room.id}`)
+          .or(filterStr)
           .maybeSingle()
           .then(({ data: dbRoom }: any) => {
             if (dbRoom) {
@@ -625,6 +636,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (room) {
         if (room.isServer) {
           if (!room.knownMembers) room.knownMembers = new Map();
+          if (oldName && oldName.trim().toLowerCase() !== trimmed.toLowerCase()) {
+            room.knownMembers.delete(oldName.trim().toLowerCase());
+          }
           room.knownMembers.set(trimmed.toLowerCase(), {
             id: user.id,
             username: trimmed,

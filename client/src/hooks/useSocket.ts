@@ -4,6 +4,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
+import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo, WatchSession } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
@@ -131,9 +132,17 @@ export interface SocketCallbacks {
   onScreenShareStopped?: (userId: string) => void;
 }
 
-// In production (both web and Electron packaged app), always connect to the Render cloud backend.
-// In local development (Vite dev server), connect to localhost:3001 unless VITE_SERVER_URL is specified.
+// URL do servidor Socket.IO:
+//  - Se VITE_SERVER_URL estiver definido (ex: .env.local), usa essa URL. Recomendado em dev local
+//    para garantir que web (localhost:5173) e Electron usem o MESMO servidor.
+//  - Em produção (vite build), usa o servidor da Render.
+//  - Em desenvolvimento sem a variável, usa localhost:3001.
+//
+// ⚠️  Se web e desktop não se enxergam na mesma sala, provavelmente estão em servidores
+//      diferentes. Certifique-se de ter um .env.local com VITE_SERVER_URL=http://localhost:3001
+//      ao desenvolver localmente.
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
+console.log('[Socket] Servidor alvo:', SOCKET_URL, '| PROD:', import.meta.env.PROD, '| VITE_SERVER_URL:', import.meta.env.VITE_SERVER_URL || '(não definido)');
 const APP_SOCKET_START_TIME = Date.now();
 
 export function useSocket(callbacks: SocketCallbacks) {
@@ -161,14 +170,10 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setConnected(true);
       store.setMyId(socket.id ?? '');
 
-      let persistentId = localStorage.getItem('concord_pid');
-      if (!persistentId) {
-        persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
-        localStorage.setItem('concord_pid', persistentId);
-      }
+      let persistentId = getOrCreatePersistentId();
 
       // Auto-login with saved name and avatar
-      const savedName = localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1');
+      const savedName = getSavedUsername();
       const savedAvatar = localStorage.getItem('concord_avatar_url');
       if (savedName) {
         store.setMyName(savedName);

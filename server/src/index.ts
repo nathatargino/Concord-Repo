@@ -213,11 +213,16 @@ app.post('/api/rooms', async (req, res) => {
   // Asynchronously persist room to Supabase DB if server environment variables are set
   if (supabase) {
     try {
-      const { error } = await supabase.from('rooms').insert({
+      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      const insertPayload: any = {
         code: info.code,
         name: name || (isServer ? 'Servidor Concord' : 'Sala Concord'),
         is_server: !!isServer,
-      });
+      };
+      if (room.id && isUuid(room.id)) {
+        insertPayload.id = room.id;
+      }
+      const { error } = await supabase.from('rooms').insert(insertPayload);
       if (error) console.error('[Server Supabase] Room insert error:', error.message);
     } catch (err: any) {
       console.error('[Server Supabase] Room insert exception:', err);

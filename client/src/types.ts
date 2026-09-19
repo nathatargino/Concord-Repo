@@ -54,6 +54,7 @@ export interface ChatMessage {
   filename?: string;
   channelId?: string;
   avatarUrl?: string | null;
+  userId?: string;
 }
 
 export interface RoomInfo {

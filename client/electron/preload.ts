@@ -44,6 +44,9 @@ declare global {
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
             /** Native Windows Notifications */
             showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) => void;
+            /** Native Google OAuth Authentication Window */
+            openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
+            cancelGoogleAuth?: () => void;
         }
     }
 }
@@ -115,4 +118,6 @@ contextBridge.exposeInMainWorld('electron', {
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) =>
         ipcRenderer.send('show-chat-notification', options),
+    openGoogleAuth: (url: string) => ipcRenderer.invoke('open-google-auth', url),
+    cancelGoogleAuth: () => ipcRenderer.send('cancel-google-auth'),
 });

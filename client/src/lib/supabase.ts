@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { useAppStore } from '../stores/useAppStore';
 
 const DEFAULT_SUPABASE_URL = 'https://zryjdjvqprdrhunmvhbj.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpyeWpkanZxcHJkcmh1bm12aGJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1NzUwOTAsImV4cCI6MjEwMzE1MTA5MH0.YTdvlUu3TivaghK9eDqkupXyup8GVRmyT0dKB31lGrQ';
@@ -42,6 +43,55 @@ export const supabase = (() => {
 
 export const isUuid = (val?: string | null): boolean =>
   Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim()));
+
+/**
+ * Obtém ou gera o persistentId do cliente.
+ * Em modo de desenvolvimento no navegador (ex: localhost:5173), isola por aba via sessionStorage
+ * para permitir testar múltiplos usuários simultaneamente na mesma máquina sem colisão de conexões.
+ */
+export function getOrCreatePersistentId(): string {
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+  const isDev = !import.meta.env.PROD;
+
+  if (isDev && !isElectron && typeof sessionStorage !== 'undefined') {
+    let tabPid = sessionStorage.getItem('concord_tab_pid');
+    if (!tabPid) {
+      tabPid = 'tab_' + (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10));
+      sessionStorage.setItem('concord_tab_pid', tabPid);
+    }
+    return tabPid;
+  }
+
+  let persistentId = localStorage.getItem('concord_pid');
+  if (!persistentId) {
+    persistentId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('concord_pid', persistentId);
+  }
+  return persistentId;
+}
+
+export function getSavedUsername(): string {
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+  const isDev = !import.meta.env.PROD;
+
+  if (isDev && !isElectron && typeof sessionStorage !== 'undefined') {
+    const tabName = sessionStorage.getItem('concord_tab_username');
+    if (tabName && tabName.trim()) return tabName.trim();
+  }
+
+  return (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim();
+}
+
+export function saveUsername(name: string) {
+  const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+  const isDev = !import.meta.env.PROD;
+
+  if (isDev && !isElectron && typeof sessionStorage !== 'undefined') {
+    sessionStorage.setItem('concord_tab_username', name);
+  }
+  localStorage.setItem('concord_username', name);
+  localStorage.setItem('concord_username_v1', name);
+}
 
 // Helper type definitions
 export interface DbRoom {
@@ -104,10 +154,10 @@ export interface SavedServer {
 // ==========================================
 // SALAS (Temporárias de 14h)
 // ==========================================
-export async function createRoomInSupabase(name: string, code: string): Promise<DbRoom | null> {
+export async function createRoomInSupabase(name: string, code: string, customId?: string): Promise<DbRoom | null> {
   if (!supabaseUrl || !supabaseAnonKey) {
     return {
-      id: `local-${Date.now()}`,
+      id: customId || `local-${Date.now()}`,
       code,
       name,
       is_server: false,
@@ -118,14 +168,19 @@ export async function createRoomInSupabase(name: string, code: string): Promise<
   try {
     const { data: { user } } = await supabase.auth.getUser();
 
+    const insertPayload: any = {
+      code: code.toUpperCase(),
+      name,
+      is_server: false,
+      created_by: user?.id || null,
+    };
+    if (customId && isUuid(customId)) {
+      insertPayload.id = customId;
+    }
+
     const { data, error } = await supabase
       .from('rooms')
-      .insert({
-        code: code.toUpperCase(),
-        name,
-        is_server: false,
-        created_by: user?.id || null,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
@@ -165,7 +220,10 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
       .maybeSingle();
 
     if (byCode && !errCode) {
-      return byCode as DbRoom;
+      return {
+        ...byCode,
+        is_server: byCode.is_server !== undefined ? Boolean(byCode.is_server) : byCode.code?.toUpperCase().startsWith('SRV-'),
+      } as DbRoom;
     }
 
     // 2. Se não encontrou por código e tem formato de UUID ou ID, tenta por ID
@@ -178,7 +236,10 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
         .maybeSingle();
 
       if (byId && !errId) {
-        return byId as DbRoom;
+        return {
+          ...byId,
+          is_server: byId.is_server !== undefined ? Boolean(byId.is_server) : byId.code?.toUpperCase().startsWith('SRV-'),
+        } as DbRoom;
       }
     }
 
@@ -210,7 +271,6 @@ export async function checkServerNameAvailable(serverName: string, excludeServer
     let query = supabase
       .from('rooms')
       .select('id, name')
-      .eq('is_server', true)
       .ilike('name', trimmed);
 
     if (excludeServerId) {
@@ -241,12 +301,12 @@ export async function checkServerNameAvailable(serverName: string, excludeServer
 /**
  * Cria um novo servidor permanente no Supabase com canal padrão '#Geral'
  */
-export async function createServerInSupabase(serverName: string, code: string): Promise<DbRoom | null> {
+export async function createServerInSupabase(serverName: string, code: string, customId?: string): Promise<DbRoom | null> {
   const trimmed = serverName.trim();
 
   if (!supabaseUrl || !supabaseAnonKey) {
     const mock = {
-      id: `local-srv-${Date.now()}`,
+      id: customId || `local-srv-${Date.now()}`,
       code,
       name: trimmed,
       is_server: true,
@@ -259,26 +319,60 @@ export async function createServerInSupabase(serverName: string, code: string): 
   try {
     const { data: { user } } = await supabase.auth.getUser();
 
-    // 1. Inserir Servidor na tabela rooms (is_server = true)
-    const { data: serverData, error: serverErr } = await supabase
+    // 1. Inserir Servidor na tabela rooms (com suporte a fallback de schema)
+    let serverData: any = null;
+    let serverErr: any = null;
+
+    const fullPayload: any = {
+      code: code.toUpperCase(),
+      name: trimmed,
+      is_server: true,
+      created_by: user?.id || null,
+    };
+    if (customId && isUuid(customId)) {
+      fullPayload.id = customId;
+    }
+
+    const res1 = await supabase
       .from('rooms')
-      .insert({
-        code: code.toUpperCase(),
-        name: trimmed,
-        is_server: true,
-        created_by: user?.id || null,
-      })
+      .insert(fullPayload)
       .select()
       .single();
+
+    serverData = res1.data;
+    serverErr = res1.error;
+
+    // Se falhar porque a coluna is_server ainda não existe no schema do Supabase (PGRST204)
+    if (serverErr && (serverErr.code === 'PGRST204' || serverErr.message?.includes('is_server'))) {
+      console.warn('[Supabase] Coluna is_server ausente no banco. Gravando servidor em modo compatível...');
+      const compatPayload: any = {
+        code: code.toUpperCase(),
+        name: trimmed,
+        created_by: user?.id || null,
+      };
+      if (customId && isUuid(customId)) {
+        compatPayload.id = customId;
+      }
+      const res2 = await supabase
+        .from('rooms')
+        .insert(compatPayload)
+        .select()
+        .single();
+      serverData = res2.data;
+      serverErr = res2.error;
+    }
 
     if (serverErr) {
       console.error('[Supabase] Erro ao criar servidor:', serverErr.message);
       return null;
     }
 
-    const createdServer = serverData as DbRoom;
+    const createdServer: DbRoom = {
+      ...serverData,
+      is_server: true,
+    };
 
-    // 2. Criar canal padrão '#Geral'
+    // 2. Criar canal padrão '#Geral' (se tabela existir)
     try {
       await supabase
         .from('server_channels')
@@ -287,10 +381,10 @@ export async function createServerInSupabase(serverName: string, code: string): 
           name: 'Geral',
         });
     } catch (chErr) {
-      console.warn('[Supabase] Falha ao criar canal Geral:', chErr);
+      console.warn('[Supabase] Tabela server_channels ainda não configurada no Supabase:', chErr);
     }
 
-    // 3. Registrar o criador como membro Dono
+    // 3. Registrar o criador como membro Dono (se tabela existir)
     const username = user?.user_metadata?.username || user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Admin';
     if (user?.id) {
       try {
@@ -303,7 +397,7 @@ export async function createServerInSupabase(serverName: string, code: string): 
             role: 'owner',
           });
       } catch (memErr) {
-        console.warn('[Supabase] Falha ao registrar dono do servidor:', memErr);
+        console.warn('[Supabase] Tabela server_members ainda não configurada no Supabase:', memErr);
       }
     }
 
@@ -377,6 +471,10 @@ export async function updateServerLogoInSupabase(serverId: string, iconUrl: stri
     }
 
     const { error } = await query;
+    if (error && (error.code === 'PGRST204' || error.message?.includes('icon_url'))) {
+      console.warn('[Supabase] Coluna icon_url ainda não migrada em rooms. Logo salva localmente.');
+      return true;
+    }
     return !error;
   } catch (err) {
     console.warn('[Supabase] Falha ao atualizar logo:', err);
@@ -436,6 +534,79 @@ export async function savePrefsToElectron(prefs: Record<string, string>) {
   }
 }
 
+export async function syncProfileAfterAuth(user: any): Promise<{ username: string; avatarUrl: string | null }> {
+  const meta = user.user_metadata || {};
+  const googleFirstName = meta.given_name || 
+    (meta.full_name ? meta.full_name.trim().split(' ')[0] : null) || 
+    (meta.name ? meta.name.trim().split(' ')[0] : null) || 
+    (user.email ? user.email.split('@')[0] : null) || 
+    'Usuário';
+  const googleAvatar = meta.avatar_url || meta.picture || null;
+
+  const isCustomProfile = localStorage.getItem('concord_is_custom_profile') === 'true';
+  const localSavedName = (useAppStore.getState().myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim();
+  const localSavedAvatar = (useAppStore.getState().myAvatarUrl || localStorage.getItem('concord_avatar_url') || '').trim();
+
+  let existingProfile: { username?: string | null; avatar_url?: string | null } | null = null;
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('username, avatar_url')
+      .eq('id', user.id)
+      .maybeSingle();
+    existingProfile = data;
+  } catch (err) {
+    console.warn('[Supabase] Erro ao buscar perfil existente:', err);
+  }
+
+  let finalName = '';
+  let finalAvatar: string | null = null;
+
+  const hasCustomLocalName = Boolean(localSavedName && (isCustomProfile || (localSavedName !== 'Usuário' && !localSavedName.startsWith('Concordiano'))));
+  const hasCustomLocalAvatar = Boolean(localSavedAvatar);
+
+  if (existingProfile && existingProfile.username) {
+    // Vínculo de Usuário Anônimo / Conta Existente:
+    // Se o usuário customizou dados na sessão anônima, preservamos os dados customizados; caso contrário mantemos os dados da conta.
+    finalName = hasCustomLocalName ? localSavedName : existingProfile.username;
+    finalAvatar = hasCustomLocalAvatar ? localSavedAvatar : (existingProfile.avatar_url || null);
+  } else {
+    // Novo Usuário (Primeiro Acesso):
+    // Se havia customização anônima prévia, preserva esses dados.
+    // Senão, sincroniza o primeiro nome e a foto fornecidos pelo Google OAuth.
+    finalName = hasCustomLocalName ? localSavedName : googleFirstName;
+    finalAvatar = hasCustomLocalAvatar ? localSavedAvatar : googleAvatar;
+  }
+
+  try {
+    await supabase.from('profiles').upsert({
+      id: user.id,
+      username: finalName,
+      avatar_url: finalAvatar || null,
+      email: user.email || null,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[Supabase] Erro ao persistir perfil no banco:', err);
+  }
+
+  localStorage.setItem('concord_username', finalName);
+  localStorage.setItem('concord_username_v1', finalName);
+  if (finalAvatar) {
+    localStorage.setItem('concord_avatar_url', finalAvatar);
+  } else {
+    localStorage.removeItem('concord_avatar_url');
+  }
+  useAppStore.getState().setMyName(finalName);
+  useAppStore.getState().setMyAvatarUrl(finalAvatar);
+  await savePrefsToElectron({
+    concord_username: finalName,
+    concord_avatar_url: finalAvatar || '',
+  });
+
+  return { username: finalName, avatarUrl: finalAvatar };
+}
+
 export async function getMyServers(): Promise<SavedServer[]> {
   try {
     if (supabaseUrl && supabaseAnonKey) {
@@ -449,11 +620,22 @@ export async function getMyServers(): Promise<SavedServer[]> {
             .eq('user_id', user.id);
 
           // 2. Buscar servidores onde o usuário é o criador
-          const { data: createdRooms } = await supabase
+          let createdRooms: any[] = [];
+          const { data: cr1, error: errCr1 } = await supabase
             .from('rooms')
             .select('id, code, name, icon_url, created_by')
             .eq('is_server', true)
             .eq('created_by', user.id);
+
+          if (errCr1 || !cr1) {
+            const { data: cr2 } = await supabase
+              .from('rooms')
+              .select('id, code, name, created_by')
+              .eq('created_by', user.id);
+            createdRooms = (cr2 || []).filter((r: any) => r.code?.toUpperCase().startsWith('SRV-'));
+          } else {
+            createdRooms = cr1;
+          }
 
           const memberServerIds = (remoteMembers || []).map((r: any) => r.server_id).filter(Boolean);
           const createdServerIds = (createdRooms || []).map((r: any) => r.id).filter(Boolean);
@@ -467,10 +649,21 @@ export async function getMyServers(): Promise<SavedServer[]> {
             return [];
           }
 
-          const { data: serverRooms } = await supabase
+          let serverRooms: any[] = [];
+          const { data: sr1, error: srErr1 } = await supabase
             .from('rooms')
             .select('id, code, name, icon_url, created_by')
             .in('id', allUserServerIds);
+
+          if (srErr1 || !sr1) {
+            const { data: sr2 } = await supabase
+              .from('rooms')
+              .select('id, code, name, created_by')
+              .in('id', allUserServerIds);
+            serverRooms = sr2 || [];
+          } else {
+            serverRooms = sr1;
+          }
 
           const syncedList: SavedServer[] = (serverRooms || []).map((s: any) => {
             let role = 'member';
@@ -537,7 +730,20 @@ export async function getMyServers(): Promise<SavedServer[]> {
           return localList;
         }
 
-        const { data: remoteRooms, error: remoteErr } = await query;
+        let { data: remoteRooms, error: remoteErr } = await query;
+        if (remoteErr && (remoteErr.code === 'PGRST204' || remoteErr.message?.includes('icon_url'))) {
+          let fbQuery = supabase.from('rooms').select('id, name, code');
+          if (validUuids.length > 0 && validCodes.length > 0) {
+            fbQuery = fbQuery.or(`id.in.(${validUuids.join(',')}),code.in.(${validCodes.map(c => `"${c}"`).join(',')})`);
+          } else if (validUuids.length > 0) {
+            fbQuery = fbQuery.in('id', validUuids);
+          } else if (validCodes.length > 0) {
+            fbQuery = fbQuery.in('code', validCodes);
+          }
+          const fbRes = await fbQuery;
+          remoteRooms = (fbRes.data || []).map((r: any) => ({ ...r, icon_url: null }));
+          remoteErr = fbRes.error;
+        }
           
         if (!remoteErr && remoteRooms && remoteRooms.length > 0) {
           localList = localList.map(localServer => {

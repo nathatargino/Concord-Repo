@@ -115,6 +115,9 @@ export function ChatPanel({
     setIsYouTubeSearchOpen,
     inVoice,
     watchSession,
+    users,
+    serverMembers,
+    openUserProfile,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -124,6 +127,7 @@ export function ChatPanel({
   const [giphySearch, setGiphySearch] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef<number>(0);
   const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -717,12 +721,12 @@ export function ChatPanel({
     if (stagedFile) {
       setIsUploading(true);
       try {
-        const isImage = stagedFile.file.type.startsWith('image/');
+        const isImage = stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name);
         let fileUrl = '';
-        const fileName = stagedFile.file.name;
+        const fileName = stagedFile.file.name || (isImage ? 'imagem.png' : 'arquivo');
 
         if (isImage) {
-          // Imagens convertidas para Base64 Data URL: permanente e instantanea
+          // Imagens convertidas para Base64 Data URL: permanente e instantânea
           fileUrl = await fileToBase64(stagedFile.file);
         } else {
           // Outros arquivos: tenta upload com fallback Base64
@@ -758,7 +762,7 @@ export function ChatPanel({
         setStagedFile(null);
       } catch (err) {
         console.error('Erro no upload/conversao de arquivo:', err);
-        alert('Falha ao processar o arquivo.');
+        toast.error('Falha ao processar o arquivo.');
       } finally {
         setIsUploading(false);
       }
@@ -772,30 +776,74 @@ export function ChatPanel({
     }
 
     setInput('');
-  }, [input, stagedFile, onSendMessage, onMusicAction, activeChannelId, room?.id, myName]);
+  }, [input, stagedFile, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl]);
 
 
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
+  const stageFile = (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('O arquivo deve ter no máximo 10MB');
+      return;
+    }
+
+    // Normalização do tipo MIME caso venha vazio ou genérico
+    let processedFile = file;
+    if (!file.type || file.type === '') {
+      const ext = file.name ? file.name.split('.').pop()?.toLowerCase() : '';
+      let mime = 'image/png';
+      if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+      else if (ext === 'gif') mime = 'image/gif';
+      else if (ext === 'webp') mime = 'image/webp';
+      else if (ext === 'svg') mime = 'image/svg+xml';
+      else if (ext === 'pdf') mime = 'application/pdf';
+      processedFile = new File([file], file.name || `imagem_${Date.now()}.png`, { type: mime });
+    }
+
+    const previewUrl = URL.createObjectURL(processedFile);
+    setStagedFile({ file: processedFile, previewUrl });
+    toast.success(`Foto "${processedFile.name || 'imagem'}" anexada! Pressione Enter ou envie.`);
+
+    setTimeout(() => {
+      document.getElementById('chatInput')?.focus();
+    }, 50);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
+    const clipboardData = (e as React.ClipboardEvent).clipboardData || (e as ClipboardEvent).clipboardData;
+    if (!clipboardData) return;
+
+    // 1. Arquivos copiados diretamente no clipboard (ex: explorer do Windows, arquivo de foto)
+    const files = clipboardData.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(file.name)) {
           e.preventDefault();
           stageFile(file);
-          break;
+          return;
+        }
+      }
+      if (files[0]) {
+        e.preventDefault();
+        stageFile(files[0]);
+        return;
+      }
+    }
+
+    // 2. Itens de clipboard (ex: print screen, print de área, imagem copiada do navegador)
+    const items = clipboardData.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1 || item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            stageFile(file);
+            return;
+          }
         }
       }
     }
-  };
-
-  const stageFile = (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      alert('O arquivo deve ter no máximo 5MB');
-      return;
-    }
-    const previewUrl = URL.createObjectURL(file);
-    setStagedFile({ file, previewUrl });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -805,24 +853,82 @@ export function ChatPanel({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+    if (!isDragging) {
+      setIsDragging(true);
+    }
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      stageFile(file);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      stageFile(files[0]);
+      return;
+    }
+
+    if (e.dataTransfer.items) {
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        const item = e.dataTransfer.items[i];
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) {
+            stageFile(file);
+            return;
+          }
+        }
+      }
     }
   };
+
+  // Listener global de paste para capturar Ctrl+V mesmo com o foco fora do input
+  useEffect(() => {
+    const onWindowPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && target.id !== 'chatInput') {
+        return;
+      }
+      const clipboardData = e.clipboardData;
+      if (clipboardData) {
+        const hasImageItem = Array.from(clipboardData.items || []).some(
+          it => it.type.startsWith('image/') || it.kind === 'file'
+        );
+        const hasFiles = clipboardData.files && clipboardData.files.length > 0;
+        if (hasImageItem || hasFiles) {
+          handlePaste(e);
+        }
+      }
+    };
+
+    window.addEventListener('paste', onWindowPaste);
+    return () => window.removeEventListener('paste', onWindowPaste);
+  }, []);
 
   const handleSelectGif = (gif: any) => {
     const gifUrl = gif.images.fixed_height.url;
@@ -846,9 +952,11 @@ export function ChatPanel({
   return (
     <div
       className={`${styles.chatPanel} ${isDragging ? styles.dragging : ''}`}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onPaste={handlePaste}
     >
       {/* ── CABEÇALHO DO CHAT (PROTÓTIPO) ── */}
       <div className={styles.chatHeader}>
@@ -969,6 +1077,21 @@ export function ChatPanel({
                   const cleanMsgUser = (msg.userName || '').trim().toLowerCase();
                   const isMe = !isSystemMsg && Boolean(cleanMyName && cleanMsgUser && cleanMyName === cleanMsgUser);
                   const displayAvatar = isMe ? (myAvatarUrl || msg.avatarUrl) : msg.avatarUrl;
+                  const foundUser = users.find((u) => (u.name || '').trim().toLowerCase() === cleanMsgUser);
+                  const foundMember = serverMembers.find((m) => (m.username || '').trim().toLowerCase() === cleanMsgUser);
+                  const targetUserId = msg.userId || foundUser?.id || foundMember?.id || msg.id;
+                  const targetRole = (foundUser?.role || foundMember?.role || 'member') as any;
+
+                  const handleProfileClick = () => {
+                    openUserProfile({
+                      id: targetUserId,
+                      name: msg.userName,
+                      avatarUrl: displayAvatar,
+                      role: targetRole,
+                      isMe,
+                    });
+                  };
+
                   return (
                     <div
                       key={msg.id}
@@ -988,16 +1111,29 @@ export function ChatPanel({
                               src={displayAvatar}
                               alt={msg.userName}
                               className={`${styles.messageAvatar} ${isMe ? styles.messageAvatarMe : ''}`}
+                              onClick={handleProfileClick}
+                              style={{ cursor: 'pointer' }}
+                              title={`Ver perfil de ${msg.userName}`}
                             />
                           ) : (
-                            <div className={styles.messageAvatarFallback}>
+                            <div 
+                              className={styles.messageAvatarFallback}
+                              onClick={handleProfileClick}
+                              style={{ cursor: 'pointer' }}
+                              title={`Ver perfil de ${msg.userName}`}
+                            >
                               {msg.userName.substring(0, 2).toUpperCase()}
                             </div>
                           )}
 
                           <div className={styles.messageContentCol}>
                             <div className={styles.messageUserHeader}>
-                              <span className={styles.senderName}>
+                              <span 
+                                className={styles.senderName}
+                                onClick={handleProfileClick}
+                                style={{ cursor: 'pointer' }}
+                                title={`Ver perfil de ${msg.userName}`}
+                              >
                                 {msg.userName}
                                 {isMe && <span className={styles.meBadge}>VOCÊ</span>}
                               </span>
@@ -1078,7 +1214,7 @@ export function ChatPanel({
             {/* Staged file preview */}
             {stagedFile && (
               <div className={styles.previewContainer}>
-                {stagedFile.file.type.startsWith('image/') ? (
+                {(stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name)) ? (
                   <img src={stagedFile.previewUrl} alt="Preview" className={styles.filePreviewThumb} />
                 ) : (
                   <div className={styles.genericFilePreview}>
@@ -1092,11 +1228,13 @@ export function ChatPanel({
                   </span>
                 </div>
                 <button
+                  type="button"
                   className={styles.removeFileBtn}
                   onClick={() => {
                     URL.revokeObjectURL(stagedFile.previewUrl);
                     setStagedFile(null);
                   }}
+                  title="Remover anexo"
                 >
                   ✕
                 </button>
@@ -1141,6 +1279,12 @@ export function ChatPanel({
               <form
                 id="chatForm"
                 className={styles.chatForm}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = 'copy';
+                }}
+                onDrop={handleDrop}
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSend();
@@ -1175,6 +1319,12 @@ export function ChatPanel({
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.dataTransfer.dropEffect = 'copy';
+                  }}
+                  onDrop={handleDrop}
                   maxLength={2000}
                 />
 
