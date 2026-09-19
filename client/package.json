@@ -6,7 +6,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/ensure-installer.mjs && tsc -b && vite build",
     "lint": "oxlint",
     "electron:dev": "cross-env ELECTRON=true vite",
     "electron:build": "tsc -p tsconfig.electron.json && cross-env ELECTRON=true vite build && electron-builder",

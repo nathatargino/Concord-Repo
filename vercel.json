@@ -1,9 +1,28 @@
 {
   "buildCommand": "cd client && pnpm run build",
   "outputDirectory": "client/dist",
+  "headers": [
+    {
+      "source": "/Concord-Setup.exe",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.microsoft.portable-executable"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"Concord-Setup.exe\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    }
+  ],
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!Concord-Setup\\.exe$).*)",
       "destination": "/index.html"
     }
   ]

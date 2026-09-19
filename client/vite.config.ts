@@ -7,6 +7,27 @@ export default defineConfig({
   base: '/',
   plugins: [
     react(),
+    {
+      name: 'serve-exe-binary-headers',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url && req.url.startsWith('/Concord-Setup.exe')) {
+            res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+            res.setHeader('Content-Disposition', 'attachment; filename="Concord-Setup.exe"');
+          }
+          next();
+        });
+      },
+      configurePreviewServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url && req.url.startsWith('/Concord-Setup.exe')) {
+            res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+            res.setHeader('Content-Disposition', 'attachment; filename="Concord-Setup.exe"');
+          }
+          next();
+        });
+      }
+    },
     process.env.ELECTRON === 'true' ? electron({
       main: {
         entry: 'electron/main.ts',
