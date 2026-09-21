@@ -67,6 +67,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     setShowVideoPlayer,
     isYouTubeSearchOpen,
     setIsYouTubeSearchOpen,
+    watchSession,
   } = useAppStore();
 
   const selectedPlatform = activeMediaTab;
@@ -79,6 +80,40 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   };
 
   const isElectron = !!(window as any).electron;
+
+  const handleSyncAndWatch = (session: typeof watchSession) => {
+    if (!session) return;
+    if (!inVoice) {
+      notifyInChat('Você precisa estar em uma call de voz para sincronizar com a Watch Party.');
+      return;
+    }
+    const electron = (window as any).electron;
+    setActiveStreaming({ service: session.platform, url: session.titleUrl });
+    setActiveMediaTab(session.platform);
+    setStreamingSession(session.platform, true);
+    setShowVideoPlayer(true);
+
+    const elapsed = session.isPlaying
+      ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
+      : 0;
+    const targetSeconds = session.positionSeconds + elapsed;
+
+    if (electron) {
+      if (electron.setActiveMediaTab) {
+        electron.setActiveMediaTab(session.platform);
+      }
+      if (electron.navigateToTitle) {
+        electron.navigateToTitle({ service: session.platform, url: session.titleUrl, autoPlay: true });
+      }
+      setTimeout(() => {
+        electron.syncStreamingPlayback?.({
+          action: session.isPlaying ? 'play' : 'pause',
+          positionSeconds: targetSeconds,
+          service: session.platform,
+        });
+      }, 800);
+    }
+  };
 
   const handleOpenStreaming = async (service: 'netflix' | 'prime', targetUrl?: string) => {
     if (!inVoice) {
@@ -391,12 +426,40 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
             ) : (
               /* Desktop: Player Controls */
               <div className={styles.streamingControls}>
+                {/* Banner de Watch Party ativa para este serviço */}
+                {watchSession && watchSession.platform === selectedPlatform && (
+                  <div className={styles.musicWatchPartyCard}>
+                    <div className={styles.musicWatchPartyHeader}>
+                      <span className={styles.pulseDot} />
+                      <span className={styles.musicWatchPartyTitle}>Watch Party Ativa</span>
+                    </div>
+                    <p className={styles.musicWatchPartyText}>
+                      Líder: <strong>{watchSession.startedByName || 'Amigo'}</strong> ({watchSession.isPlaying ? '▶ assistindo' : '⏸ pausado'})
+                    </p>
+                    <button
+                      type="button"
+                      className={styles.musicWatchPartyBtn}
+                      onClick={() => handleSyncAndWatch(watchSession)}
+                      title="Sincronizar com a transmissão do grupo agora"
+                    >
+                      <i className="fa-solid fa-arrows-rotate"></i>
+                      <span>Sincronizar Agora</span>
+                    </button>
+                  </div>
+                )}
+
                 {(streamingSessions[selectedPlatform as 'netflix' | 'prime'] || activeStreaming?.service === selectedPlatform) ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
                       type="button"
                       className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
-                      onClick={() => setShowVideoPlayer(true)}
+                      onClick={() => {
+                        if (watchSession && watchSession.platform === selectedPlatform) {
+                          handleSyncAndWatch(watchSession);
+                        } else {
+                          setShowVideoPlayer(true);
+                        }
+                      }}
                     >
                       <i className="fa-solid fa-tv"></i>
                       <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : 'PRIME'}</span>
@@ -415,12 +478,24 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                     id={`btn-open-${selectedPlatform}`}
                     type="button"
                     className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
-                    onClick={() => handleOpenStreaming(selectedPlatform)}
+                    onClick={() => {
+                      if (watchSession && watchSession.platform === selectedPlatform) {
+                        handleSyncAndWatch(watchSession);
+                      } else {
+                        handleOpenStreaming(selectedPlatform);
+                      }
+                    }}
                     disabled={isOpeningStreaming || !inVoice}
                     title={inVoice ? undefined : "Entre na call de voz para abrir streaming"}
                   >
-                    <i className={isOpeningStreaming ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'}></i>
-                    <span>{isOpeningStreaming ? 'Iniciando...' : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : 'Abrir Prime')}</span>
+                    <i className={isOpeningStreaming ? 'fa-solid fa-spinner fa-spin' : (watchSession && watchSession.platform === selectedPlatform ? 'fa-solid fa-arrows-rotate' : 'fa-solid fa-play')}></i>
+                    <span>
+                      {isOpeningStreaming
+                        ? 'Iniciando...'
+                        : (watchSession && watchSession.platform === selectedPlatform
+                            ? `Sincronizar e Assistir ${platformName}`
+                            : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : 'Abrir Prime'))}
+                    </span>
                   </button>
                 )}
 

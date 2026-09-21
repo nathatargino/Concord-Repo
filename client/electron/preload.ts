@@ -37,7 +37,7 @@ declare global {
             setStreamingVolume?: (volume: number) => void;
             setModalActive?: (active: boolean) => void;
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
-            syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => void;
+            syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => void;
             navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
             /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
             navigateToTitle?: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => void;
@@ -114,7 +114,7 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.on('streaming-event', subscription);
         return () => ipcRenderer.removeListener('streaming-event', subscription);
     },
-    syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => ipcRenderer.send('sync-streaming-playback', data),
+    syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => ipcRenderer.send('sync-streaming-playback', data),
     navigateStreamingView: (service: 'netflix' | 'prime', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
     navigateToTitle: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),

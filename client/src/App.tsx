@@ -568,6 +568,9 @@ export default function App() {
             onWatchSessionAction={(data) => {
               socket.emit('watch_session_action', data);
             }}
+            onWatchSessionHeartbeat={(data) => {
+              socket.emit('watch_session_heartbeat', data);
+            }}
             onWatchSessionEnd={() => {
               socket.emit('watch_session_end');
             }}

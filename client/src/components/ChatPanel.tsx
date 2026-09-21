@@ -71,6 +71,7 @@ interface ChatPanelProps {
   getYtQuality?: () => string;
   onWatchSessionStart?: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
   onWatchSessionAction?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
+  onWatchSessionHeartbeat?: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   onWatchSessionEnd?: () => void;
 }
 
@@ -86,6 +87,7 @@ export function ChatPanel({
   getYtQuality,
   onWatchSessionStart,
   onWatchSessionAction,
+  onWatchSessionHeartbeat,
   onWatchSessionEnd,
 }: ChatPanelProps) {
   const {
@@ -186,6 +188,13 @@ export function ChatPanel({
               positionSeconds: event.positionSeconds || 0,
               isPlaying: event.isPlaying ?? true,
             });
+          } else if (event.playbackType === 'heartbeat') {
+            onWatchSessionHeartbeat?.({
+              platform: event.service,
+              positionSeconds: event.positionSeconds,
+              isPlaying: event.isPlaying ?? true,
+              url: event.url,
+            });
           } else if (event.playbackType === 'play' || event.playbackType === 'pause' || event.playbackType === 'seek') {
             onWatchSessionAction?.({
               action: event.playbackType,
@@ -196,7 +205,53 @@ export function ChatPanel({
       });
       return unsub;
     }
-  }, [setActiveStreaming, setActiveMediaTab, setStreamingSession, inVoice, onWatchSessionStart, onWatchSessionAction]);
+  }, [setActiveStreaming, setActiveMediaTab, setStreamingSession, inVoice, onWatchSessionStart, onWatchSessionAction, onWatchSessionHeartbeat]);
+
+  // ── Sincronização Manual com o Líder da Watch Party ──
+  const handleManualSync = () => {
+    const currentSession = useAppStore.getState().watchSession;
+    const electron = (window as any).electron;
+    if (!currentSession) {
+      toast('Nenhuma Watch Party ativa no momento.', { icon: 'ℹ️' });
+      return;
+    }
+    if (!inVoice) {
+      toast.error('Você precisa estar em uma call de voz para sincronizar.');
+      return;
+    }
+
+    const elapsed = currentSession.isPlaying
+      ? Math.max(0, (Date.now() - currentSession.lastUpdated) / 1000)
+      : 0;
+    const targetTime = currentSession.positionSeconds + elapsed;
+    const minutes = Math.floor(targetTime / 60);
+    const seconds = Math.floor(targetTime % 60);
+    const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+    toast.success(`Sincronizando com ${currentSession.startedByName || 'o líder'} (${formattedTime})...`);
+
+    if (activeMediaTab !== currentSession.platform) {
+      setActiveMediaTab(currentSession.platform);
+      electron?.setActiveMediaTab?.(currentSession.platform);
+    }
+    if (!showVideoPlayer) {
+      setShowVideoPlayer(true);
+    }
+
+    // Navegar diretamente para a URL do filme se necessário
+    electron?.navigateToTitle?.({
+      service: currentSession.platform,
+      url: currentSession.titleUrl,
+      autoPlay: true,
+    });
+
+    // Enviar comando para aplicar a reprodução no segundo exato
+    electron?.syncStreamingPlayback?.({
+      action: currentSession.isPlaying ? 'play' : 'pause',
+      positionSeconds: targetTime,
+      service: currentSession.platform,
+    });
+  };
 
 
   // ── Video Player Flip ──
@@ -1019,6 +1074,18 @@ export function ChatPanel({
             )}
           </div>
 
+          {/* Botão rápido de sincronizar no cabeçalho quando player aberto e há Watch Party */}
+          {showVideoPlayer && watchSession && (
+            <button
+              className={styles.headerWatchSyncBtn}
+              onClick={handleManualSync}
+              title={`Sincronizar com Watch Party de ${watchSession.startedByName || 'Líder'}`}
+            >
+              <i className="fa-solid fa-arrows-rotate"></i>
+              <span>Sincronizar</span>
+            </button>
+          )}
+
           {/* Botão de alternar entre Chat e Streaming quando há streaming ativo ou player aberto */}
           {((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || currentVideoId)) || showVideoPlayer) && (
             <button
@@ -1835,8 +1902,33 @@ export function ChatPanel({
                         </div>
                       </div>
 
-                      {/* Controles do Streaming (Play, Pause, Skip 10s, Sair/Catálogo, Tela Cheia) */}
+                      {/* Controles do Streaming (Play, Pause, Skip 10s, Sincronizar, Sair/Catálogo, Tela Cheia) */}
                       <div className={styles.videoShortcutWrapper}>
+                        {/* Banner de status da Watch Party quando ativa para a plataforma atual */}
+                        {watchSession && watchSession.platform === currentService && (
+                          <div className={styles.playerWatchPartyBanner}>
+                            <div className={styles.playerWatchPartyLeft}>
+                              <span className={styles.playerWatchPartyPulse} />
+                              <span className={styles.playerWatchPartyTitle}>Watch Party</span>
+                              <span className={styles.playerWatchPartyLeader}>
+                                • Líder: <strong>{watchSession.startedByName || 'Líder'}</strong>
+                              </span>
+                              <span className={watchSession.isPlaying ? styles.watchPlayingTag : styles.watchPausedTag}>
+                                {watchSession.isPlaying ? '▶ Reproduzindo' : '⏸ Pausado'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className={styles.playerWatchPartySyncBtn}
+                              onClick={handleManualSync}
+                              title="Sincronizar no mesmo segundo que o líder agora"
+                            >
+                              <i className="fa-solid fa-arrows-rotate"></i>
+                              <span>Sincronizar com Líder</span>
+                            </button>
+                          </div>
+                        )}
+
                         <p className={styles.videoShortcutLabel}>⎯⎯ Controles da {platformLabel} ⎯⎯</p>
                         <div className={styles.videoShortcutGrid}>
                           <button
@@ -1876,6 +1968,17 @@ export function ChatPanel({
                           >
                             <i className="fa-solid fa-forward-step"></i>
                             <span>/skip</span>
+                          </button>
+
+                          {/* Botão de Sincronizar na grade de controles */}
+                          <button
+                            type="button"
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutSync}`}
+                            onClick={handleManualSync}
+                            title="Sincronizar reprodução com o líder"
+                          >
+                            <i className="fa-solid fa-arrows-rotate"></i>
+                            <span>Sincronizar</span>
                           </button>
 
                           <button

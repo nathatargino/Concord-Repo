@@ -2087,7 +2087,7 @@ ipcMain.on('streaming-playback-event', (event, data: any) => {
     }
 });
 
-ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => {
+ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => {
     const targetService = data.service || activeStreamingService;
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;

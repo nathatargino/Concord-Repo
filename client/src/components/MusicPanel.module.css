@@ -538,3 +538,65 @@
   border-color: rgba(239, 68, 68, 0.3);
   color: #f87171;
 }
+
+/* ── Card de Watch Party no Painel Lateral ── */
+.musicWatchPartyCard {
+  background: linear-gradient(135deg, rgba(124, 92, 255, 0.18) 0%, rgba(0, 168, 225, 0.14) 100%);
+  border: 1px solid rgba(124, 92, 255, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.musicWatchPartyHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.musicWatchPartyTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c084fc;
+}
+
+.musicWatchPartyText {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.musicWatchPartyText strong {
+  color: #ffffff;
+}
+
+.musicWatchPartyBtn {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #7c5cff 0%, #00a8e1 100%);
+  border: none;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(124, 92, 255, 0.4);
+  transition: all 0.2s;
+}
+
+.musicWatchPartyBtn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.6);
+  filter: brightness(1.1);
+}
+
+.musicWatchPartyBtn:active {
+  transform: translateY(0);
+}

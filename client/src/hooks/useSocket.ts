@@ -40,6 +40,7 @@ interface ServerToClientEvents {
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
   watch_session_sync: (session: WatchSession | null) => void;
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
+  watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' }) => void;
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;
   room_info: (room: RoomInfo) => void;
@@ -106,6 +107,7 @@ interface ClientToServerEvents {
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
   watch_session_end: () => void;
   watch_session_query: () => void;
+  watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -455,6 +457,32 @@ export function useSocket(callbacks: SocketCallbacks) {
           service: currentSession.platform,
         });
       }, 200);
+    });
+
+    socket.on('watch_session_heartbeat', (data) => {
+      const electron = (window as any).electron;
+      const currentSession = useAppStore.getState().watchSession;
+      if (!currentSession) return;
+
+      const updated: WatchSession = {
+        ...currentSession,
+        positionSeconds: data.positionSeconds,
+        isPlaying: data.isPlaying,
+        lastUpdated: data.timestamp || Date.now(),
+      };
+      store.setWatchSession(updated);
+
+      // Se a view de streaming estiver aberta, enviar para alinhamento suave de drift (> 3.0s)
+      const streamingSessions = useAppStore.getState().streamingSessions;
+      const isViewOpen = streamingSessions[currentSession.platform];
+      if (isViewOpen && electron?.syncStreamingPlayback) {
+        electron.syncStreamingPlayback({
+          action: data.isPlaying ? 'play' : 'pause',
+          positionSeconds: data.positionSeconds,
+          service: currentSession.platform,
+          autoDrift: true,
+        });
+      }
     });
 
     socket.on('existing_voice_users', (userIds) => {

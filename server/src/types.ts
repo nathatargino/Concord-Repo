@@ -101,6 +101,7 @@ export interface ClientToServerEvents {
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
   watch_session_end: () => void;
   watch_session_query: () => void;
+  watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
 }
 
 // Server → Client events
@@ -144,6 +145,7 @@ export interface ServerToClientEvents {
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
   watch_session_sync: (session: WatchSession | null) => void;
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
+  watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' }) => void;
   // Room events
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;

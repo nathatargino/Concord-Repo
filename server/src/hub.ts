@@ -1081,6 +1081,29 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       socket.emit('watch_session_sync', room.watchSession);
     });
 
+    socket.on('watch_session_heartbeat', (data) => {
+      const room = getCurrentRoom();
+      if (!room || !room.watchSession) return;
+      if (!room.voiceUsers.has(socket.id)) return;
+
+      const now = Date.now();
+      if (typeof data.positionSeconds === 'number') {
+        room.watchSession.positionSeconds = data.positionSeconds;
+      }
+      if (typeof data.isPlaying === 'boolean') {
+        room.watchSession.isPlaying = data.isPlaying;
+      }
+      room.watchSession.lastUpdated = now;
+
+      // Broadcast heartbeat to other room participants for drift correction
+      socket.to(room.id).emit('watch_session_heartbeat', {
+        positionSeconds: room.watchSession.positionSeconds,
+        isPlaying: room.watchSession.isPlaying,
+        timestamp: now,
+        platform: room.watchSession.platform,
+      });
+    });
+
     // ─── JOIN VOICE ────────────────────────────────────────────────
     socket.on('join_voice', () => {
       const room = getCurrentRoom();
