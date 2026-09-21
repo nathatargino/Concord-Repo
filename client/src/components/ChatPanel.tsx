@@ -134,6 +134,11 @@ export function ChatPanel({
   const [imageZoom, setImageZoom] = useState<number>(1);
   const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
+  // URL pendente de navegação de Watch Party (recebida via streaming-event 'navigate-pending')
+  const [pendingWatchUrl, setPendingWatchUrl] = useState<{ service: 'netflix' | 'prime'; url: string } | null>(null);
+  // Estado de sincronização para o botão "Assistir Junto"
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // ── Aviso no chat para comandos de áudio (/play, /pause, /skip, /clear) ──
   const broadcastAudioCommandNotice = useCallback((action: 'play' | 'pause' | 'skip' | 'clear') => {
     const currentChannel = activeChannelId || 'ch-geral';
@@ -165,6 +170,13 @@ export function ChatPanel({
         } else if (event.type === 'opened') {
           if (event.service) {
             setStreamingSession(event.service, true);
+            setPendingWatchUrl(null); // view aberta — limpar pending
+          }
+        } else if (event.type === 'navigate-pending') {
+          // A view de streaming ainda não existe mas o Watch Party tem um título
+          // Salvar para o banner "Assistir Junto" usar ao abrir
+          if (event.service && event.url) {
+            setPendingWatchUrl({ service: event.service, url: event.url });
           }
         } else if (event.type === 'playback-event' && inVoice) {
           if (event.playbackType === 'title-started') {
@@ -185,6 +197,7 @@ export function ChatPanel({
       return unsub;
     }
   }, [setActiveStreaming, setActiveMediaTab, setStreamingSession, inVoice, onWatchSessionStart, onWatchSessionAction]);
+
 
   // ── Video Player Flip ──
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
@@ -1577,44 +1590,173 @@ export function ChatPanel({
                         <div className={styles.watchPartyBanner}>
                           <div className={styles.watchPartyLeft}>
                             <span className={styles.watchPartyDot} />
-                            <span className={styles.watchPartyTitle}>
-                              <strong>Watch Party</strong> • Sincronizado por {watchSession.startedByName || 'Participante'}
-                            </span>
-                            <span className={styles.watchPartyState}>
-                              ({watchSession.isPlaying ? 'Reproduzindo' : 'Pausado'})
-                            </span>
+                            <div className={styles.watchPartyInfo}>
+                              <span className={styles.watchPartyTitle}>
+                                <strong>Watch Party</strong>
+                                {watchSession.startedByName && (
+                                  <span className={styles.watchPartyLeader}> • Líder: {watchSession.startedByName}</span>
+                                )}
+                              </span>
+                              <span className={styles.watchPartyState}>
+                                {watchSession.isPlaying ? '▶ Reproduzindo' : '⏸ Pausado'}
+                                {' · '}
+                                {currentService === 'netflix' ? 'Netflix' : 'Prime Video'}
+                              </span>
+                            </div>
                           </div>
                           <div className={styles.watchPartyActions}>
-                            <button
-                              className={styles.watchPartyResyncBtn}
-                              onClick={() => {
-                                const electron = (window as any).electron;
-                                const elapsed = watchSession.isPlaying
-                                  ? Math.max(0, (Date.now() - watchSession.lastUpdated) / 1000)
-                                  : 0;
-                                const pos = watchSession.positionSeconds + elapsed;
-                                electron?.syncStreamingPlayback?.({
-                                  action: watchSession.isPlaying ? 'play' : 'pause',
-                                  positionSeconds: pos,
-                                  service: watchSession.platform,
-                                });
-                                toast.success('Sincronização forçada!');
-                              }}
-                              title="Forçar sincronização de reprodução"
-                            >
-                              <i className="fa-solid fa-arrows-rotate"></i>
-                              <span>Ressincronizar</span>
-                            </button>
-                            <button
-                              className={styles.watchPartyEndBtn}
-                              onClick={() => {
-                                onWatchSessionEnd?.();
-                              }}
-                              title="Encerrar Watch Party para todos"
-                            >
-                              <i className="fa-solid fa-xmark"></i>
-                              <span>Encerrar</span>
-                            </button>
+                            {/* Botão principal: "Assistir Junto" — abre direto no título do líder */}
+                            {!streamingSessions[currentService] ? (
+                              <>
+                                <button
+                                  className={`${styles.watchPartyJoinBtn} ${isSyncing ? styles.watchPartyJoinBtnSyncing : ''}`}
+                                  disabled={isSyncing || !inVoice}
+                                  title={!inVoice ? 'Entre na call de voz para assistir junto' : 'Abrir e sincronizar com o líder da Watch Party'}
+                                  onClick={async () => {
+                                    if (!inVoice) {
+                                      toast.error('Entre na call de voz para participar da Watch Party.');
+                                      return;
+                                    }
+                                    const electron = (window as any).electron;
+                                    if (!electron) {
+                                      toast.error('Watch Party requer o app Concord Desktop.');
+                                      return;
+                                    }
+                                    setIsSyncing(true);
+                                    try {
+                                      // Abrir a view diretamente no título do líder
+                                      const targetUrl = pendingWatchUrl?.service === currentService
+                                        ? pendingWatchUrl.url
+                                        : watchSession.titleUrl;
+
+                                      setActiveStreaming({ service: currentService, url: targetUrl });
+                                      setActiveMediaTab(currentService);
+                                      setShowVideoPlayer(true);
+                                      if (electron.setActiveMediaTab) electron.setActiveMediaTab(currentService);
+
+                                      // Aguardar o mount do streamingHostRef
+                                      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+
+                                      if (streamingHostRef.current) {
+                                        const rect = streamingHostRef.current.getBoundingClientRect();
+                                        if (rect.width > 0 && rect.height > 0 && electron.openStreamingView) {
+                                          await electron.openStreamingView({
+                                            service: currentService,
+                                            url: targetUrl,
+                                            bounds: {
+                                              x: Math.round(rect.left),
+                                              y: Math.round(rect.top),
+                                              width: Math.round(rect.width),
+                                              height: Math.round(rect.height),
+                                            },
+                                            borderRadius: 16,
+                                          });
+                                          setStreamingSession(currentService, true);
+                                          setPendingWatchUrl(null);
+
+                                          // Sincronizar posição após o DRM carregar (4s para Netflix/Prime)
+                                          setTimeout(() => {
+                                            const session = useAppStore.getState().watchSession;
+                                            if (!session || session.platform !== currentService) return;
+                                            const elapsed = session.isPlaying
+                                              ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
+                                              : 0;
+                                            const pos = session.positionSeconds + elapsed + (session.isPlaying ? 4 : 0);
+                                            electron.syncStreamingPlayback?.({
+                                              action: session.isPlaying ? 'play' : 'pause',
+                                              positionSeconds: pos,
+                                              service: currentService,
+                                            });
+                                            setIsSyncing(false);
+                                            toast.success('Sincronizado com a Watch Party! 🎉');
+                                          }, 4000);
+                                        } else {
+                                          setIsSyncing(false);
+                                        }
+                                      } else {
+                                        setIsSyncing(false);
+                                      }
+                                    } catch (e) {
+                                      setIsSyncing(false);
+                                      toast.error('Erro ao entrar na Watch Party.');
+                                    }
+                                  }}
+                                >
+                                  {isSyncing ? (
+                                    <>
+                                      <span className={styles.watchPartySyncSpinner} />
+                                      <span>Sincronizando...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <i className="fa-solid fa-circle-play" />
+                                      <span>Assistir Junto</span>
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  className={styles.watchPartyCatalogBtn}
+                                  title="Abrir catálogo e navegar livremente"
+                                  onClick={() => {
+                                    if (!inVoice) {
+                                      toast.error('Entre na call de voz para acessar o streaming.');
+                                      return;
+                                    }
+                                    setActiveStreaming({ service: currentService });
+                                    setActiveMediaTab(currentService);
+                                    setStreamingSession(currentService, true);
+                                    const electron = (window as any).electron;
+                                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab(currentService);
+                                  }}
+                                >
+                                  <i className="fa-solid fa-grid-2" />
+                                  <span>Catálogo</span>
+                                </button>
+                              </>
+                            ) : (
+                              /* View já aberta — mostrar controles de ressincronização */
+                              <>
+                                <button
+                                  className={styles.watchPartyResyncBtn}
+                                  onClick={() => {
+                                    const electron = (window as any).electron;
+                                    const session = useAppStore.getState().watchSession;
+                                    if (!session) return;
+                                    const elapsed = session.isPlaying
+                                      ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
+                                      : 0;
+                                    const pos = session.positionSeconds + elapsed;
+                                    // Navegar para o título correto se necessário
+                                    if (electron?.navigateToTitle) {
+                                      electron.navigateToTitle({ service: session.platform, url: session.titleUrl });
+                                    }
+                                    // Sincronizar posição após navegação
+                                    setTimeout(() => {
+                                      electron?.syncStreamingPlayback?.({
+                                        action: session.isPlaying ? 'play' : 'pause',
+                                        positionSeconds: pos + (session.isPlaying ? 2 : 0),
+                                        service: session.platform,
+                                      });
+                                    }, 2000);
+                                    toast.success('Ressincronizando...');
+                                  }}
+                                  title="Navegar ao título atual e ressincronizar posição"
+                                >
+                                  <i className="fa-solid fa-arrows-rotate" />
+                                  <span>Ressincronizar</span>
+                                </button>
+                                <button
+                                  className={styles.watchPartyEndBtn}
+                                  onClick={() => {
+                                    onWatchSessionEnd?.();
+                                  }}
+                                  title="Encerrar Watch Party para todos"
+                                >
+                                  <i className="fa-solid fa-xmark" />
+                                  <span>Encerrar</span>
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       )}

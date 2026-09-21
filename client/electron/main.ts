@@ -2091,15 +2091,48 @@ ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' 
     const targetService = data.service || activeStreamingService;
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
+    // Send command to streaming preload — the preload has its own retry logic
+    // if the video element isn't available yet
     inst.view.webContents.send('apply-streaming-playback', data);
+    fs.appendFileSync(logFile, `[WatchParty] sync-streaming-playback sent: action=${data.action} pos=${data.positionSeconds} service=${targetService}\n`);
 });
 
 ipcMain.on('navigate-streaming-view', (_event, { service, url }: { service: 'netflix' | 'prime'; url: string }) => {
     const inst = streamingInstances.get(service);
     if (inst && !inst.view.webContents.isDestroyed()) {
+        // Instance already exists — navigate within it
         if (inst.currentUrl !== url) {
             inst.currentUrl = url;
+            fs.appendFileSync(logFile, `[WatchParty] navigate-streaming-view: loading ${url}\n`);
             inst.view.webContents.loadURL(url).catch(() => {});
+        }
+    } else {
+        // Instance doesn't exist yet — notify renderer so it can open the streaming
+        // view at this URL (via "Assistir Junto" banner flow)
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('streaming-event', {
+                type: 'navigate-pending',
+                service,
+                url,
+            });
+            fs.appendFileSync(logFile, `[WatchParty] navigate-pending emitted for ${service}: ${url}\n`);
+        }
+    }
+});
+
+// ── Navigate to specific title inside an already-open streaming view ──
+// Used by Watch Party "Assistir Junto" to deep-link directly to a title URL
+ipcMain.on('navigate-to-title', (_event, { service, url, autoPlay }: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => {
+    const inst = streamingInstances.get(service);
+    if (!inst || inst.view.webContents.isDestroyed()) return;
+    if (inst.currentUrl !== url) {
+        inst.currentUrl = url;
+        inst.view.webContents.loadURL(url).catch(() => {});
+        fs.appendFileSync(logFile, `[WatchParty] navigate-to-title: ${service} → ${url} autoPlay=${autoPlay}\n`);
+    } else {
+        // Same URL — just trigger autoPlay signal
+        if (autoPlay) {
+            inst.view.webContents.send('navigate-to-title', { url, autoPlay: true });
         }
     }
 });

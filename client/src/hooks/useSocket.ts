@@ -374,37 +374,59 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     // ─── WATCH PARTY (STREAMING SYNC) ───
+    //
+    // IMPORTANTE: NÃO navegamos automaticamente ao receber watch_session_sync.
+    // Isso evitava que a view do streaming fosse aberta sem consentimento do usuário
+    // e causava race conditions quando o DRM ainda não tinha carregado.
+    //
+    // Fluxo correto:
+    //  1. Atualizar o watchSession no store (todos recebem, mesmo quem não está em voz)
+    //  2. Se o usuário está em voz E a view de streaming JÁ está aberta →
+    //     navegar para o título E sincronizar posição (com delay para DRM carregar)
+    //  3. Se o usuário está em voz E a view NÃO está aberta →
+    //     mostrar banner no ChatPanel com botão "Assistir Junto"
+    //     (o próprio usuário escolhe entrar)
+    //  4. Se o usuário NÃO está em voz → apenas atualiza o store (sem ação)
     socket.on('watch_session_sync', (session) => {
+      const prevSession = useAppStore.getState().watchSession;
       store.setWatchSession(session);
       const electron = (window as any).electron;
 
-      if (session && store.inVoice) {
-        store.setActiveMediaTab(session.platform);
-        store.setShowVideoPlayer(true);
-        if (electron?.setActiveMediaTab) {
-          electron.setActiveMediaTab(session.platform);
+      if (!session || !store.inVoice) return;
+
+      // Verificar se a view de streaming já está aberta para este serviço
+      const streamingSessions = useAppStore.getState().streamingSessions;
+      const isViewOpen = streamingSessions[session.platform];
+
+      if (isViewOpen && electron) {
+        // View já aberta → navegar para o título correto se necessário
+        if (electron.navigateStreamingView) {
+          electron.navigateStreamingView(session.platform, session.titleUrl);
         }
 
+        // Sincronizar posição após delay (DRM/carregamento de página)
+        const syncDelay = prevSession ? 800 : 3000; // reconexão = menos delay
         const elapsedSinceUpdate = session.isPlaying
           ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
           : 0;
         const estimatedPosition = session.positionSeconds + elapsedSinceUpdate;
 
-        if (electron?.navigateStreamingView) {
-          electron.navigateStreamingView(session.platform, session.titleUrl);
-        }
-
-        if (electron?.syncStreamingPlayback) {
-          setTimeout(() => {
-            electron.syncStreamingPlayback?.({
-              action: session.isPlaying ? 'play' : 'pause',
-              positionSeconds: estimatedPosition,
-              service: session.platform,
-            });
-          }, 1200);
-        }
+        setTimeout(() => {
+          const currentSession = useAppStore.getState().watchSession;
+          if (!currentSession || currentSession.platform !== session.platform) return;
+          electron.syncStreamingPlayback?.({
+            action: session.isPlaying ? 'play' : 'pause',
+            positionSeconds: estimatedPosition + (session.isPlaying ? syncDelay / 1000 : 0),
+            service: session.platform,
+          });
+        }, syncDelay);
       }
+      // Caso a view não esteja aberta: o ChatPanel exibirá o banner "Assistir Junto"
+      // e o usuário decidirá entrar — sem ação automática aqui
     });
+
+    // Debounce para evitar loops de echo de seek entre participantes
+    let watchActionDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     socket.on('watch_session_action', (data) => {
       const electron = (window as any).electron;
@@ -419,13 +441,20 @@ export function useSocket(callbacks: SocketCallbacks) {
       };
       store.setWatchSession(updated);
 
-      if (electron?.syncStreamingPlayback) {
-        electron.syncStreamingPlayback({
+      // Só aplicar sincronização se a view de streaming estiver aberta
+      const streamingSessions = useAppStore.getState().streamingSessions;
+      const isViewOpen = streamingSessions[currentSession.platform];
+      if (!isViewOpen || !electron?.syncStreamingPlayback) return;
+
+      // Debounce de 200ms para evitar loops de seek entre participantes
+      if (watchActionDebounceTimer) clearTimeout(watchActionDebounceTimer);
+      watchActionDebounceTimer = setTimeout(() => {
+        electron.syncStreamingPlayback?.({
           action: data.action,
           positionSeconds: data.positionSeconds,
           service: currentSession.platform,
         });
-      }
+      }, 200);
     });
 
     socket.on('existing_voice_users', (userIds) => {

@@ -92,7 +92,16 @@ electron_1.webFrame.executeJavaScript(`
 let isRemoteAction = false;
 let remoteActionTimeout = null;
 let lastBroadcastUrl = '';
+let lastBroadcastTime = 0;
+// Cooldown em ms entre emissões de title-started para o mesmo título
+const TITLE_STARTED_COOLDOWN_MS = 5000;
+// Debounce de seek — evita spam de eventos de seek
 let seekDebounceTimer = null;
+// Retry de sync após apply-streaming-playback quando vídeo ainda não está pronto
+let syncRetryCount = 0;
+let syncRetryTimer = null;
+const MAX_SYNC_RETRIES = 6;
+const SYNC_RETRY_DELAY_MS = 2000;
 let currentlyHookedVideo = null;
 function clickPlayButton() {
     const playBtn = document.querySelector('[data-uia="control-play-pause-play"], .button-nfplayerPlay, .atvwebplayersdk-playpause-button, [data-automation-id="playback-play-pause"], .pausedOverlayButton, button[aria-label*="Reproduzir"], button[aria-label*="Play"], button[aria-label*="Assistir"]');
@@ -107,14 +116,23 @@ function clickPauseButton() {
 function isWatchPartyEligibleUrl(url) {
     if (!url)
         return false;
-    // Netflix watch URL
+    // Netflix — URL de reprodução real (não catálogo)
     if (url.includes('netflix.com/watch/'))
         return true;
-    // Prime Video watch or detail URL
+    // Prime Video — URL de reprodução real
     if (url.includes('primevideo.com') && (url.includes('/watch/') || url.includes('/detail/') || url.includes('/gp/video/'))) {
         return true;
     }
     return false;
+}
+/**
+ * Verifica se o vídeo está realmente reproduzindo:
+ * - não pausado
+ * - não em buffering (readyState >= 2)
+ * - currentTime > 1s (afastado do início para evitar falso positivo de pré-roll)
+ */
+function isVideoActuallyPlaying(video) {
+    return !video.paused && video.readyState >= 2 && video.currentTime > 1;
 }
 function hookVideoElement(video) {
     if (currentlyHookedVideo === video)
@@ -128,6 +146,7 @@ function hookVideoElement(video) {
             electron_1.ipcRenderer.send('streaming-playback-event', {
                 type: 'play',
                 positionSeconds: video.currentTime,
+                isPlaying: true,
                 url,
             });
         }
@@ -140,6 +159,7 @@ function hookVideoElement(video) {
             electron_1.ipcRenderer.send('streaming-playback-event', {
                 type: 'pause',
                 positionSeconds: video.currentTime,
+                isPlaying: false,
                 url,
             });
         }
@@ -157,6 +177,7 @@ function hookVideoElement(video) {
                 electron_1.ipcRenderer.send('streaming-playback-event', {
                     type: 'seek',
                     positionSeconds: video.currentTime,
+                    isPlaying: !video.paused,
                     url,
                 });
             }
@@ -168,60 +189,112 @@ function checkPlaybackState() {
     const video = document.querySelector('video');
     if (video) {
         hookVideoElement(video);
-        // Detect when video starts or URL transitions to a new title
-        if (isWatchPartyEligibleUrl(url) && url !== lastBroadcastUrl && (!video.paused || video.currentTime > 0)) {
+        // ── title-started: emitir APENAS quando o vídeo está realmente reproduzindo
+        // e a URL do título mudou, com cooldown para evitar spam
+        const now = Date.now();
+        const urlChanged = url !== lastBroadcastUrl;
+        const cooldownExpired = (now - lastBroadcastTime) > TITLE_STARTED_COOLDOWN_MS;
+        if (isWatchPartyEligibleUrl(url) &&
+            isVideoActuallyPlaying(video) &&
+            (urlChanged || cooldownExpired) &&
+            urlChanged // sempre exige mudança de URL para ser "novo título"
+        ) {
             lastBroadcastUrl = url;
+            lastBroadcastTime = now;
             electron_1.ipcRenderer.send('streaming-playback-event', {
                 type: 'title-started',
                 url,
                 positionSeconds: video.currentTime,
-                isPlaying: !video.paused,
+                isPlaying: true,
             });
         }
     }
-    // Deep-link auto play helper: if we are on a Prime Video detail page with a direct playback button
+    // Deep-link auto play helper: se estivermos na página de detalhe do Prime Video
+    // e houver um botão de play disponível (sem vídeo ainda), clicar nele automaticamente
+    // SOMENTE se esta view foi aberta pelo Watch Party (tem um flag de redirect pendente)
     if (url.includes('primevideo.com/detail/') && !video) {
         const playBtn = document.querySelector('[data-automation-id="playback-button"], a[href*="/watch/"], button[aria-label*="Assistir agora"], button[aria-label*="Continuar assistindo"], button[aria-label*="Reproduzir"]');
-        if (playBtn) {
-            playBtn.click();
+        if (playBtn && window.__concord_auto_play) {
+            window.__concord_auto_play = false;
+            setTimeout(() => playBtn.click(), 500);
         }
     }
 }
-// Observe and poll for video changes
-setInterval(checkPlaybackState, 600);
+// Observe e poll para mudanças de vídeo
+setInterval(checkPlaybackState, 800);
 window.addEventListener('DOMContentLoaded', checkPlaybackState);
-window.addEventListener('popstate', checkPlaybackState);
-// ── Receive remote commands from Discord / Concord main process ──
+window.addEventListener('popstate', () => {
+    // URL mudou via SPA navigation — verificar logo após a transição
+    setTimeout(checkPlaybackState, 300);
+    setTimeout(checkPlaybackState, 1000);
+});
+// ── Receber comandos remotos do processo principal Concord ──
 electron_1.ipcRenderer.on('apply-streaming-playback', (_event, data) => {
+    // Cancelar retries anteriores se houver novo comando
+    if (syncRetryTimer) {
+        clearTimeout(syncRetryTimer);
+        syncRetryTimer = null;
+        syncRetryCount = 0;
+    }
+    applyPlaybackCommand(data);
+});
+function applyPlaybackCommand(data, retryAttempt = 0) {
     isRemoteAction = true;
     if (remoteActionTimeout)
         clearTimeout(remoteActionTimeout);
     const video = document.querySelector('video');
-    if (video) {
-        if (data.action === 'seek' && typeof data.positionSeconds === 'number') {
+    if (!video) {
+        // Vídeo ainda não carregou — retry se dentro do limite
+        if (retryAttempt < MAX_SYNC_RETRIES) {
+            syncRetryCount = retryAttempt + 1;
+            syncRetryTimer = setTimeout(() => {
+                applyPlaybackCommand(data, retryAttempt + 1);
+            }, SYNC_RETRY_DELAY_MS);
+        }
+        // Liberar o flag imediatamente para não bloquear eventos locais enquanto espera
+        remoteActionTimeout = setTimeout(() => {
+            isRemoteAction = false;
+        }, 500);
+        return;
+    }
+    syncRetryCount = 0;
+    if (data.action === 'seek' && typeof data.positionSeconds === 'number') {
+        video.currentTime = data.positionSeconds;
+    }
+    else if (data.action === 'play') {
+        // Sincronizar posição se houver desvio > 2.5s
+        if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.5) {
             video.currentTime = data.positionSeconds;
         }
-        else if (data.action === 'play') {
-            if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.5) {
-                video.currentTime = data.positionSeconds;
-            }
-            if (video.paused) {
-                video.play().catch(() => { });
-                clickPlayButton();
-            }
-        }
-        else if (data.action === 'pause') {
-            if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.5) {
-                video.currentTime = data.positionSeconds;
-            }
-            if (!video.paused) {
-                video.pause();
-                clickPauseButton();
-            }
+        if (video.paused) {
+            video.play().catch(() => { });
+            // Fallback via botão DOM (alguns players bloqueiam video.play())
+            setTimeout(clickPlayButton, 100);
         }
     }
-    // Suppress local events for 650ms to prevent infinite bounce / echo loops
+    else if (data.action === 'pause') {
+        // Sincronizar posição se houver desvio > 2.5s
+        if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.5) {
+            video.currentTime = data.positionSeconds;
+        }
+        if (!video.paused) {
+            video.pause();
+            // Fallback via botão DOM
+            setTimeout(clickPauseButton, 100);
+        }
+    }
+    // Suprimir eventos locais por 800ms para evitar loops de echo
     remoteActionTimeout = setTimeout(() => {
         isRemoteAction = false;
-    }, 650);
+    }, 800);
+}
+// ── Sinalizar ao Electron quando a view deve navegar automaticamente para um título
+// (usado pelo Watch Party quando o receptor clica "Assistir Junto")
+electron_1.ipcRenderer.on('navigate-to-title', (_event, data) => {
+    if (data.autoPlay) {
+        window.__concord_auto_play = true;
+    }
+    if (window.location.href !== data.url) {
+        window.location.href = data.url;
+    }
 });

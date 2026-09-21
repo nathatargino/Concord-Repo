@@ -39,6 +39,8 @@ declare global {
             onStreamingEvent?: (callback: (event: any) => void) => () => void;
             syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => void;
             navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
+            /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
+            navigateToTitle?: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => void;
             /** Screen Share Source Picker */
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
@@ -114,6 +116,7 @@ contextBridge.exposeInMainWorld('electron', {
     },
     syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' }) => ipcRenderer.send('sync-streaming-playback', data),
     navigateStreamingView: (service: 'netflix' | 'prime', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
+    navigateToTitle: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) =>

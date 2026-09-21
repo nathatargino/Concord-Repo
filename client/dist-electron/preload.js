@@ -64,6 +64,7 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     },
     syncStreamingPlayback: (data) => electron_1.ipcRenderer.send('sync-streaming-playback', data),
     navigateStreamingView: (service, url) => electron_1.ipcRenderer.send('navigate-streaming-view', { service, url }),
+    navigateToTitle: (data) => electron_1.ipcRenderer.send('navigate-to-title', data),
     getScreenSources: () => electron_1.ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data) => electron_1.ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options) => electron_1.ipcRenderer.send('show-chat-notification', options),
