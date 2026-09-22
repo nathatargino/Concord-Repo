@@ -1,6 +1,11 @@
 {
   "name": "concord",
   "version": "1.0.91",
+  "description": "Concord Desktop",
+  "author": {
+    "name": "Nathã S Targino",
+    "email": "nathatargino@users.noreply.github.com"
+  },
   "private": true,
   "scripts": {
     "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",

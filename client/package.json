@@ -1,6 +1,11 @@
 {
   "name": "client",
   "productName": "Concord",
+  "description": "Concord Desktop",
+  "author": {
+    "name": "Nathã S Targino",
+    "email": "nathatargino@users.noreply.github.com"
+  },
   "private": true,
   "version": "1.0.91",
   "main": "dist-electron/main.js",
@@ -62,7 +67,13 @@
     "afterSign": "./build/afterPack.cjs",
     "win": {
       "icon": "build/icon.ico",
-      "artifactName": "Concord-Setup.exe"
+      "artifactName": "Concord-Setup.exe",
+      "publisherName": "Nathã S Targino"
+    },
+    "nsis": {
+      "include": "build/installer.nsh",
+      "shortcutName": "Concord",
+      "uninstallDisplayName": "Concord"
     },
     "extraResources": [
       {
