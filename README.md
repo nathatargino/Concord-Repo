@@ -230,31 +230,6 @@ Os usuários podem solicitar a exclusão de suas contas ou esclarecer dúvidas s
 
 ---
 
-## 👥 Desenvolvedores & Contato
-
-<table align="center">
-  <tr>
-    <td align="center">
-      <a href="mailto:nathatargino.dev@gmail.com">
-        <img src="website/assets/natha.jpg" width="100px;" alt="Nathã Targino" style="border-radius: 50%;" /><br>
-        <sub><b>Nathã Targino</b></sub>
-      </a><br>
-      <sub>Co-Fundador & Desenvolvedor</sub><br>
-      <a href="mailto:nathatargino.dev@gmail.com">✉️ nathatargino.dev@gmail.com</a>
-    </td>
-    <td align="center">
-      <a href="mailto:pedrohabrandao12@gmail.com">
-        <img src="website/assets/pedro.jpg" width="100px;" alt="Pedro Brandão" style="border-radius: 50%;" /><br>
-        <sub><b>Pedro Brandão</b></sub>
-      </a><br>
-      <sub>Co-Fundador & Desenvolvedor</sub><br>
-      <a href="mailto:pedrohabrandao12@gmail.com">✉️ pedrohabrandao12@gmail.com</a>
-    </td>
-  </tr>
-</table>
-
----
-
 <p align="center">
   Feito com 💜 pela equipe do <strong>Concord</strong>. Todos os direitos reservados &copy; 2026.
 </p>
