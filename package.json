@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
     "electron:dev": "concurrently -k -n \"SERVER,DESKTOP\" -c \"yellow.bold,cyan.bold\" \"pnpm --filter server dev\" \"pnpm --filter client electron:dev\"",
-    "build": "pnpm --filter client build",
+    "build": "pnpm --filter server build",
     "start": "pnpm --filter server start"
   },
   "devDependencies": {

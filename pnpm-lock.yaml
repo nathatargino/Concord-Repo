@@ -129,6 +129,12 @@ importers:
       socket.io:
         specifier: ^4.7.5
         version: 4.8.3(supports-color@8.1.1)
+      tsx:
+        specifier: ^4.16.2
+        version: 4.23.12
+      typescript:
+        specifier: ^5.5.3
+        version: 5.9.3
       uuid:
         specifier: ^14.0.2
         version: 14.0.2
@@ -148,12 +154,6 @@ importers:
       '@types/uuid':
         specifier: ^11.0.0
         version: 11.0.0
-      tsx:
-        specifier: ^4.16.2
-        version: 4.23.12
-      typescript:
-        specifier: ^5.5.3
-        version: 5.9.3
 
 packages:
 
