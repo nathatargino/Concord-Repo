@@ -24,7 +24,7 @@ const IconNoVideo = () => (
 // Using Giphy API Key from .env or fallback
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
 const gf = new GiphyFetch(GIPHY_API_KEY || 'GlVGYHqc3SyCEGpo3sZa1n5aD1bZ0vE4');
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
 
 function escapeHtml(text: string): string {
   if (!text) return '';

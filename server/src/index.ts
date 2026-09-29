@@ -51,6 +51,14 @@ const corsOptions: cors.CorsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Root health check endpoint
+app.get('/', (_req, res) => {
+  res.send('🚀 Concord Server is running!');
+});
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
 // Serve static files from public folder
 app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
@@ -250,7 +258,7 @@ app.get('/room/:roomId', (req, res) => {
 });
 
 // ─── START ────────────────────────────────────────────────────────
-httpServer.listen(PORT, () => {
-  console.log(`\n🚀 Concord Server running on http://localhost:${PORT}`);
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`\n🚀 Concord Server running on http://0.0.0.0:${PORT}`);
   console.log(`   Accepting connections from: ${CLIENT_URL}\n`);
 });

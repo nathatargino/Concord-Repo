@@ -143,7 +143,7 @@ export interface SocketCallbacks {
 // ⚠️  Se web e desktop não se enxergam na mesma sala, provavelmente estão em servidores
 //      diferentes. Certifique-se de ter um .env.local com VITE_SERVER_URL=http://localhost:3001
 //      ao desenvolver localmente.
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo.onrender.com' : 'http://localhost:3001');
+const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
 console.log('[Socket] Servidor alvo:', SOCKET_URL, '| PROD:', import.meta.env.PROD, '| VITE_SERVER_URL:', import.meta.env.VITE_SERVER_URL || '(não definido)');
 const APP_SOCKET_START_TIME = Date.now();
 
