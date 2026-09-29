@@ -12,3 +12,4 @@ client/*.cjs
 client/error*.txt
 server/public/uploads/
 *.mp4
+client/public/*.exe

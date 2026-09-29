@@ -37,7 +37,8 @@ const corsOptions: cors.CorsOptions = {
       origin === CLIENT_URL ||
       origin.startsWith('http://localhost') ||
       origin.startsWith('http://127.0.0.1') ||
-      origin.includes('vercel.app')
+      origin.includes('vercel.app') ||
+      origin.includes('pages.dev')
     ) {
       callback(null, true);
     } else {
