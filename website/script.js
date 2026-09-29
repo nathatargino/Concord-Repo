@@ -281,7 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update Hero button
             if (heroCtaBtn && heroCtaText) {
-                heroCtaBtn.href = 'https://concord-olive.vercel.app/';
+                heroCtaBtn.href = 'https://concord-repo.pages.dev/';
                 heroCtaBtn.target = '_blank';
                 heroCtaText.textContent = 'Entrar no Concord';
             }

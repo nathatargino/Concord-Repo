@@ -366,7 +366,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const handleCopyInvite = () => {
     if (!room) return;
     const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-    const baseUrl = isElectron ? 'https://concord-olive.vercel.app' : window.location.origin;
+    const baseUrl = isElectron ? 'https://concord-repo.pages.dev' : window.location.origin;
     const inviteMessage = `Você foi convidado para ${(room.isServer || isServer) ? 'um servidor' : 'uma sala'} no Concord! Acesse o link abaixo para entrar:\n${baseUrl}\nCódigo de convite: ${room.code}`;
 
     const triggerSuccess = () => {

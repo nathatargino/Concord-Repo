@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://concord-olive.vercel.app/">🌐 Acessar Web App</a> •
+  <a href="https://concord-repo.pages.dev/">🌐 Acessar Web App</a> •
   <a href="https://github.com/nathatargino/Concord-Repo/releases">💻 Baixar para Windows</a> •
   <a href="#-recursos-principais">✨ Recursos</a> •
   <a href="#-como-executar-o-projeto">🚀 Como Executar</a> •

@@ -821,7 +821,7 @@ app.whenReady().then(async () => {
                 // Only spoof Referer for the iframe HTML itself.
                 // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
                 if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
-                    details.requestHeaders['Referer'] = 'https://concord-olive.vercel.app/';
+                    details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
                 }
                 
                 // Always override UA to Chrome for YouTube requests to avoid Electron blocks

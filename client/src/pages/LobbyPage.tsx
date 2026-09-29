@@ -93,7 +93,7 @@ export const LobbyPage: React.FC = () => {
 
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
-        ? 'https://concord-olive.vercel.app' 
+        ? 'https://concord-repo.pages.dev' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${roomId}?code=${generatedCode}`;
       const inviteMessage = `Você foi convidado para uma sala no Concord! Acesse o link abaixo para entrar:\n${inviteUrl}`;
@@ -261,7 +261,7 @@ export const LobbyPage: React.FC = () => {
 
       const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
       const baseUrl = isElectron 
-        ? 'https://concord-olive.vercel.app' 
+        ? 'https://concord-repo.pages.dev' 
         : window.location.origin;
       const inviteUrl = `${baseUrl}/#/room/${createdServer?.id || serverId}?code=${generatedCode}&server=1`;
       const inviteMessage = `Você foi convidado para um servidor no Concord! Acesse o link abaixo para entrar:\n${inviteUrl}`;
