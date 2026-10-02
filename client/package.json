@@ -7,7 +7,7 @@
     "email": "nathatargino@users.noreply.github.com"
   },
   "private": true,
-  "version": "1.0.100",
+  "version": "1.0.101",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -93,7 +93,9 @@
       "publisherDisplayName": "Nathã S Targino",
       "displayName": "Concord - Voice &amp; Chat",
       "applicationId": "App",
-      "backgroundColor": "#1e1f22"
+      "backgroundColor": "#1e1f22",
+      "minVersion": "10.0.17763.0",
+      "maxVersionTested": "10.0.22621.0"
     },
     "extraResources": [
       {
