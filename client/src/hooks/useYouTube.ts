@@ -384,13 +384,13 @@ export function useYouTube(
       }
       container.appendChild(div);
 
-      const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
-      // In Electron the app runs at http://127.0.0.1:PORT.
-      // Passing origin: http://127.0.0.1 causes YouTube to reject restricted videos with Error 150.
-      // When origin is omitted in Electron, YouTube allows the embed and uses '*' as postMessage target.
-      const ytOrigin = isElectron ? undefined : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
+      // Always pass window.location.origin so YouTube sends postMessages targeted
+      // at this window's origin (e.g. http://127.0.0.1:PORT or http://localhost:5173).
+      // If omitted, YouTube defaults targetOrigin to document.referrer which causes
+      // DOMWindow origin mismatch and triggers Player Error 152.
+      const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
-      console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
+      console.log('[YT] Creating player, origin=', ytOrigin);
 
       let isResolved = false;
       const readyTimeout = setTimeout(() => {
@@ -517,13 +517,17 @@ export function useYouTube(
           onError: (event: any) => {
             console.error('[YT] Player error:', event.data);
             const code = event.data;
-            let msg = 'Erro ao reproduzir vídeo do YouTube.';
+            let msg = `Erro ao reproduzir vídeo do YouTube (código ${code}).`;
             if (code === 150 || code === 101) {
               msg = 'Este vídeo não permite reprodução incorporada fora do YouTube.';
+            } else if (code === 152) {
+              msg = 'Erro de comunicação com o player do YouTube (código 152).';
             } else if (code === 100) {
               msg = 'Vídeo do YouTube não encontrado ou privado.';
             } else if (code === 2) {
               msg = 'ID do vídeo inválido.';
+            } else if (code === 5) {
+              msg = 'Erro no player HTML5 do YouTube.';
             }
             notifyInChat(msg);
             useAppStore.getState().setIsPlaying(false);

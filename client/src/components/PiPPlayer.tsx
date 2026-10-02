@@ -248,8 +248,7 @@ export const PiPPlayer: React.FC = () => {
       }
 
       try {
-        const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
-        const ytOrigin = isElectron ? undefined : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
+        const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
 
         playerRef.current = new (window as any).YT.Player('pip-yt-player', {
           videoId,

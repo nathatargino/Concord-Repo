@@ -159,7 +159,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 const appStartTime = Date.now();
 
-const startHidden = process.argv.includes('--hidden') || (app.getLoginItemSettings ? app.getLoginItemSettings().wasOpenedAsHidden : false);
+const startHidden = !isDev && process.argv.includes('--hidden');
 
 function showMainWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -282,8 +282,8 @@ function startLocalServer(): Promise<number> {
     });
 }
 
-function createWindow(showWindow = !startHidden) {
-    fs.appendFileSync(logFile, 'createWindow called!\n');
+function createWindow(showWindow = !process.argv.includes('--hidden')) {
+    fs.appendFileSync(logFile, `createWindow called! isDev=${isDev}, showWindow=${showWindow}\n`);
     const appIcon = getAppIconPath();
     mainWindow = new BrowserWindow({
         width: 1200,
@@ -304,7 +304,10 @@ function createWindow(showWindow = !startHidden) {
         icon: appIcon,
     });
 
-    mainWindow.maximize();
+    if (showWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+    }
 
     if (appIcon && fs.existsSync(appIcon)) {
         try {
@@ -330,6 +333,9 @@ function createWindow(showWindow = !startHidden) {
             mainWindow?.maximize();
             mainWindow?.show();
             mainWindow?.focus();
+            if (isDev || process.argv.includes('--inspect') || process.argv.includes('--dev')) {
+                mainWindow?.webContents.openDevTools();
+            }
         }
         
         if (pendingDeepLink) {
@@ -404,6 +410,9 @@ function createWindow(showWindow = !startHidden) {
     mainWindow!.webContents.on('before-input-event', (_e, input) => {
         if (input.key === 'Escape' && isStreamingFullscreen) {
             leaveStreamingFullscreen();
+        }
+        if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+            mainWindow?.webContents.toggleDevTools();
         }
     });
 
@@ -843,17 +852,10 @@ app.whenReady().then(async () => {
             const isGiphy = url.includes('giphy.com');
 
             if (isYouTube) {
-                // If it's the iframe itself (mainFrame or subFrame)
+                // Only spoof Referer for the iframe HTML itself.
+                // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
                 if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
-                    // Set Referer to https://www.youtube.com/ so YouTube treats the embed as internal
-                    // or allowed, bypassing the "playback on other websites disabled" error 150/101.
-                    details.requestHeaders['Referer'] = 'https://www.youtube.com/';
-                    // Also clear or spoof Origin if it was 127.0.0.1 or local server
-                    if (details.requestHeaders['Origin']) {
-                        details.requestHeaders['Origin'] = 'https://www.youtube.com';
-                    }
-                } else if (details.requestHeaders['Origin'] && details.requestHeaders['Origin'].includes('127.0.0.1')) {
-                    details.requestHeaders['Origin'] = 'https://www.youtube.com';
+                    details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
                 }
                 
                 // Always override UA to Chrome for YouTube requests to avoid Electron blocks
