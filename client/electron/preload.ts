@@ -4,7 +4,10 @@ declare global {
     interface Window {
         electron: {
             getAppVersion: () => Promise<string>;
+            isWindowsStore?: () => Promise<boolean>;
             checkForUpdates: () => void;
+            installUpdate?: () => void;
+            onUpdateDownloaded?: (callback: (version: string) => void) => () => void;
             onUpdateMessage: (callback: (message: string) => void) => () => void;
             minimize: () => void;
             maximize: () => void;
@@ -55,7 +58,16 @@ declare global {
 
 contextBridge.exposeInMainWorld('electron', {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    isWindowsStore: () => ipcRenderer.invoke('is-windows-store'),
     checkForUpdates: () => ipcRenderer.send('check-for-updates'),
+    installUpdate: () => ipcRenderer.send('install-update'),
+    onUpdateDownloaded: (callback: (version: string) => void) => {
+        const subscription = (_event: any, version: string) => callback(version);
+        ipcRenderer.on('update-downloaded', subscription);
+        return () => {
+            ipcRenderer.removeListener('update-downloaded', subscription);
+        };
+    },
     onUpdateMessage: (callback: (message: string) => void) => {
         const subscription = (_event: any, message: string) => callback(message);
         ipcRenderer.on('update-message', subscription);

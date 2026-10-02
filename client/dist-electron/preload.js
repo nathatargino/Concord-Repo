@@ -3,7 +3,16 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
 electron_1.contextBridge.exposeInMainWorld('electron', {
     getAppVersion: () => electron_1.ipcRenderer.invoke('get-app-version'),
+    isWindowsStore: () => electron_1.ipcRenderer.invoke('is-windows-store'),
     checkForUpdates: () => electron_1.ipcRenderer.send('check-for-updates'),
+    installUpdate: () => electron_1.ipcRenderer.send('install-update'),
+    onUpdateDownloaded: (callback) => {
+        const subscription = (_event, version) => callback(version);
+        electron_1.ipcRenderer.on('update-downloaded', subscription);
+        return () => {
+            electron_1.ipcRenderer.removeListener('update-downloaded', subscription);
+        };
+    },
     onUpdateMessage: (callback) => {
         const subscription = (_event, message) => callback(message);
         electron_1.ipcRenderer.on('update-message', subscription);

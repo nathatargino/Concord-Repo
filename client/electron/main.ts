@@ -22,6 +22,11 @@ if (process.platform === 'win32') {
     app.setAppUserModelId('com.concord.desktop');
 }
 const isDev = !app.isPackaged;
+const isWindowsStore = Boolean(
+    (process as any).windowsStore ||
+    process.execPath.toLowerCase().includes('windowsapps') ||
+    process.env.STORE_APP === 'true'
+);
 
 function getAppIconPath(): string {
     const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
@@ -433,6 +438,14 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
 function initAutoUpdater(window: BrowserWindowType) {
     if (isDev) return;
 
+    if (isWindowsStore) {
+        fs.appendFileSync(logFile, 'Running under Microsoft Store / WindowsApps. autoUpdater disabled.\n');
+        if (window && !window.isDestroyed()) {
+            window.webContents.send('update-message', 'Atualizações gerenciadas automaticamente pela Microsoft Store.');
+        }
+        return;
+    }
+
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
 
@@ -465,19 +478,16 @@ function initAutoUpdater(window: BrowserWindowType) {
     });
     autoUpdater.on('update-downloaded', (info) => {
         if (window && !window.isDestroyed()) {
-            window.webContents.send('update-message', `Versão ${info.version || ''} baixada! Reiniciando para instalar...`);
+            window.webContents.send('update-downloaded', info.version || '');
+            window.webContents.send('update-message', `Versão ${info.version || ''} baixada! Clique em "Reiniciar para Atualizar".`);
         }
         
         try {
             new Notification({
                 title: 'Nova atualização pronta para instalar',
-                body: `A versão ${info.version || ''} do Concord foi baixada e será instalada automaticamente.`
+                body: `A versão ${info.version || ''} do Concord foi baixada e está pronta para ser instalada.`
             }).show();
         } catch {}
-
-        setTimeout(() => {
-            autoUpdater.quitAndInstall();
-        }, 4000);
     });
 
     autoUpdater.checkForUpdates().catch(err => {
@@ -1139,21 +1149,41 @@ ipcMain.on('pip-move', (_event, { deltaX, deltaY }) => {
     }
 });
 
+ipcMain.handle('is-windows-store', () => isWindowsStore);
+
 ipcMain.on('check-for-updates', () => {
-    if (!isDev) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('update-message', 'Verificando atualizações...');
-        }
-        autoUpdater.checkForUpdates().catch((err) => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('update-message', 'Erro ao verificar atualizações: ' + (err?.message || err));
-            }
-        });
-    } else {
+    if (isDev) {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('update-message', 'Atualizações desabilitadas no modo de desenvolvimento.');
         }
+        return;
     }
+    if (isWindowsStore) {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-message', 'Atualizações gerenciadas automaticamente pela Microsoft Store.');
+        }
+        return;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-message', 'Verificando atualizações...');
+    }
+    autoUpdater.checkForUpdates().catch((err) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-message', 'Erro ao verificar atualizações: ' + (err?.message || err));
+        }
+    });
+});
+
+ipcMain.on('install-update', () => {
+    if (isWindowsStore || isDev) return;
+    fs.appendFileSync(logFile, 'install-update called. Setting isQuitting = true and quitting to install.\n');
+    isQuitting = true;
+    try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.destroy();
+        }
+    } catch (e) {}
+    autoUpdater.quitAndInstall(false, true);
 });
 
 ipcMain.on('pip-action', (event, action, payload) => {

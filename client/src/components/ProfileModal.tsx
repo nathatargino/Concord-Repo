@@ -75,8 +75,10 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [isLeaving, setIsLeaving] = useState(false);
   const [showLeaveConfirmModal, setShowLeaveConfirmModal] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [isWindowsStore, setIsWindowsStore] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -94,20 +96,32 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
         (window as any).electron.setModalActive(true);
       }
       (window as any).electron.getAppVersion?.().then((v: string) => setAppVersion(v));
+      (window as any).electron.isWindowsStore?.().then((isStore: boolean) => setIsWindowsStore(Boolean(isStore)));
       const unsub = (window as any).electron.onUpdateMessage?.((msg: string) => {
         setUpdateMessage(msg);
         setIsCheckingUpdates(false);
-        if (msg.includes('encontrada') || msg.includes('disponível') || msg.includes('baixada') || msg.includes('Baixando')) {
-          setUpdateAvailable(true);
-        } else if (msg.includes('atualizado')) {
+        if (msg.includes('baixada') || msg.includes('pronta para') || msg.includes('Reiniciar')) {
+          setUpdateDownloaded(true);
           setUpdateAvailable(false);
+        } else if (msg.includes('encontrada') || msg.includes('disponível') || msg.includes('Baixando')) {
+          setUpdateAvailable(true);
+          setUpdateDownloaded(false);
+        } else if (msg.includes('atualizado') || msg.includes('gerenciadas')) {
+          setUpdateAvailable(false);
+          setUpdateDownloaded(false);
         }
+      });
+      const unsubDownloaded = (window as any).electron.onUpdateDownloaded?.((_ver: string) => {
+        setUpdateDownloaded(true);
+        setUpdateAvailable(false);
+        setIsCheckingUpdates(false);
       });
       return () => {
         if ((window as any).electron.setModalActive) {
           (window as any).electron.setModalActive(false);
         }
         unsub?.();
+        unsubDownloaded?.();
       };
     }
   }, []);
@@ -956,21 +970,36 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
             {appVersion && (
               <div className={styles.systemSection}>
                 <div className={styles.systemInfo}>
-                  <span className={styles.systemLabel}>Concord Desktop v{appVersion}</span>
+                  <span className={styles.systemLabel}>
+                    Concord Desktop v{appVersion} {isWindowsStore ? '(Microsoft Store)' : ''}
+                  </span>
                   <span className={styles.systemStatusText}>
-                    {updateMessage || (updateAvailable ? 'Nova versão disponível!' : 'Aplicativo atualizado')}
+                    {isWindowsStore
+                      ? 'Atualizações gerenciadas automaticamente pela Microsoft Store'
+                      : (updateMessage || (updateDownloaded ? 'Atualização pronta para instalar!' : updateAvailable ? 'Baixando atualização...' : 'Aplicativo atualizado'))}
                   </span>
                 </div>
-                {updateAvailable ? (
+                {isWindowsStore ? null : updateDownloaded ? (
                   <button
                     type="button"
                     className={styles.updateAppBtn}
                     onClick={() => {
-                      (window as any).electron?.checkForUpdates();
+                      (window as any).electron?.installUpdate?.();
                     }}
+                    title="Reiniciar o Concord e aplicar a nova versão"
                   >
-                    <i className="fa-solid fa-arrow-up-from-bracket"></i>
-                    <span>Atualizar App</span>
+                    <i className="fa-solid fa-rotate-right"></i>
+                    <span>Reiniciar para Atualizar</span>
+                  </button>
+                ) : updateAvailable ? (
+                  <button
+                    type="button"
+                    className={styles.updateAppBtn}
+                    disabled
+                    style={{ opacity: 0.7, cursor: 'not-allowed' }}
+                  >
+                    <i className="fa-solid fa-circle-notch fa-spin"></i>
+                    <span>Baixando atualização...</span>
                   </button>
                 ) : (
                   <button
