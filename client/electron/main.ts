@@ -861,6 +861,30 @@ app.whenReady().then(async () => {
         }
     );
 
+    // Fix CORS/Origin for Giphy API requests in Electron
+    // The Giphy API rejects requests from Electron's origin (app:// or file://) with 403.
+    // We spoof the Origin and Referer to the production web URL so Giphy accepts the request.
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+        { urls: ['https://api.giphy.com/*', 'https://media.giphy.com/*', 'https://media0.giphy.com/*', 'https://media1.giphy.com/*', 'https://media2.giphy.com/*', 'https://media3.giphy.com/*', 'https://media4.giphy.com/*'] },
+        (details, callback) => {
+            details.requestHeaders['Origin'] = 'https://concord-repo.pages.dev';
+            details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
+            details.requestHeaders['User-Agent'] = CHROME_UA;
+            callback({ requestHeaders: details.requestHeaders });
+        }
+    );
+
+    // Allow Giphy API responses through CORS in Electron
+    session.defaultSession.webRequest.onHeadersReceived(
+        { urls: ['https://api.giphy.com/*', 'https://media.giphy.com/*', 'https://media0.giphy.com/*', 'https://media1.giphy.com/*', 'https://media2.giphy.com/*', 'https://media3.giphy.com/*', 'https://media4.giphy.com/*'] },
+        (details, callback) => {
+            const headers = { ...details.responseHeaders };
+            headers['access-control-allow-origin'] = ['*'];
+            delete headers['access-control-allow-credentials'];
+            callback({ responseHeaders: headers });
+        }
+    );
+
     createTray();
     setupAutoLaunch();
 

@@ -193,14 +193,23 @@ export const useAppStore = create<AppState>((set) => ({
   addMessage: (msg) =>
     set((s) => {
       const last = s.messages[s.messages.length - 1];
-      if (
-        last &&
-        last.userName === msg.userName &&
-        last.message === msg.message &&
-        last.channelId === msg.channelId &&
-        last.type === msg.type
-      ) {
-        return s;
+      // Só bloqueia duplicatas verdadeiras (retransmissões do socket) que chegam
+      // dentro de uma janela de 800ms. Mensagens iguais enviadas após esse intervalo
+      // são legítimas (usuário enviou a mesma coisa intencionalmente).
+      if (last) {
+        const lastTs = last.id ? parseInt(last.id.split('-')[1] || '0', 10) : 0;
+        const msgTs = msg.id ? parseInt(msg.id.split('-')[1] || '0', 10) : 0;
+        const withinWindow = lastTs > 0 && msgTs > 0 && (msgTs - lastTs) < 800;
+        if (
+          withinWindow &&
+          last.userName === msg.userName &&
+          last.message === msg.message &&
+          last.channelId === msg.channelId &&
+          last.type === msg.type &&
+          last.url === msg.url
+        ) {
+          return s;
+        }
       }
       return { messages: [...s.messages.slice(-500), msg] };
     }),

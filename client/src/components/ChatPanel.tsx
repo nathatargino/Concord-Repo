@@ -1011,10 +1011,16 @@ export function ChatPanel({
   };
 
   const fetchGifs = (offset: number) => {
-    if (giphySearch.trim()) {
-      return gf.search(giphySearch, { offset, limit: 10 });
-    }
-    return gf.trending({ offset, limit: 10 });
+    const fetcher = giphySearch.trim()
+      ? gf.search(giphySearch, { offset, limit: 10 })
+      : gf.trending({ offset, limit: 10 });
+
+    return fetcher.catch((err: unknown) => {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error('[Giphy] Erro ao buscar GIFs:', errMsg, err);
+      // Re-lança para o componente Grid exibir o estado de erro
+      throw err;
+    });
   };
 
   return (
