@@ -110,11 +110,14 @@ jobs:
           EXE=$(find client/release -maxdepth 1 -name "*.exe" | head -1)
           BLOCKMAP=$(find client/release -maxdepth 1 -name "*.exe.blockmap" | head -1)
           LATESTYML=$(find client/release -maxdepth 1 -name "latest.yml" | head -1)
+          MSIX=$(find client/release -maxdepth 1 \( -name "*.msix" -o -name "*.appx" -o -name "*.msixbundle" -o -name "*.appxbundle" \) | head -1)
 
           echo "EXE: $EXE"
           echo "BLOCKMAP: $BLOCKMAP"
           echo "LATEST.YML: $LATESTYML"
+          echo "MSIX: $MSIX"
 
           [ -n "$EXE" ]       && upload_with_retry "$EXE"
           [ -n "$BLOCKMAP" ]  && upload_with_retry "$BLOCKMAP"
           [ -n "$LATESTYML" ] && upload_with_retry "$LATESTYML"
+          [ -n "$MSIX" ]      && upload_with_retry "$MSIX"

@@ -7,7 +7,7 @@
     "email": "nathatargino@users.noreply.github.com"
   },
   "private": true,
-  "version": "1.0.98",
+  "version": "1.0.99",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -65,14 +65,35 @@
     },
     "afterPack": "./build/afterPack.cjs",
     "afterSign": "./build/afterPack.cjs",
+    "protocols": [
+      {
+        "name": "Concord",
+        "schemes": [
+          "concord"
+        ]
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
-      "artifactName": "Concord-Setup.exe"
+      "target": [
+        "nsis",
+        "appx"
+      ]
     },
     "nsis": {
+      "artifactName": "Concord-Setup.exe",
       "include": "build/installer.nsh",
       "shortcutName": "Concord",
       "uninstallDisplayName": "Concord"
+    },
+    "appx": {
+      "artifactName": "Concord-Store.msix",
+      "identityName": "NathSTargino.Concord-VoiceChat",
+      "publisher": "CN=23A8D0D4-5602-4BD4-B2DB-B1D23E5F8436",
+      "publisherDisplayName": "Nathã S Targino",
+      "displayName": "Concord - Voice & Chat",
+      "applicationId": "App",
+      "backgroundColor": "#1e1f22"
     },
     "extraResources": [
       {
