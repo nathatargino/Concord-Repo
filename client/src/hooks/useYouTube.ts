@@ -385,8 +385,10 @@ export function useYouTube(
       container.appendChild(div);
 
       const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
-      // Always pass the current window's origin to YouTube so it knows where to send postMessages.
-      const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
+      // In Electron the app runs at http://127.0.0.1:PORT.
+      // Passing origin: http://127.0.0.1 causes YouTube to reject restricted videos with Error 150.
+      // When origin is omitted in Electron, YouTube allows the embed and uses '*' as postMessage target.
+      const ytOrigin = isElectron ? undefined : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
 
       console.log('[YT] Creating player, isElectron=', isElectron, 'origin=', ytOrigin);
 
@@ -428,8 +430,11 @@ export function useYouTube(
              console.log('[YT] onReady fired! player=', !!event.target);
              try {
                const iframe = playerRef.current?.getIframe?.();
-               if (iframe && !/autoplay/.test(iframe.getAttribute('allow') || '')) {
-                 iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+               if (iframe) {
+                 iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+                 if (!/autoplay/.test(iframe.getAttribute('allow') || '')) {
+                   iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+                 }
                }
                // Keep placeholder invisible unless there is an actual track
                if (iframe && !useAppStore.getState().currentVideoId) {

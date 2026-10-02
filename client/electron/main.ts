@@ -809,78 +809,107 @@ app.whenReady().then(async () => {
     session.defaultSession.setUserAgent(CHROME_UA);
     fs.appendFileSync(logFile, `[Main] Session UA set to: ${CHROME_UA}\n`);
 
-    // Fix CORS/Origin for YouTube iframes
-    // Electron sends requests with Origin: http://127.0.0.1:PORT which YouTube blocks/mutes.
-    // We spoof it to the production URL so YouTube treats the embed as legitimate.
+    // Single unified filter for webRequest handlers in defaultSession
+    // Note: Electron only allows ONE listener per webRequest event on a session.
+    // Registering multiple listeners overwrites previous ones!
+    const unifiedRequestFilter = {
+        urls: [
+            'https://youtube.com/*',
+            'https://*.youtube.com/*',
+            'https://youtube-nocookie.com/*',
+            'https://*.youtube-nocookie.com/*',
+            'https://ytimg.com/*',
+            'https://*.ytimg.com/*',
+            'https://googlevideo.com/*',
+            'https://*.googlevideo.com/*',
+            'https://ggpht.com/*',
+            'https://*.ggpht.com/*',
+            'https://api.giphy.com/*',
+            'https://*.giphy.com/*',
+            'https://giphy.com/*'
+        ]
+    };
+
+    // Unified onBeforeSendHeaders: handles both YouTube and Giphy headers
     session.defaultSession.webRequest.onBeforeSendHeaders(
-        { urls: ['https://*.youtube.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*', 'https://*.ggpht.com/*'] },
+        unifiedRequestFilter,
         (details, callback) => {
-            const isYouTube = details.url.includes('youtube.com') || details.url.includes('ytimg.com') || details.url.includes('googlevideo.com') || details.url.includes('ggpht.com');
+            const url = details.url;
+            const isYouTube = url.includes('youtube.com') ||
+                              url.includes('youtube-nocookie.com') ||
+                              url.includes('ytimg.com') ||
+                              url.includes('googlevideo.com') ||
+                              url.includes('ggpht.com');
+            const isGiphy = url.includes('giphy.com');
 
             if (isYouTube) {
-                // Only spoof Referer for the iframe HTML itself.
-                // Do not spoof for xhr/fetch, as it breaks YouTube's internal API CSRF checks (403 Forbidden).
+                // If it's the iframe itself (mainFrame or subFrame)
                 if (details.resourceType === 'subFrame' || details.resourceType === 'mainFrame') {
-                    details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
+                    // Set Referer to https://www.youtube.com/ so YouTube treats the embed as internal
+                    // or allowed, bypassing the "playback on other websites disabled" error 150/101.
+                    details.requestHeaders['Referer'] = 'https://www.youtube.com/';
+                    // Also clear or spoof Origin if it was 127.0.0.1 or local server
+                    if (details.requestHeaders['Origin']) {
+                        details.requestHeaders['Origin'] = 'https://www.youtube.com';
+                    }
+                } else if (details.requestHeaders['Origin'] && details.requestHeaders['Origin'].includes('127.0.0.1')) {
+                    details.requestHeaders['Origin'] = 'https://www.youtube.com';
                 }
                 
                 // Always override UA to Chrome for YouTube requests to avoid Electron blocks
                 details.requestHeaders['User-Agent'] = CHROME_UA;
-                fs.appendFileSync(logFile, `[YT-req] ${details.url.substring(0, 80)}\n`);
+                fs.appendFileSync(logFile, `[YT-req] [${details.resourceType}] ${details.url.substring(0, 80)}\n`);
+            } else if (isGiphy) {
+                details.requestHeaders['Origin'] = 'https://concord-repo.pages.dev';
+                details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
+                details.requestHeaders['User-Agent'] = CHROME_UA;
             }
+
             callback({ requestHeaders: details.requestHeaders });
         }
     );
 
-    // Strip YouTube response headers that block iframe audio/autoplay in Electron
+    // Unified onHeadersReceived: handles both YouTube and Giphy CORS/security headers
     session.defaultSession.webRequest.onHeadersReceived(
-        { urls: ['https://*.youtube.com/*', 'https://*.youtube-nocookie.com/*', 'https://*.ytimg.com/*', 'https://*.googlevideo.com/*'] },
+        unifiedRequestFilter,
         (details, callback) => {
-            const headers = { ...details.responseHeaders };
-            // Remove X-Frame-Options so the YT iframe embeds without restriction
-            delete headers['x-frame-options'];
-            delete headers['X-Frame-Options'];
-            // Remove CSP that blocks autoplay / media
-            delete headers['content-security-policy'];
-            delete headers['Content-Security-Policy'];
+            const url = details.url;
+            const isYouTube = url.includes('youtube.com') ||
+                              url.includes('youtube-nocookie.com') ||
+                              url.includes('ytimg.com') ||
+                              url.includes('googlevideo.com') ||
+                              url.includes('ggpht.com');
+            const isGiphy = url.includes('giphy.com');
 
-            if (details.url.includes('googlevideo.com')) {
-                // googlevideo sets its own Access-Control-Allow-Origin matching the request origin with credentials: 'include'.
-                // Overriding it with wildcard '*' violates CORS specifications and causes Chromium to block video/audio streaming chunks!
-                const origin = details.referrer && details.referrer.includes('youtube-nocookie.com')
-                    ? 'https://www.youtube-nocookie.com'
-                    : 'https://www.youtube.com';
-                if (!headers['access-control-allow-origin'] || headers['access-control-allow-origin'].includes('*')) {
-                    headers['access-control-allow-origin'] = [origin];
-                    headers['access-control-allow-credentials'] = ['true'];
+            const headers = { ...details.responseHeaders };
+
+            if (isYouTube) {
+                // Remove X-Frame-Options and Content-Security-Policy (any casing) so YT iframe embeds freely
+                for (const key of Object.keys(headers)) {
+                    const lower = key.toLowerCase();
+                    if (lower === 'x-frame-options' || lower === 'content-security-policy') {
+                        delete headers[key];
+                    }
                 }
-            } else {
+
+                if (url.includes('googlevideo.com')) {
+                    // googlevideo sets its own Access-Control-Allow-Origin matching the request origin with credentials: 'include'.
+                    // Overriding it with wildcard '*' violates CORS specifications and causes Chromium to block video/audio streaming chunks!
+                    const origin = details.referrer && details.referrer.includes('youtube-nocookie.com')
+                        ? 'https://www.youtube-nocookie.com'
+                        : 'https://www.youtube.com';
+                    if (!headers['access-control-allow-origin'] || headers['access-control-allow-origin'].includes('*')) {
+                        headers['access-control-allow-origin'] = [origin];
+                        headers['access-control-allow-credentials'] = ['true'];
+                    }
+                } else {
+                    headers['access-control-allow-origin'] = ['*'];
+                }
+            } else if (isGiphy) {
                 headers['access-control-allow-origin'] = ['*'];
+                delete headers['access-control-allow-credentials'];
             }
-            callback({ responseHeaders: headers });
-        }
-    );
 
-    // Fix CORS/Origin for Giphy API requests in Electron
-    // The Giphy API rejects requests from Electron's origin (app:// or file://) with 403.
-    // We spoof the Origin and Referer to the production web URL so Giphy accepts the request.
-    session.defaultSession.webRequest.onBeforeSendHeaders(
-        { urls: ['https://api.giphy.com/*', 'https://*.giphy.com/*', 'https://giphy.com/*'] },
-        (details, callback) => {
-            details.requestHeaders['Origin'] = 'https://concord-repo.pages.dev';
-            details.requestHeaders['Referer'] = 'https://concord-repo.pages.dev/';
-            details.requestHeaders['User-Agent'] = CHROME_UA;
-            callback({ requestHeaders: details.requestHeaders });
-        }
-    );
-
-    // Allow Giphy API responses through CORS in Electron
-    session.defaultSession.webRequest.onHeadersReceived(
-        { urls: ['https://api.giphy.com/*', 'https://*.giphy.com/*', 'https://giphy.com/*'] },
-        (details, callback) => {
-            const headers = { ...details.responseHeaders };
-            headers['access-control-allow-origin'] = ['*'];
-            delete headers['access-control-allow-credentials'];
             callback({ responseHeaders: headers });
         }
     );

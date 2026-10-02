@@ -248,7 +248,8 @@ export const PiPPlayer: React.FC = () => {
       }
 
       try {
-        const ytOrigin = window.location.protocol !== 'file:' ? window.location.origin : undefined;
+        const isElectron = !!(window as any).electron || /electron/i.test(navigator.userAgent);
+        const ytOrigin = isElectron ? undefined : (window.location.protocol !== 'file:' ? window.location.origin : undefined);
 
         playerRef.current = new (window as any).YT.Player('pip-yt-player', {
           videoId,
@@ -269,8 +270,11 @@ export const PiPPlayer: React.FC = () => {
             onReady: (e: any) => {
               try {
                 const iframe = playerRef.current?.getIframe?.();
-                if (iframe && !/autoplay/.test(iframe.getAttribute('allow') || '')) {
-                  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+                if (iframe) {
+                  iframe.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+                  if (!/autoplay/.test(iframe.getAttribute('allow') || '')) {
+                    iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+                  }
                 }
               } catch {}
               try {
