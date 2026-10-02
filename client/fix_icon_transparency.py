@@ -27,7 +27,7 @@ def remove_white_bg(img, threshold=240):
     for y in range(height):
         for x in range(width):
             r, g, b, a = data[x, y]
-            if r >= threshold and g >= threshold and b >= threshold:
+            if a > 0 and r >= threshold and g >= threshold and b >= threshold:
                 data[x, y] = (r, g, b, 0)
     return img
 
@@ -35,11 +35,7 @@ def remove_white_bg(img, threshold=240):
 def make_ico(img, dest):
     """Save image as a multi-resolution .ico file."""
     sizes = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
-    icons = []
-    for size in sizes:
-        resized = img.resize(size, Image.LANCZOS)
-        icons.append(resized)
-    icons[0].save(dest, format='ICO', sizes=sizes, append_images=icons[1:])
+    img.save(dest, format='ICO', sizes=sizes)
     print('  OK ICO salvo: ' + dest)
 
 
