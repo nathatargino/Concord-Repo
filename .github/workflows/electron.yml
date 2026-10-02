@@ -60,6 +60,7 @@ jobs:
         env:
           EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME || 'concord' }}
           EVS_PASSWD: ${{ secrets.EVS_PASSWD || 'Chosen@123' }}
+          VITE_GIPHY_API_KEY: ${{ secrets.VITE_GIPHY_API_KEY || 'gD2L1Yb68ZOGLLvErUw4BMuyLIdgyVzx' }}
         run: pnpm --filter client run electron:ci
 
       - name: List release artifacts

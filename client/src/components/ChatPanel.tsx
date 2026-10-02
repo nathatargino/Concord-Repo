@@ -22,8 +22,8 @@ const IconNoVideo = () => (
 );
 
 // Using Giphy API Key from .env or fallback
-const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || '';
-const gf = new GiphyFetch(GIPHY_API_KEY || 'GlVGYHqc3SyCEGpo3sZa1n5aD1bZ0vE4');
+const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || 'gD2L1Yb68ZOGLLvErUw4BMuyLIdgyVzx';
+const gf = new GiphyFetch(GIPHY_API_KEY);
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
 
 function escapeHtml(text: string): string {
@@ -127,6 +127,7 @@ export function ChatPanel({
   const [input, setInput] = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
   const [giphySearch, setGiphySearch] = useState('');
+  const [giphyError, setGiphyError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef<number>(0);
@@ -1011,6 +1012,7 @@ export function ChatPanel({
   };
 
   const fetchGifs = (offset: number) => {
+    setGiphyError(null);
     const fetcher = giphySearch.trim()
       ? gf.search(giphySearch, { offset, limit: 10 })
       : gf.trending({ offset, limit: 10 });
@@ -1018,6 +1020,7 @@ export function ChatPanel({
     return fetcher.catch((err: unknown) => {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error('[Giphy] Erro ao buscar GIFs:', errMsg, err);
+      setGiphyError(errMsg);
       // Re-lança para o componente Grid exibir o estado de erro
       throw err;
     });
@@ -1347,15 +1350,41 @@ export function ChatPanel({
                   </button>
                 </div>
                 <div className={styles.giphyGridContainer}>
-                  <Grid
-                    key={giphySearch}
-                    width={300}
-                    columns={2}
-                    fetchGifs={fetchGifs}
-                    onGifClick={handleSelectGif}
-                    noLink
-                    hideAttribution
-                  />
+                  {giphyError ? (
+                    <div style={{ padding: '24px 16px', textAlign: 'center', color: '#f87171', fontSize: '13px' }}>
+                      <p style={{ margin: '0 0 8px 0', fontWeight: 500 }}>Erro ao carregar GIFs.</p>
+                      <p style={{ margin: '0 0 12px 0', fontSize: '11px', color: '#94a3b8' }}>{giphyError}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGiphyError(null);
+                          setGiphySearch(s => s ? s : ' ');
+                        }}
+                        style={{
+                          padding: '6px 14px',
+                          background: '#5865F2',
+                          color: '#fff',
+                          borderRadius: '4px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        Tentar novamente
+                      </button>
+                    </div>
+                  ) : (
+                    <Grid
+                      key={giphySearch}
+                      width={300}
+                      columns={2}
+                      fetchGifs={fetchGifs}
+                      onGifClick={handleSelectGif}
+                      noLink
+                      hideAttribution
+                    />
+                  )}
                 </div>
               </div>
             )}
