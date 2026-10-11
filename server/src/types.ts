@@ -1,3 +1,10 @@
+export interface CustomRole {
+  name: string;
+  emoji: string;
+  color?: string;
+  isAdmin?: boolean;
+}
+
 export interface UserInfo {
   id: string;
   persistentId?: string;
@@ -8,6 +15,7 @@ export interface UserInfo {
   micMuted: boolean;
   callMuted: boolean;
   role?: 'owner' | 'sub_owner' | 'member';
+  customRole?: CustomRole | null;
   hasAnnouncedJoin?: boolean;
 }
 
@@ -96,35 +104,51 @@ export interface ClientToServerEvents {
   admin_kick_voice: (targetId: string) => void;
   admin_kick_room: (targetId: string) => void;
   admin_transfer_role: (targetId: string) => void;
+  set_member_custom_role: (payload: {
+    roomId: string;
+    targetUserId: string;
+    targetUsername: string;
+    customRole: CustomRole | null;
+  }) => void;
   destroy_empty_server: (serverId: string) => void;
   watch_session_start: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
   watch_session_end: () => void;
   watch_session_query: () => void;
   watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
+  message_reaction: (messageId: string, emoji: string) => void;
 }
 
 // Server → Client events
 export interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
   server_members: (members: any[]) => void;
+  message_reaction: (messageId: string, emoji: string, userName: string) => void;
   receive_message: (
     userName: string,
     message: string,
     timestamp: string,
-    type?: 'text' | 'image' | 'giphy' | 'file',
+    type?: 'text' | 'image' | 'giphy' | 'file' | 'system',
     url?: string,
     filename?: string,
     channelId?: string,
     avatarUrl?: string | null,
     isHistory?: boolean,
-    sentAt?: number
+    sentAt?: number,
+    roomId?: string,
+    customRole?: CustomRole | null
   ) => void;
   channel_created: (channel: ServerChannel) => void;
   channel_updated: (channel: ServerChannel) => void;
   channel_deleted: (channelId: string) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;
+  member_custom_role_updated: (payload: {
+    roomId: string;
+    targetUserId: string;
+    targetUsername: string;
+    customRole: CustomRole | null;
+  }) => void;
   screen_viewer_joined: (viewer: { id: string; name: string }) => void;
   screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
@@ -162,5 +186,6 @@ export interface InterServerEvents {}
 export interface SocketData {
   user?: UserInfo;
   roomId?: string;
+  voiceRoomId?: string;
   persistentId?: string;
 }

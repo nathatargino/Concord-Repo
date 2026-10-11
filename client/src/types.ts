@@ -1,3 +1,10 @@
+export interface CustomRole {
+  name: string;
+  emoji: string;
+  color?: string;
+  isAdmin?: boolean;
+}
+
 export interface UserInfo {
   id: string;
   persistentId?: string;
@@ -8,6 +15,7 @@ export interface UserInfo {
   micMuted: boolean;
   callMuted: boolean;
   role?: 'owner' | 'sub_owner' | 'member';
+  customRole?: CustomRole | null;
 }
 
 export interface ServerChannel {
@@ -18,11 +26,14 @@ export interface ServerChannel {
 
 export interface ServerMember {
   id: string;
+  userId?: string;
+  user_id?: string;
   username: string;
   avatarUrl?: string | null;
   isOnline: boolean;
   inVoice: boolean;
   role?: 'owner' | 'sub_owner' | 'member' | string;
+  customRole?: CustomRole | null;
 }
 
 export interface MusicItem {
@@ -45,16 +56,26 @@ export interface WatchSession {
 
 export interface ChatMessage {
   id: string;
+  roomId?: string;
   userName: string;
   message: string;
   timestamp: string;
   isSystem?: boolean;
-  type?: 'text' | 'image' | 'giphy' | 'file';
+  type?: 'text' | 'image' | 'giphy' | 'file' | 'system';
   url?: string;
   filename?: string;
   channelId?: string;
   avatarUrl?: string | null;
   userId?: string;
+  customRole?: CustomRole | null;
+  sentAt?: number;
+  replyTo?: {
+    id?: string;
+    userName: string;
+    message: string;
+    type?: string;
+  };
+  reactions?: Record<string, string[]>;
 }
 
 export interface RoomInfo {

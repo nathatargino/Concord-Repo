@@ -5,10 +5,10 @@
   display: flex;
   flex-direction: column;
   border-radius: 16px;
-  background: rgba(24, 27, 36, 0.75);
+  background: var(--bg-surface, #141524);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   overflow: hidden;
   user-select: none;
   height: 100%;
@@ -19,11 +19,11 @@
   height: 56px;
   min-height: 56px;
   padding: 0 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(17, 19, 25, 0.4);
+  background: rgba(15, 16, 26, 0.6);
 }
 
 .serverHeaderLeft {
@@ -493,6 +493,30 @@
   font-size: 11px;
 }
 
+.userRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(124, 92, 255, 0.4);
+  line-height: 1.2;
+  letter-spacing: 0.2px;
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.userRoleBadgeText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .userSubtitle {
   font-size: 10px;
   font-weight: 500;
@@ -564,14 +588,16 @@
 
 /* ── ACTIVE VOICE CALL WIDGET ── */
 .activeVoiceWidget {
-  padding: 12px;
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  margin: 8px;
+  padding: 10px 14px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  margin: 6px 12px 10px 12px;
   border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
 }
 
 .activeVoiceTop {
@@ -738,11 +764,12 @@
   height: 64px;
   min-height: 64px;
   padding: 0 16px;
-  background: rgba(17, 19, 25, 0.85);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(15, 16, 26, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .userControlLeft {
@@ -801,6 +828,19 @@
 .myInfo {
   min-width: 0;
   line-height: 1.2;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition: background 0.15s ease, transform 0.1s ease;
+  user-select: none;
+}
+
+.myInfo:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.myInfo:active {
+  transform: scale(0.98);
 }
 
 .myNameText {
@@ -810,11 +850,48 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+
+.myInfo:hover .myNameText {
+  color: #c4b5fd;
 }
 
 .myTagText {
   font-size: 10px;
   color: #9ca3af;
+  transition: color 0.15s ease, text-shadow 0.15s ease;
+  user-select: none;
+}
+
+.myTagText:hover {
+  color: #c4b5fd;
+  text-shadow: 0 0 6px rgba(196, 181, 253, 0.4);
+}
+
+.copiedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .userControlButtons {
@@ -1115,5 +1192,195 @@
 
 .formInput:focus {
   border-color: #7c5cff;
+}
+
+/* ==========================================================================
+   LIGHT THEME OVERRIDES (Concord Secondary Sidebar)
+   ========================================================================== */
+:global([data-theme="light"]) .sidebar {
+  background: #f2f3f5 !important;
+  border-color: #e5e7eb !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+:global([data-theme="light"]) .header {
+  background: #e3e5e8 !important;
+  border-bottom: 1px solid #dcdfe3 !important;
+}
+
+:global([data-theme="light"]) .serverTitle {
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .serverSubtitle {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .headerChevronBtn {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .headerChevronBtn:hover {
+  color: #060607 !important;
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+:global([data-theme="light"]) .sectionLabel {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .sectionIcon {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .addChannelBtn {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .addChannelBtn:hover {
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .chevron {
+  color: #747f8d !important;
+}
+
+:global([data-theme="light"]) .channelItem {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .channelItem:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .channelActive {
+  background: rgba(124, 58, 237, 0.12) !important;
+  color: #7c3aed !important;
+  border-color: rgba(124, 58, 237, 0.25) !important;
+}
+
+:global([data-theme="light"]) .channelHash {
+  color: #747f8d !important;
+}
+
+:global([data-theme="light"]) .channelActive .channelHash {
+  color: #7c3aed !important;
+}
+
+:global([data-theme="light"]) .channelActionBtn {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .channelActionBtn:hover {
+  color: #060607 !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+:global([data-theme="light"]) .voiceChannelBtn {
+  background: rgba(0, 0, 0, 0.03) !important;
+  color: #2e3338 !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+:global([data-theme="light"]) .voiceChannelBtn:hover {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+:global([data-theme="light"]) .userCard {
+  background: rgba(0, 0, 0, 0.02) !important;
+  border-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+:global([data-theme="light"]) .userCard:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+:global([data-theme="light"]) .userCardLeft span,
+:global([data-theme="light"]) .offlineUserName {
+  color: #2e3338 !important;
+}
+
+:global([data-theme="light"]) .emptyCategory {
+  color: #747f8d !important;
+}
+
+:global([data-theme="light"]) .offlineUserItem:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+:global([data-theme="light"]) .userControlFooter {
+  background: #ebedef !important;
+  border-top: 1px solid #dcdfe3 !important;
+}
+
+:global([data-theme="light"]) .myNameText {
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .myTagText {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .controlBtn {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .controlBtn:hover {
+  color: #060607 !important;
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+
+:global([data-theme="light"]) .disconnectedVoiceWidget {
+  background: rgba(0, 0, 0, 0.03) !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+:global([data-theme="light"]) .disconnectedVoiceText {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .activeVoiceWidget {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(16, 185, 129, 0.3) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+:global([data-theme="light"]) .contextMenu,
+:global([data-theme="light"]) .modalContent {
+  background: #ffffff !important;
+  border-color: #e5e7eb !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12) !important;
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .modalTitle {
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .modalDesc,
+:global([data-theme="light"]) .formLabel {
+  color: #4f545c !important;
+}
+
+:global([data-theme="light"]) .channelInputWrapper,
+:global([data-theme="light"]) .formInput {
+  background: #f2f3f5 !important;
+  border-color: #dcdfe3 !important;
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .channelNameInput {
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .cancelBtn {
+  background: #f2f3f5 !important;
+  border-color: #dcdfe3 !important;
+  color: #2e3338 !important;
+}
+
+:global([data-theme="light"]) .cancelBtn:hover {
+  background: #e3e5e8 !important;
 }
 

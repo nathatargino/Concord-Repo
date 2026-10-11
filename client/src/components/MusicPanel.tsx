@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { YouTubeSearchModal } from './YouTubeSearchModal';
+import { StreamingComingSoon } from './StreamingComingSoon';
 import styles from './MusicPanel.module.css';
-
-const DESKTOP_DOWNLOAD_URL = 'https://github.com/nathatargino/Concord-Repo/releases/latest/download/Concord-Setup.exe';
 
 type Platform = 'youtube' | 'netflix' | 'prime';
 
@@ -52,22 +51,16 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [trackTitle, setTrackTitle] = useState<string | null>(null);
 
-  const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const {
     musicQueue,
     currentVideoId,
     isPlaying,
     activeStreaming,
-    setActiveStreaming,
     activeMediaTab,
     setActiveMediaTab,
-    streamingSessions,
-    setStreamingSession,
-    setShowVideoPlayer,
     isYouTubeSearchOpen,
     setIsYouTubeSearchOpen,
-    watchSession,
   } = useAppStore();
 
   const selectedPlatform = activeMediaTab;
@@ -76,80 +69,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     const electron = (window as any).electron;
     if (electron?.setActiveMediaTab) {
       electron.setActiveMediaTab(p);
-    }
-  };
-
-  const isElectron = !!(window as any).electron;
-
-  const handleSyncAndWatch = (session: typeof watchSession) => {
-    if (!session) return;
-    if (!inVoice) {
-      notifyInChat('Você precisa estar em uma call de voz para sincronizar com a Watch Party.');
-      return;
-    }
-    const electron = (window as any).electron;
-    setActiveStreaming({ service: session.platform, url: session.titleUrl });
-    setActiveMediaTab(session.platform);
-    setStreamingSession(session.platform, true);
-    setShowVideoPlayer(true);
-
-    const elapsed = session.isPlaying
-      ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
-      : 0;
-    const targetSeconds = session.positionSeconds + elapsed;
-
-    if (electron) {
-      if (electron.setActiveMediaTab) {
-        electron.setActiveMediaTab(session.platform);
-      }
-      if (electron.navigateToTitle) {
-        electron.navigateToTitle({ service: session.platform, url: session.titleUrl, autoPlay: true });
-      }
-      setTimeout(() => {
-        electron.syncStreamingPlayback?.({
-          action: session.isPlaying ? 'play' : 'pause',
-          positionSeconds: targetSeconds,
-          service: session.platform,
-        });
-      }, 800);
-    }
-  };
-
-  const handleOpenStreaming = async (service: 'netflix' | 'prime', targetUrl?: string) => {
-    if (!inVoice) {
-      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : 'o Prime Video'}.`);
-      return;
-    }
-    setIsOpeningStreaming(true);
-    try {
-      setActiveStreaming({ service, url: targetUrl });
-      setActiveMediaTab(service);
-      setStreamingSession(service, true);
-      setShowVideoPlayer(true);
-    } finally {
-      setIsOpeningStreaming(false);
-    }
-  };
-
-  const handleCloseStreaming = () => {
-    const electron = (window as any).electron;
-    const currentService = selectedPlatform === 'netflix' || selectedPlatform === 'prime' ? selectedPlatform : activeStreaming?.service;
-    if (currentService) {
-      if (electron?.closeStreamingView) {
-        electron.closeStreamingView(currentService);
-      }
-      setStreamingSession(currentService, false);
-      const otherService: 'netflix' | 'prime' = currentService === 'netflix' ? 'prime' : 'netflix';
-      if (streamingSessions[otherService]) {
-        setActiveStreaming({ service: otherService });
-        setActiveMediaTab(otherService);
-        if (electron?.setActiveMediaTab) electron.setActiveMediaTab(otherService);
-      } else {
-        setActiveStreaming(null);
-        setActiveMediaTab('youtube');
-        setShowVideoPlayer(false);
-        if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
-      }
     }
   };
 
@@ -225,7 +144,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const activeTitle = trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
 
   const isStreamingPlatform = selectedPlatform === 'netflix' || selectedPlatform === 'prime';
-  const platformName = selectedPlatform === 'netflix' ? 'Netflix' : 'Prime Video';
 
   return (
     <div className={styles.panel}>
@@ -393,118 +311,10 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
         {/* Netflix / Prime Video Section */}
         {isStreamingPlatform && (
           <div className={styles.streamingSection}>
-            {!isElectron ? (
-              /* Web: desktop-only warning banner exactly matching Image 1 */
-              <div className={styles.desktopOnlyBanner} role="alert">
-                <div className={styles.desktopOnlyIcon}>
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="3" width="20" height="14" rx="2" />
-                    <path d="M8 21h8M12 17v4" />
-                  </svg>
-                </div>
-                <p className={styles.desktopOnlyTitle}>
-                  {platformName} só funciona no App Desktop
-                </p>
-                <p className={styles.desktopOnlyDesc}>
-                  Para assistir {platformName} junto com sua sala, você precisa do app desktop da Concord. Cada pessoa faz login com a própria conta — sem compartilhar senhas.
-                </p>
-                <a
-                  id={`btn-download-for-${selectedPlatform}`}
-                  href={DESKTOP_DOWNLOAD_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={styles.downloadAppBtn}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                  Baixar App Desktop
-                </a>
-              </div>
-            ) : (
-              /* Desktop: Player Controls */
-              <div className={styles.streamingControls}>
-                {/* Banner de Watch Party ativa para este serviço */}
-                {watchSession && watchSession.platform === selectedPlatform && (
-                  <div className={styles.musicWatchPartyCard}>
-                    <div className={styles.musicWatchPartyHeader}>
-                      <span className={styles.pulseDot} />
-                      <span className={styles.musicWatchPartyTitle}>Watch Party Ativa</span>
-                    </div>
-                    <p className={styles.musicWatchPartyText}>
-                      Líder: <strong>{watchSession.startedByName || 'Amigo'}</strong> ({watchSession.isPlaying ? '▶ assistindo' : '⏸ pausado'})
-                    </p>
-                    <button
-                      type="button"
-                      className={styles.musicWatchPartyBtn}
-                      onClick={() => handleSyncAndWatch(watchSession)}
-                      title="Sincronizar com a transmissão do grupo agora"
-                    >
-                      <i className="fa-solid fa-arrows-rotate"></i>
-                      <span>Sincronizar Agora</span>
-                    </button>
-                  </div>
-                )}
-
-                {(streamingSessions[selectedPlatform as 'netflix' | 'prime'] || activeStreaming?.service === selectedPlatform) ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <button
-                      type="button"
-                      className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
-                      onClick={() => {
-                        if (watchSession && watchSession.platform === selectedPlatform) {
-                          handleSyncAndWatch(watchSession);
-                        } else {
-                          setShowVideoPlayer(true);
-                        }
-                      }}
-                    >
-                      <i className="fa-solid fa-tv"></i>
-                      <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : 'PRIME'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.closeStreamingBtn}
-                      onClick={handleCloseStreaming}
-                    >
-                      <i className="fa-solid fa-xmark"></i>
-                      <span>Fechar Player da {platformName}</span>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    id={`btn-open-${selectedPlatform}`}
-                    type="button"
-                    className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
-                    onClick={() => {
-                      if (watchSession && watchSession.platform === selectedPlatform) {
-                        handleSyncAndWatch(watchSession);
-                      } else {
-                        handleOpenStreaming(selectedPlatform);
-                      }
-                    }}
-                    disabled={isOpeningStreaming || !inVoice}
-                    title={inVoice ? undefined : "Entre na call de voz para abrir streaming"}
-                  >
-                    <i className={isOpeningStreaming ? 'fa-solid fa-spinner fa-spin' : (watchSession && watchSession.platform === selectedPlatform ? 'fa-solid fa-arrows-rotate' : 'fa-solid fa-play')}></i>
-                    <span>
-                      {isOpeningStreaming
-                        ? 'Iniciando...'
-                        : (watchSession && watchSession.platform === selectedPlatform
-                            ? `Sincronizar e Assistir ${platformName}`
-                            : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : 'Abrir Prime'))}
-                    </span>
-                  </button>
-                )}
-
-                <div className={styles.infoNotice}>
-                  <i className="fa-solid fa-shield-halved"></i>
-                  <span>Sessão e cookies sincronizados com segurança no Concord.</span>
-                </div>
-              </div>
-            )}
+            <StreamingComingSoon
+              platform={selectedPlatform as 'netflix' | 'prime'}
+              onBack={() => setActiveMediaTab('youtube')}
+            />
           </div>
         )}
       </div>

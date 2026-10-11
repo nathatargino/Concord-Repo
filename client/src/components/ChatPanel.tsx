@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 
 import { useAppStore } from '../stores/useAppStore';
@@ -7,11 +8,12 @@ import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
-import { fetchChannelMessages, saveMessageToSupabase } from '../lib/supabase';
+import { fetchChannelMessages, saveMessageToSupabase, fetchDirectMessagesFromSupabase, sendDirectMessageToSupabase, type DirectMessage, supabase } from '../lib/supabase';
+import { playChimeSound } from '../hooks/useAudio';
 import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
+import { StreamingComingSoon } from './StreamingComingSoon';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
-
 
 const IconNoVideo = () => (
   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" opacity="0.3">
@@ -21,10 +23,9 @@ const IconNoVideo = () => (
   </svg>
 );
 
-// Using Giphy API Key from .env or fallback
+import { SERVER_URL } from '../config';
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || 'gD2L1Yb68ZOGLLvErUw4BMuyLIdgyVzx';
 const gf = new GiphyFetch(GIPHY_API_KEY);
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
 
 function escapeHtml(text: string): string {
   if (!text) return '';
@@ -43,6 +44,20 @@ function parseLinks(text: string): string {
   });
 }
 
+function formatMessageHtml(rawText: string, myName?: string): string {
+  if (!rawText) return '';
+  let escaped = escapeHtml(rawText);
+  // Highlight mentions: @username or @everyone
+  const mentionRegex = /@([a-zA-Z0-9_\u00C0-\u017F-]+)/g;
+  escaped = escaped.replace(mentionRegex, (match, username) => {
+    const isMeOrEveryone = (myName && username.toLowerCase() === myName.toLowerCase()) || username.toLowerCase() === 'everyone';
+    const bg = isMeOrEveryone ? 'rgba(245, 158, 11, 0.28)' : 'rgba(99, 102, 241, 0.22)';
+    const color = isMeOrEveryone ? '#f59e0b' : '#818cf8';
+    return `<span class="concord-mention-tag" data-mention="${escapeHtml(username)}" style="background: ${bg}; color: ${color}; padding: 1px 6px; border-radius: 4px; font-weight: 700; cursor: pointer; display: inline-block; transition: all 0.15s ease;" title="Ver perfil de @${escapeHtml(username)}">${match}</span>`;
+  });
+  return parseLinks(escaped);
+}
+
 function formatTime(secs: number): string {
   if (!secs || isNaN(secs) || secs < 0) return '00:00';
   const m = Math.floor(secs / 60);
@@ -59,8 +74,85 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+// ── Helpers para Emojis, Resposta e Cópia de Imagem ──
+function isOnlyEmojis(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  const emojiRegex = /^(\p{Extended_Pictographic}|\p{Emoji_Presentation}|\u200D|\uFE0F|\s)+$/u;
+  return emojiRegex.test(trimmed);
+}
+
+interface ParsedReply {
+  quotedUser: string;
+  quotedText: string;
+  actualText: string;
+}
+
+function parseReplyMessage(message: string): ParsedReply | null {
+  if (!message || !message.startsWith('> ')) return null;
+  const boldMatch = message.match(/^>\s*\*\*@([^*]+)\*\*:\s*([^\n]+)\n([\s\S]*)$/);
+  if (boldMatch) {
+    return {
+      quotedUser: boldMatch[1].trim(),
+      quotedText: boldMatch[2].trim(),
+      actualText: boldMatch[3].trim(),
+    };
+  }
+  const plainMatch = message.match(/^>\s*@([^:]+):\s*([^\n]+)\n([\s\S]*)$/);
+  if (plainMatch) {
+    return {
+      quotedUser: plainMatch[1].trim(),
+      quotedText: plainMatch[2].trim(),
+      actualText: plainMatch[3].trim(),
+    };
+  }
+  return null;
+}
+
+async function copyImageToClipboard(imageUrl: string): Promise<boolean> {
+  const electron = (window as any).electron;
+  if (electron?.copyImageToClipboard) {
+    try {
+      const res = await electron.copyImageToClipboard(imageUrl);
+      if (res && res.success) return true;
+    } catch (err) {
+      console.warn('Electron copyImage failed, falling back to Web API', err);
+    }
+  }
+
+  try {
+    const res = await fetch(imageUrl);
+    const blob = await res.blob();
+    let pngBlob = blob;
+    if (blob.type !== 'image/png') {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0);
+      pngBlob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b || blob), 'image/png'));
+    }
+    await navigator.clipboard.write([
+      new ClipboardItem({ 'image/png': pngBlob })
+    ]);
+    return true;
+  } catch (err) {
+    console.error('Clipboard copy failed:', err);
+    return false;
+  }
+}
+
 interface ChatPanelProps {
   onSendMessage?: (msg: string, type?: 'text' | 'image' | 'giphy' | 'file', url?: string, filename?: string, channelId?: string, avatarUrl?: string | null) => void;
+  onReaction?: (messageId: string, emoji: string) => void;
   onMusicAction?: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   onMusicSeek?: (time: number) => void;
   getYtCurrentTime?: () => number;
@@ -77,6 +169,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({
   onSendMessage,
+  onReaction,
   onMusicAction,
   onMusicSeek,
   getYtCurrentTime,
@@ -93,6 +186,8 @@ export function ChatPanel({
   const {
     messages,
     setMessages,
+    addMessage,
+    myId,
     myName,
     myAvatarUrl,
     room,
@@ -120,9 +215,24 @@ export function ChatPanel({
     users,
     serverMembers,
     openUserProfile,
+    activeDmChat,
+    homeTab,
+    friends,
+    systemNotificationsEnabled,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
+  const prevYtVolRef = useRef<number>(ytVol > 0 ? ytVol : 50);
+
+  const handleToggleYtMute = useCallback(() => {
+    if (ytVol > 0) {
+      prevYtVolRef.current = ytVol;
+      setYtVol(0);
+    } else {
+      const restored = prevYtVolRef.current > 0 ? prevYtVolRef.current : 50;
+      setYtVol(restored);
+    }
+  }, [ytVol, setYtVol]);
 
   const [input, setInput] = useState('');
   const [showGiphy, setShowGiphy] = useState(false);
@@ -137,6 +247,100 @@ export function ChatPanel({
   const [imageZoom, setImageZoom] = useState<number>(1);
   const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
 
+  // ── Resposta com Citação (Reply to message) ──
+  const [replyingTo, setReplyingTo] = useState<{
+    id: string;
+    userName: string;
+    message: string;
+    type?: string;
+  } | null>(null);
+
+  // ── Menu de Contexto (Right click) ──
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    msg: ChatMessage;
+    isImage?: boolean;
+    imageUrl?: string;
+  } | null>(null);
+
+  // Fechar menu de contexto ao clicar fora ou pressionar Esc
+  useEffect(() => {
+    const handleDocClick = () => setContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    document.addEventListener('click', handleDocClick);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleDocClick);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  // Fechar Lightbox ao pressionar Esc
+  useEffect(() => {
+    if (!viewingImage) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setViewingImage(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewingImage]);
+
+  // ── DM (Direct Message) Mode ──
+  const isDmMode = homeTab === 'dm' && Boolean(activeDmChat);
+  const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
+  const isPartnerBlocked = useMemo(() => {
+    if (!isDmMode || !activeDmChat) return false;
+    const pId = activeDmChat.partnerId;
+    const pName = (activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').trim().toLowerCase();
+    return friends.some(f => 
+      f.status === 'blocked' && (
+        (pId && (f.friendId === pId || f.userId === pId)) ||
+        (pName && (f.friendName?.trim().toLowerCase() === pName || (f as any).userName?.trim().toLowerCase() === pName))
+      )
+    );
+  }, [isDmMode, activeDmChat, friends]);
+
+  const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
+    const authorName = myName || 'Eu';
+    useAppStore.getState().toggleMessageReaction(messageId, emoji, authorName);
+    if (isDmMode) {
+      setDmMessages((prev) =>
+        prev.map((dm) => {
+          if (dm.id !== messageId) return dm;
+          const reactions = { ...((dm as any).reactions || {}) };
+          const currentUsers: string[] = reactions[emoji] || [];
+          const alreadyReacted = currentUsers.includes(authorName);
+          if (alreadyReacted) {
+            const nextUsers = currentUsers.filter((u) => u !== authorName);
+            if (nextUsers.length === 0) delete reactions[emoji];
+            else reactions[emoji] = nextUsers;
+          } else {
+            reactions[emoji] = [...currentUsers, authorName];
+          }
+          return { ...dm, reactions } as any;
+        })
+      );
+    }
+    onReaction?.(messageId, emoji);
+  }, [myName, isDmMode, onReaction]);
+
+  const handleStartReply = useCallback((msg: ChatMessage) => {
+    setReplyingTo({
+      id: msg.id,
+      userName: msg.userName,
+      message: msg.type === 'image' ? '📷 Imagem' : (msg.type === 'file' ? `📎 ${msg.filename || 'Arquivo'}` : msg.message),
+      type: msg.type,
+    });
+    setContextMenu(null);
+    setTimeout(() => {
+      const el = document.getElementById('chatInput');
+      if (el) el.focus();
+    }, 50);
+  }, []);
+
   // URL pendente de navegação de Watch Party (recebida via streaming-event 'navigate-pending')
   const [pendingWatchUrl, setPendingWatchUrl] = useState<{ service: 'netflix' | 'prime'; url: string } | null>(null);
   // Estado de sincronização para o botão "Assistir Junto"
@@ -144,7 +348,7 @@ export function ChatPanel({
 
   // ── Aviso no chat para comandos de áudio (/play, /pause, /skip, /clear) ──
   const broadcastAudioCommandNotice = useCallback((action: 'play' | 'pause' | 'skip' | 'clear') => {
-    const currentChannel = activeChannelId || 'ch-geral';
+    const currentChannel = isServer ? (activeChannelId || 'ch-geral') : undefined;
     const noticeText = `O usuário ${myName || 'Anônimo'} executou o comando /${action}`;
 
     if (room?.id) {
@@ -152,7 +356,7 @@ export function ChatPanel({
     }
 
     onSendMessage?.(noticeText, 'text', undefined, undefined, currentChannel, null);
-  }, [activeChannelId, myName, onSendMessage, room?.id]);
+  }, [activeChannelId, isServer, myName, onSendMessage, room?.id]);
 
   // ── Ouvir eventos de streaming do processo principal (Electron) ──
   useEffect(() => {
@@ -423,6 +627,122 @@ export function ChatPanel({
   const [cmdHighlight, setCmdHighlight] = useState(0);
   const cmdMenuRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!isDmMode || !activeDmChat?.id) return;
+    let isMounted = true;
+    const loadDms = async () => {
+      try {
+        const list = await fetchDirectMessagesFromSupabase(activeDmChat.id);
+        if (isMounted) setDmMessages(list);
+      } catch {}
+    };
+    loadDms();
+    const timer = setInterval(loadDms, 3000);
+
+    // Supabase Realtime subscription para mensagens diretas instantâneas
+    let dmChannel: any = null;
+    try {
+      dmChannel = supabase
+        .channel(`dm-chat-${activeDmChat.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'direct_messages',
+            filter: `chat_id=eq.${activeDmChat.id}`,
+          },
+          (payload) => {
+            if (!isMounted) return;
+            const newMsg = payload.new as any;
+            if (!newMsg) return;
+            setDmMessages((prev) => {
+              if (prev.some((m) => m.id === newMsg.id)) return prev;
+              const formatted: DirectMessage = {
+                id: newMsg.id,
+                chatId: newMsg.chat_id,
+                senderId: newMsg.sender_id,
+                content: newMsg.content,
+                msgType: newMsg.msg_type || newMsg.type || 'text',
+                fileUrl: newMsg.file_url,
+                fileName: newMsg.file_name,
+                createdAt: newMsg.created_at || new Date().toISOString(),
+                senderName: newMsg.sender_name || (newMsg.sender_id === myId ? myName : activeDmChat.partnerName),
+                avatarUrl: newMsg.sender_avatar_url || newMsg.avatar_url || (newMsg.sender_id === myId ? myAvatarUrl : activeDmChat.partnerAvatarUrl),
+              };
+              return [...prev, formatted];
+            });
+          }
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('[Realtime] Erro ao subscrever canal de DM:', err);
+    }
+
+    return () => {
+      isMounted = false;
+      clearInterval(timer);
+      if (dmChannel) {
+        supabase.removeChannel(dmChannel);
+      }
+    };
+  }, [isDmMode, activeDmChat?.id, myId, myName, myAvatarUrl, activeDmChat?.partnerName, activeDmChat?.partnerAvatarUrl]);
+
+  // ── Mention Autocomplete (@) ──
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionHighlight, setMentionHighlight] = useState(0);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
+
+  const mentionCandidates = useMemo(() => {
+    const list: Array<{ id: string; name: string; avatarUrl?: string | null; role?: string }> = [
+      { id: 'everyone', name: 'everyone', role: 'Notificar todos' }
+    ];
+    const seen = new Set<string>(['everyone']);
+
+    users.forEach((u) => {
+      const clean = (u.name || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        list.push({ id: u.id, name: clean, avatarUrl: u.avatarUrl, role: 'Online' });
+      }
+    });
+
+    serverMembers.forEach((m) => {
+      const clean = (m.username || '').trim();
+      if (clean && !seen.has(clean.toLowerCase())) {
+        seen.add(clean.toLowerCase());
+        list.push({
+          id: m.id || m.username,
+          name: clean,
+          avatarUrl: m.avatarUrl,
+          role: m.role === 'owner' ? 'Dono' : m.role === 'sub_owner' ? 'Sub Dono' : 'Membro'
+        });
+      }
+    });
+
+    return list;
+  }, [users, serverMembers]);
+
+  const [mentionFilter, setMentionFilter] = useState<typeof mentionCandidates>([]);
+
+  // Notificação com som ao ser mencionado (@MeuNome ou @everyone)
+  const lastProcessedMsgIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg.id !== lastProcessedMsgIdRef.current) {
+      lastProcessedMsgIdRef.current = lastMsg.id;
+      const cleanMy = (myName || '').trim().toLowerCase();
+      const isFromOther = cleanMy ? lastMsg.userName.trim().toLowerCase() !== cleanMy : true;
+      const text = (lastMsg.message || '').toLowerCase();
+      const mentionsMe = (cleanMy && text.includes(`@${cleanMy}`)) || text.includes('@everyone');
+      if (isFromOther && mentionsMe) {
+        playChimeSound();
+      }
+    }
+  }, [messages, myName]);
+
   // Custom Video Player Single-Player Teleport & Controls
   const videoContainerRef = useRef<HTMLDivElement>(null);
   const seekLockRef = useRef<number>(0);
@@ -553,15 +873,48 @@ export function ChatPanel({
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setInput(val);
+
+    // Slash command autocomplete
     if (val.startsWith('/') && val.length >= 1) {
       const q = val.toLowerCase();
       const filtered = SLASH_COMMANDS.filter(c => c.cmd.startsWith(q));
       setCmdFilter(filtered);
       setShowCmdMenu(filtered.length > 0);
       setCmdHighlight(0);
+      setShowMentionMenu(false);
+      return;
     } else {
       setShowCmdMenu(false);
     }
+
+    // Mention autocomplete (@)
+    const atIndex = val.lastIndexOf('@');
+    if (atIndex !== -1 && (atIndex === 0 || val[atIndex - 1] === ' ')) {
+      const query = val.slice(atIndex + 1).toLowerCase();
+      if (!query.includes(' ')) {
+        const matches = mentionCandidates.filter(c => c.name.toLowerCase().startsWith(query));
+        if (matches.length > 0) {
+          setMentionFilter(matches);
+          setShowMentionMenu(true);
+          setMentionHighlight(0);
+          return;
+        }
+      }
+    }
+    setShowMentionMenu(false);
+  };
+
+  const applyMention = (candidateName: string) => {
+    const atIndex = input.lastIndexOf('@');
+    if (atIndex !== -1) {
+      const beforeAt = input.slice(0, atIndex);
+      const newInput = `${beforeAt}@${candidateName} `;
+      setInput(newInput);
+    }
+    setShowMentionMenu(false);
+    setTimeout(() => {
+      document.getElementById('chatInput')?.focus();
+    }, 50);
   };
 
   const executeMusicCommand = useCallback((action: 'skip' | 'pause' | 'play' | 'clear') => {
@@ -584,8 +937,30 @@ export function ChatPanel({
     executeMusicCommand(action);
   };
 
-  // Navegação por teclado no menu de comandos
+  // Navegação por teclado no menu de comandos e de menções (@)
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showMentionMenu) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionHighlight(h => Math.min(h + 1, mentionFilter.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionHighlight(h => Math.max(h - 1, 0));
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        if (mentionFilter[mentionHighlight]) applyMention(mentionFilter[mentionHighlight].name);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowMentionMenu(false);
+        return;
+      }
+    }
+
     if (showCmdMenu) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -666,7 +1041,11 @@ export function ChatPanel({
 
   // Carregar mensagens persistentes do canal via Supabase/Local cache
   useEffect(() => {
-    if (!room?.id) return;
+    if (!room?.id) {
+      setMessages([]);
+      return;
+    }
+    setMessages([]);
     const chId = isServer ? (activeChannelId || 'ch-geral') : null;
 
     fetchChannelMessages(room.id, chId).then((history) => {
@@ -675,13 +1054,14 @@ export function ChatPanel({
           const isSystem = m.sender_name === 'Sistema' || (m.msg_type as string) === 'system' || (typeof m.content === 'string' && m.content.startsWith('O usuário ') && m.content.includes(' executou o comando /'));
           return {
             id: m.id,
+            roomId: room.id,
             userName: isSystem ? 'Sistema' : m.sender_name,
             message: m.content,
             timestamp: new Date(m.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
             type: m.msg_type,
             url: m.file_url || undefined,
             filename: m.file_name || undefined,
-            channelId: m.channel_id || 'ch-geral',
+            channelId: m.channel_id || (isServer ? 'ch-geral' : undefined),
             isSystem,
           };
         });
@@ -690,14 +1070,55 @@ export function ChatPanel({
     });
   }, [room?.id, activeChannelId, isServer, setMessages]);
 
-  // Filtrar mensagens para o canal atual (em servidores)
+  // Filtrar mensagens para o canal atual (em servidores) ou DM atual
   const channelMessages = useMemo(() => {
-    if (!isServer) return messages;
+    if (isDmMode && activeDmChat) {
+      return dmMessages.map((dm): ChatMessage => ({
+        id: dm.id,
+        userName: dm.senderName || (dm as any).sender_name || 'Usuário',
+        message: dm.content,
+        timestamp: new Date(dm.createdAt || (dm as any).created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        type: (dm.msgType || (dm as any).msg_type || 'text') as any,
+        url: dm.fileUrl || (dm as any).file_url || undefined,
+        filename: dm.fileName || (dm as any).file_name || undefined,
+        channelId: activeDmChat.id,
+        avatarUrl: dm.avatarUrl || (dm as any).avatar_url || (dm as any).sender_avatar || undefined,
+        reactions: (dm as any).reactions || {},
+        isSystem: false,
+      }));
+    }
+
+    const currentRoomId = room?.id;
+    const currentRoomCode = room?.code;
+
+    // Se estiver em sala temporária (não servidor)
+    if (!isServer) {
+      return messages.filter((m) => {
+        if (m.isSystem && !systemNotificationsEnabled) {
+          return false;
+        }
+        if (m.roomId && currentRoomId && m.roomId !== currentRoomId && m.roomId !== currentRoomCode) {
+          return false;
+        }
+        if (m.channelId && m.channelId !== 'ch-geral' && m.channelId !== currentRoomId && m.channelId !== currentRoomCode) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    // Se estiver em Servidor Concord
     const currentChannel = activeChannelId || 'ch-geral';
-    return messages.filter(
-      (m) => (!m.channelId && m.isSystem) || (m.channelId || 'ch-geral') === currentChannel
-    );
-  }, [messages, isServer, activeChannelId]);
+    return messages.filter((m) => {
+      if (m.isSystem && !systemNotificationsEnabled) {
+        return false;
+      }
+      if (m.roomId && currentRoomId && m.roomId !== currentRoomId && m.roomId !== currentRoomCode) {
+        return false;
+      }
+      return (!m.channelId && m.isSystem) || (m.channelId || 'ch-geral') === currentChannel;
+    });
+  }, [isDmMode, activeDmChat, dmMessages, messages, isServer, activeChannelId, room?.id, room?.code, systemNotificationsEnabled]);
 
   // Filtrar por busca (se houver texto na pesquisa)
   const displayedMessages = useMemo(() => {
@@ -775,17 +1196,84 @@ export function ChatPanel({
     const trimmed = input.trim();
     if (!trimmed && !stagedFile) return;
 
+    // Envio de Mensagem Direta (DM 1:1)
+    if (isDmMode && activeDmChat) {
+      if (isPartnerBlocked) {
+        toast.error('Você não pode enviar mensagens diretas para um usuário bloqueado.');
+        return;
+      }
+      let fileUrl = '';
+      const isImage = stagedFile ? (stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name)) : false;
+      const fileName = stagedFile?.file.name || (isImage ? 'imagem.png' : 'arquivo');
+      const msgType = stagedFile ? (isImage ? 'image' : 'file') : 'text';
+
+      // Limpar input imediatamente para feedback 0ms
+      setInput('');
+      const currentStaged = stagedFile;
+      setStagedFile(null);
+      setReplyingTo(null);
+
+      // Otimismo imediato se for texto puro
+      if (!currentStaged && trimmed) {
+        const optimisticDm: DirectMessage = {
+          id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          chatId: activeDmChat.id,
+          senderId: myName || 'me',
+          senderName: myName || 'Você',
+          avatarUrl: myAvatarUrl,
+          content: trimmed,
+          msgType: 'text',
+          createdAt: new Date().toISOString(),
+        };
+        setDmMessages(prev => [...prev, optimisticDm]);
+        sendDirectMessageToSupabase(activeDmChat.id, trimmed, 'text');
+        return;
+      }
+
+      if (currentStaged) {
+        if (isImage) {
+          fileUrl = await fileToBase64(currentStaged.file);
+        } else {
+          try {
+            const formData = new FormData();
+            formData.append('file', currentStaged.file);
+            const res = await fetch(`${SERVER_URL}/api/upload`, {
+              method: 'POST',
+              body: formData,
+            });
+            if (res.ok) {
+              const data = await res.json();
+              fileUrl = `${SERVER_URL}${data.url}`;
+            } else {
+              fileUrl = await fileToBase64(currentStaged.file);
+            }
+          } catch {
+            fileUrl = await fileToBase64(currentStaged.file);
+          }
+        }
+      }
+
+      const messageContent = trimmed || (msgType === 'image' ? '📷 Imagem' : `📎 ${fileName}`);
+      sendDirectMessageToSupabase(activeDmChat.id, messageContent, msgType as any, fileUrl, fileName).then((created) => {
+        if (created) {
+          setDmMessages(prev => [...prev, created]);
+        }
+      });
+      return;
+    }
+
     // Interceptação direta dos comandos de música
     if (!stagedFile && trimmed.startsWith('/')) {
       const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
       if (firstWord === '/pause' || firstWord === '/play' || firstWord === '/skip' || firstWord === '/clear') {
         const action = firstWord.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
         executeMusicCommand(action);
+        setInput('');
         return;
       }
     }
 
-    const currentChannel = activeChannelId || 'ch-geral';
+    const currentChannel = isServer ? (activeChannelId || 'ch-geral') : undefined;
 
     if (stagedFile) {
       setIsUploading(true);
@@ -817,18 +1305,46 @@ export function ChatPanel({
           }
         }
 
-        const msgText = trimmed || (isImage ? '📷 Imagem' : `📄 ${fileName}`);
+        let finalQuotePrefix = '';
+        if (replyingTo) {
+          const quoteSnippet = replyingTo.message.length > 70 ? replyingTo.message.slice(0, 67) + '...' : replyingTo.message;
+          finalQuotePrefix = `> **@${replyingTo.userName}**: ${quoteSnippet}\n`;
+          setReplyingTo(null);
+        }
+
+        const rawText = trimmed || (isImage ? '📷 Imagem' : `📄 ${fileName}`);
+        const msgText = finalQuotePrefix ? `${finalQuotePrefix}${rawText}` : rawText;
         const msgType = isImage ? 'image' : 'file';
 
-        // Salvar no Supabase
+        // Renderização otimista imediata para anexo
+        const timestamp = new Date().toLocaleTimeString('pt-BR', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Sao_Paulo',
+        });
+        const optMsg: ChatMessage = {
+          id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          roomId: room?.id,
+          userName: myName || 'Você',
+          message: msgText,
+          timestamp,
+          type: msgType,
+          url: fileUrl || undefined,
+          filename: fileName,
+          channelId: currentChannel,
+          avatarUrl: myAvatarUrl,
+        };
+        addMessage(optMsg);
+
+        // Salvar no Supabase e Socket
         if (room?.id) {
           saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
         }
-
         onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel, myAvatarUrl);
 
         URL.revokeObjectURL(stagedFile.previewUrl);
         setStagedFile(null);
+        setInput('');
       } catch (err) {
         console.error('Erro no upload/conversao de arquivo:', err);
         toast.error('Falha ao processar o arquivo.');
@@ -836,16 +1352,40 @@ export function ChatPanel({
         setIsUploading(false);
       }
     } else {
-      // Salvar no Supabase
-      if (room?.id) {
-        saveMessageToSupabase(room.id, myName, trimmed, currentChannel, 'text');
+      let finalQuotePrefix = '';
+      if (replyingTo) {
+        const quoteSnippet = replyingTo.message.length > 70 ? replyingTo.message.slice(0, 67) + '...' : replyingTo.message;
+        finalQuotePrefix = `> **@${replyingTo.userName}**: ${quoteSnippet}\n`;
+        setReplyingTo(null);
       }
+      const msgText = finalQuotePrefix ? `${finalQuotePrefix}${trimmed}` : trimmed;
 
-      onSendMessage?.(trimmed, 'text', undefined, undefined, currentChannel, myAvatarUrl);
+      // ── Envio Otimista Imediato (0ms de latência percebida) ──
+      setInput('');
+      const timestamp = new Date().toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      });
+      const optMsg: ChatMessage = {
+        id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        roomId: room?.id,
+        userName: myName || 'Você',
+        message: msgText,
+        timestamp,
+        type: 'text',
+        channelId: currentChannel,
+        avatarUrl: myAvatarUrl,
+      };
+      addMessage(optMsg);
+
+      // Salvar no Supabase e disparar Socket em paralelo
+      if (room?.id) {
+        saveMessageToSupabase(room.id, myName, msgText, currentChannel, 'text');
+      }
+      onSendMessage?.(msgText, 'text', undefined, undefined, currentChannel, myAvatarUrl);
     }
-
-    setInput('');
-  }, [input, stagedFile, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl]);
+  }, [input, stagedFile, replyingTo, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, addMessage]);
 
 
   const stageFile = (file: File) => {
@@ -1001,7 +1541,7 @@ export function ChatPanel({
 
   const handleSelectGif = (gif: any) => {
     const gifUrl = gif.images.fixed_height.url;
-    const currentChannel = activeChannelId || 'ch-geral';
+    const currentChannel = isServer ? (activeChannelId || 'ch-geral') : undefined;
 
     if (room?.id) {
       saveMessageToSupabase(room.id, myName, 'GIF', currentChannel, 'giphy', gifUrl);
@@ -1026,6 +1566,44 @@ export function ChatPanel({
     });
   };
 
+  const handleMessageListClick = useCallback((e: React.MouseEvent) => {
+    const target = (e.target as HTMLElement).closest('.concord-mention-tag') as HTMLElement | null;
+    if (!target) return;
+    const rawMention = target.getAttribute('data-mention') || '';
+    const cleanMention = rawMention.trim();
+    if (!cleanMention || cleanMention.toLowerCase() === 'everyone') return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const cleanTarget = cleanMention.toLowerCase();
+    const cleanMy = (myName || '').trim().toLowerCase();
+    const isMe = cleanTarget === cleanMy;
+
+    if (isMe) {
+      openUserProfile({
+        id: myId || 'me',
+        name: myName || cleanMention,
+        avatarUrl: myAvatarUrl,
+        isMe: true,
+        tag: (useAppStore.getState().myTag || localStorage.getItem('concord_user_tag') || '7236').replace('#', ''),
+      });
+      return;
+    }
+
+    const foundUser = users.find((u) => (u.name || '').trim().toLowerCase() === cleanTarget);
+    const foundMember = serverMembers.find((m) => (m.username || '').trim().toLowerCase() === cleanTarget);
+
+    openUserProfile({
+      id: foundUser?.id || foundMember?.id || cleanMention,
+      name: foundUser?.name || foundMember?.username || cleanMention,
+      avatarUrl: foundUser?.avatarUrl || foundMember?.avatarUrl || undefined,
+      role: (foundUser?.role || foundMember?.role || 'member') as any,
+      isMe: false,
+      customRole: foundUser?.customRole || foundMember?.customRole,
+    });
+  }, [myName, myId, myAvatarUrl, openUserProfile, users, serverMembers]);
+
   return (
     <div
       className={`${styles.chatPanel} ${isDragging ? styles.dragging : ''}`}
@@ -1035,31 +1613,65 @@ export function ChatPanel({
       onDrop={handleDrop}
       onPaste={handlePaste}
     >
+      {/* Background Ambient Glows (Idêntico ao Hub Concord) */}
+      <div className={styles.blob1} />
+      <div className={styles.blob2} />
+
       {/* ── CABEÇALHO DO CHAT (PROTÓTIPO) ── */}
       <div className={styles.chatHeader}>
         <div className={styles.headerLeft}>
-          <div className={styles.headerTitle}>
-            {showVideoPlayer ? (
-              <>
-                <i className="fa-solid fa-tv" style={{ color: '#7c5cff' }}></i>
-                <span className={styles.headerChannelName}>Player de Vídeo</span>
-              </>
-            ) : isServer ? (
-              <>
-                <i className="fa-solid fa-hashtag" style={{ color: '#7c5cff' }}></i>
-                <span className={styles.headerChannelName}>{activeChannel.name}</span>
-              </>
-            ) : (
-              <>
-                <i className="fa-regular fa-comments" style={{ color: '#7c5cff' }}></i>
-                <span className={styles.headerChannelName}>Chat da Sala</span>
-              </>
-            )}
-          </div>
-          <span className={styles.headerDivider}></span>
-          <span className={styles.headerTopic}>
-            {isServer ? `Canal de bate-papo ${activeChannel.name.toLowerCase()} do servidor` : 'Canal de bate-papo geral da sala'}
-          </span>
+          {isDmMode && activeDmChat ? (
+            <>
+              <div style={{ position: 'relative', width: 28, height: 28, flexShrink: 0 }}>
+                {activeDmChat.partnerAvatarUrl || (activeDmChat as any).other_user_avatar ? (
+                  <img
+                    src={activeDmChat.partnerAvatarUrl || (activeDmChat as any).other_user_avatar}
+                    alt={activeDmChat.partnerName || (activeDmChat as any).other_user_name}
+                    style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#6366f1', color: '#fff', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                    {(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'DM').slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div className={styles.headerTitle}>
+                <span className={styles.headerChannelName}>@{activeDmChat.partnerName || (activeDmChat as any).other_user_name}</span>
+                {(activeDmChat.partnerTag || (activeDmChat as any).other_user_tag) && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted, #94a3b8)', marginLeft: '4px' }}>
+                    #{activeDmChat.partnerTag || (activeDmChat as any).other_user_tag}
+                  </span>
+                )}
+              </div>
+              <span className={styles.headerDivider}></span>
+              <span className={styles.headerTopic}>Mensagem Direta Privada</span>
+            </>
+          ) : (
+            <>
+              <div className={styles.headerTitle}>
+                {showVideoPlayer ? (
+                  <>
+                    <i className="fa-solid fa-tv" style={{ color: '#7c5cff' }}></i>
+                    <span className={styles.headerChannelName}>Player de Vídeo</span>
+                  </>
+                ) : isServer ? (
+                  <>
+                    <i className="fa-solid fa-hashtag" style={{ color: '#7c5cff' }}></i>
+                    <span className={styles.headerChannelName}>{activeChannel.name}</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-regular fa-comments" style={{ color: '#7c5cff' }}></i>
+                    <span className={styles.headerChannelName}>Chat da Sala</span>
+                  </>
+                )}
+              </div>
+              <span className={styles.headerDivider}></span>
+              <span className={styles.headerTopic}>
+                {isServer ? `Canal de bate-papo ${activeChannel.name.toLowerCase()} do servidor` : 'Canal de bate-papo geral da sala'}
+              </span>
+            </>
+          )}
         </div>
 
         <div className={styles.headerActions}>
@@ -1143,7 +1755,7 @@ export function ChatPanel({
             )}
 
             {/* Message list */}
-            <div ref={messageListRef} className={styles.messageList}>
+            <div ref={messageListRef} className={styles.messageList} onClick={handleMessageListClick}>
               {displayedMessages.length === 0 ? (
                 <div className={styles.emptyMessages}>
                   {searchQuery ? (
@@ -1160,11 +1772,32 @@ export function ChatPanel({
                   )}
                 </div>
               ) : (
-                displayedMessages.map((msg) => {
+                displayedMessages.map((msg, index) => {
+                  const prevMsg = index > 0 ? displayedMessages[index - 1] : null;
                   const isSystemMsg = Boolean(msg.isSystem || msg.userName === 'Sistema' || (typeof msg.message === 'string' && msg.message.startsWith('O usuário ') && msg.message.includes(' executou o comando /')));
+                  const prevIsSystem = prevMsg ? Boolean(prevMsg.isSystem || prevMsg.userName === 'Sistema' || (typeof prevMsg.message === 'string' && prevMsg.message.startsWith('O usuário ') && prevMsg.message.includes(' executou o comando /'))) : false;
+
                   const cleanMyName = (myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
                   const cleanMsgUser = (msg.userName || '').trim().toLowerCase();
-                  const isMe = !isSystemMsg && Boolean(cleanMyName && cleanMsgUser && cleanMyName === cleanMsgUser);
+                  const cleanPrevUser = prevMsg ? (prevMsg.userName || '').trim().toLowerCase() : '';
+                  const isMe = !isSystemMsg && Boolean(
+                    (cleanMyName && cleanMsgUser && cleanMyName === cleanMsgUser) ||
+                    (msg.userId && myId && msg.userId === myId) ||
+                    cleanMsgUser === 'você'
+                  );
+
+                  const parsedReply = parseReplyMessage(msg.message);
+
+                  // Agrupamento de mensagens consecutivas do mesmo autor (padrão Discord)
+                  const isConsecutive = Boolean(
+                    !isSystemMsg &&
+                    !prevIsSystem &&
+                    !parsedReply &&
+                    prevMsg &&
+                    cleanMsgUser === cleanPrevUser &&
+                    (!msg.timestamp || !prevMsg.timestamp || msg.timestamp === prevMsg.timestamp)
+                  );
+
                   const displayAvatar = isMe ? (myAvatarUrl || msg.avatarUrl) : msg.avatarUrl;
                   const foundUser = users.find((u) => (u.name || '').trim().toLowerCase() === cleanMsgUser);
                   const foundMember = serverMembers.find((m) => (m.username || '').trim().toLowerCase() === cleanMsgUser);
@@ -1178,24 +1811,86 @@ export function ChatPanel({
                       avatarUrl: displayAvatar,
                       role: targetRole,
                       isMe,
+                      tag: isMe ? (useAppStore.getState().myTag || localStorage.getItem('concord_user_tag') || '7236').replace('#', '') : undefined,
                     });
                   };
+
+                  const displayMessageText = parsedReply ? parsedReply.actualText : msg.message;
+                  const onlyEmojis = isOnlyEmojis(displayMessageText);
+                  const isMentioned = Boolean(
+                    myName &&
+                    (displayMessageText.toLowerCase().includes(`@${myName.toLowerCase()}`) ||
+                     displayMessageText.toLowerCase().includes('@everyone'))
+                  );
 
                   return (
                     <div
                       key={msg.id}
-                      className={isSystemMsg ? styles.systemWrapper : `${styles.messageRow} ${isMe ? styles.messageRowMe : styles.messageRowOther}`}
+                      className={
+                        isSystemMsg
+                          ? styles.systemWrapper
+                          : `${styles.messageRow} ${isMe ? styles.messageRowMe : styles.messageRowOther} ${isMentioned ? styles.messageRowMentioned : ''} ${isConsecutive ? styles.consecutiveRow : ''}`
+                      }
+                      onContextMenu={(e) => {
+                        if (isSystemMsg) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setContextMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          msg,
+                          isImage: msg.type === 'image' && Boolean(msg.url),
+                          imageUrl: msg.url,
+                        });
+                      }}
                     >
                       {isSystemMsg ? (
-                        <div className={styles.systemMessage}>
-                          {!/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u.test(msg.message) && (
-                            <span className={styles.systemMessageIcon}>⚙️</span>
-                          )}
-                          <span>{msg.message}</span>
-                        </div>
+                        systemNotificationsEnabled ? (
+                          <div className={styles.systemMessage}>
+                            {!/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u.test(msg.message) && (
+                              <span className={styles.systemMessageIcon}>⚙️</span>
+                            )}
+                            <span>{msg.message}</span>
+                          </div>
+                        ) : null
                       ) : (
                         <>
-                          {displayAvatar ? (
+                          {/* Barra de Ações Rápidas Estilo Discord (Hover) */}
+                          <div className={styles.messageActionBar}>
+                            <div className={styles.quickReactionsGroup}>
+                              {['👍', '❤️', '😂', '🔥', '🚀'].map((em) => (
+                                <button
+                                  key={em}
+                                  type="button"
+                                  className={styles.actionBarEmojiBtn}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleReaction(msg.id, em);
+                                  }}
+                                  title={`Reagir com ${em}`}
+                                >
+                                  {em}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              className={styles.actionBarBtn}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartReply(msg);
+                              }}
+                              title="Responder"
+                            >
+                              <i className="fa-solid fa-reply"></i>
+                            </button>
+                          </div>
+
+                          {isConsecutive ? (
+                            <div className={styles.consecutiveGutter}>
+                              <span className={styles.gutterTimestamp}>{msg.timestamp || ''}</span>
+                            </div>
+                          ) : displayAvatar ? (
                             <img
                               src={displayAvatar}
                               alt={msg.userName}
@@ -1216,18 +1911,47 @@ export function ChatPanel({
                           )}
 
                           <div className={styles.messageContentCol}>
-                            <div className={styles.messageUserHeader}>
-                              <span 
-                                className={styles.senderName}
-                                onClick={handleProfileClick}
-                                style={{ cursor: 'pointer' }}
-                                title={`Ver perfil de ${msg.userName}`}
-                              >
-                                {msg.userName}
-                                {isMe && <span className={styles.meBadge}>VOCÊ</span>}
-                              </span>
-                              <span className={styles.timestamp}>{msg.timestamp || 'Hoje'}</span>
-                            </div>
+                            {/* Citação da Mensagem Respondida (Discord Style) */}
+                            {parsedReply && (
+                              <div className={styles.replyQuoteHeader}>
+                                <i className="fa-solid fa-reply"></i>
+                                <span className={styles.replyQuoteUser}>@{parsedReply.quotedUser}</span>
+                                <span className={styles.replyQuoteSnippet}>{parsedReply.quotedText}</span>
+                              </div>
+                            )}
+
+                            {!isConsecutive && (
+                              <div className={styles.messageUserHeader}>
+                                <span 
+                                  className={styles.senderName}
+                                  onClick={handleProfileClick}
+                                  style={{ cursor: 'pointer' }}
+                                  title={`Ver perfil de ${msg.userName}`}
+                                >
+                                  {msg.userName}
+                                  {isMe && <span className={styles.meBadge}>VOCÊ</span>}
+                                </span>
+                                {(() => {
+                                  const customRole = msg.customRole || foundUser?.customRole || foundMember?.customRole;
+                                  if (!customRole) return null;
+                                  return (
+                                    <span 
+                                      className={styles.msgRoleBadge}
+                                      style={{
+                                        borderColor: customRole.color || '#7c5cff',
+                                        color: customRole.color || '#c4b5fd',
+                                        background: `${customRole.color || '#7c5cff'}22`,
+                                      }}
+                                      title={`Cargo: ${customRole.name}`}
+                                    >
+                                      <span>{customRole.emoji}</span>
+                                      <span>{customRole.name}</span>
+                                    </span>
+                                  );
+                                })()}
+                                <span className={styles.timestamp}>{msg.timestamp || 'Hoje'}</span>
+                              </div>
+                            )}
 
                             {/* Conteúdo da mensagem */}
                             {msg.type === 'giphy' && msg.url ? (
@@ -1248,6 +1972,18 @@ export function ChatPanel({
                                     setViewingImage(msg.url!);
                                     setImageZoom(1);
                                   }}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setContextMenu({
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      msg,
+                                      isImage: true,
+                                      imageUrl: msg.url!,
+                                    });
+                                  }}
+                                  title="Clique para ampliar / Botão direito para copiar"
                                 >
                                   <img
                                     src={msg.url}
@@ -1256,11 +1992,11 @@ export function ChatPanel({
                                     onLoad={() => scrollToBottom(false)}
                                   />
                                 </div>
-                                {msg.message && msg.message !== '📷 Imagem' && (
+                                {displayMessageText && displayMessageText !== '📷 Imagem' && (
                                   <div
-                                    className={isMe ? styles.myBubble : styles.otherBubble}
+                                    className={`${isMe ? styles.myBubble : styles.otherBubble} ${onlyEmojis ? styles.jumboEmoji : ''}`}
                                     dangerouslySetInnerHTML={{
-                                      __html: parseLinks(escapeHtml(msg.message)),
+                                      __html: formatMessageHtml(displayMessageText, myName),
                                     }}
                                   />
                                 )}
@@ -1273,22 +2009,47 @@ export function ChatPanel({
                                     <span className={styles.fileName}>{msg.filename || 'Arquivo'}</span>
                                   </a>
                                 </div>
-                                {msg.message && msg.message !== '📄 ' + msg.filename && (
+                                {displayMessageText && displayMessageText !== '📄 ' + msg.filename && (
                                   <div
-                                    className={isMe ? styles.myBubble : styles.otherBubble}
+                                    className={`${isMe ? styles.myBubble : styles.otherBubble} ${onlyEmojis ? styles.jumboEmoji : ''}`}
                                     dangerouslySetInnerHTML={{
-                                      __html: parseLinks(escapeHtml(msg.message)),
+                                      __html: formatMessageHtml(displayMessageText, myName),
                                     }}
                                   />
                                 )}
                               </>
                             ) : (
                               <div
-                                className={isMe ? styles.myBubble : styles.otherBubble}
+                                className={`${isMe ? styles.myBubble : styles.otherBubble} ${onlyEmojis ? styles.jumboEmoji : ''}`}
                                 dangerouslySetInnerHTML={{
-                                  __html: parseLinks(escapeHtml(msg.message)),
+                                  __html: formatMessageHtml(displayMessageText, myName),
                                 }}
                               />
+                            )}
+
+                            {/* Reações com Emojis */}
+                            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                              <div className={styles.reactionsList}>
+                                {Object.entries(msg.reactions).map(([em, userList]) => {
+                                  if (!userList || userList.length === 0) return null;
+                                  const reacted = userList.includes(cleanMyName) || userList.includes(myName || '');
+                                  return (
+                                    <button
+                                      key={em}
+                                      type="button"
+                                      className={`${styles.reactionBadge} ${reacted ? styles.reactionBadgeActive : ''}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleReaction(msg.id, em);
+                                      }}
+                                      title={`Reagido por: ${userList.join(', ')}`}
+                                    >
+                                      <span className={styles.reactionEmoji}>{em}</span>
+                                      <span className={styles.reactionCount}>{userList.length}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             )}
                           </div>
                         </>
@@ -1391,15 +2152,45 @@ export function ChatPanel({
 
             {/* Chat input matching prototype */}
             <div className={styles.inputContainer}>
+              {/* Barra de Resposta Ativa (Discord Style) */}
+              {replyingTo && (
+                <div className={styles.replyBanner}>
+                  <div className={styles.replyBannerContent}>
+                    <i className="fa-solid fa-reply"></i>
+                    <span>Respondendo a <strong>@{replyingTo.userName}</strong></span>
+                    <span className={styles.replyBannerSnippet}>
+                      {replyingTo.message}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.replyBannerCancel}
+                    onClick={() => setReplyingTo(null)}
+                    title="Cancelar resposta"
+                  >
+                    <i className="fa-solid fa-xmark"></i>
+                  </button>
+                </div>
+              )}
+
+              {/* Aviso se a conversa de DM estiver bloqueada */}
+              {isPartnerBlocked && (
+                <div className={styles.blockedNoticeBanner}>
+                  <i className="fa-solid fa-ban" />
+                  <span>Esta conversa direta está bloqueada. Não é possível enviar mensagens para este usuário.</span>
+                </div>
+              )}
+
               <form
                 id="chatForm"
-                className={styles.chatForm}
+                className={`${styles.chatForm} ${isPartnerBlocked ? styles.chatFormBlocked : ''}`}
                 onDragOver={(e) => {
+                  if (isPartnerBlocked) return;
                   e.preventDefault();
                   e.stopPropagation();
                   e.dataTransfer.dropEffect = 'copy';
                 }}
-                onDrop={handleDrop}
+                onDrop={isPartnerBlocked ? undefined : handleDrop}
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSend();
@@ -1410,13 +2201,15 @@ export function ChatPanel({
                   ref={fileInputRef}
                   onChange={handleFileUpload}
                   style={{ display: 'none' }}
+                  disabled={isPartnerBlocked}
                 />
 
                 <button
                   type="button"
                   className={styles.formIconBtn}
                   onClick={() => fileInputRef.current?.click()}
-                  title="Anexar arquivo"
+                  disabled={isPartnerBlocked}
+                  title={isPartnerBlocked ? "Conversa bloqueada" : "Anexar arquivo"}
                 >
                   <i className="fa-solid fa-circle-plus"></i>
                 </button>
@@ -1424,22 +2217,28 @@ export function ChatPanel({
                 <input
                   type="text"
                   id="chatInput"
-                  className={styles.chatInput}
+                  className={`${styles.chatInput} ${isPartnerBlocked ? styles.chatInputDisabled : ''}`}
+                  disabled={isPartnerBlocked}
                   placeholder={
-                    isServer
-                      ? `Conversar em #${activeChannel.name}... (digite / para comandos)`
-                      : 'Conversar na sala... (digite / para comandos)'
+                    isPartnerBlocked
+                      ? 'Você não pode enviar mensagens diretas para este usuário (bloqueado).'
+                      : isDmMode
+                      ? `Conversar com @${activeDmChat?.partnerName || (activeDmChat as any)?.other_user_name || 'amigo'}...`
+                      : isServer
+                      ? `Conversar em #${activeChannel.name}... (digite @ para mencionar, / para comandos)`
+                      : 'Conversar na sala... (digite @ para mencionar, / para comandos)'
                   }
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   onDragOver={(e) => {
+                    if (isPartnerBlocked) return;
                     e.preventDefault();
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = 'copy';
                   }}
-                  onDrop={handleDrop}
+                  onDrop={isPartnerBlocked ? undefined : handleDrop}
                   maxLength={2000}
                 />
 
@@ -1448,8 +2247,9 @@ export function ChatPanel({
                     type="button"
                     ref={giphyBtnRef}
                     className={styles.actionBtnGiphy}
-                    onClick={() => setShowGiphy(!showGiphy)}
-                    title="Presentear Nitro / GIFs"
+                    onClick={() => !isPartnerBlocked && setShowGiphy(!showGiphy)}
+                    disabled={isPartnerBlocked}
+                    title={isPartnerBlocked ? "Conversa bloqueada" : "Presentear Nitro / GIFs"}
                   >
                     <i className="fa-solid fa-gift text-sm"></i>
                   </button>
@@ -1458,8 +2258,9 @@ export function ChatPanel({
                     type="button"
                     ref={emojiBtnRef}
                     className={styles.actionBtnEmoji}
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    title="Emojis"
+                    onClick={() => !isPartnerBlocked && setShowEmojiPicker(!showEmojiPicker)}
+                    disabled={isPartnerBlocked}
+                    title={isPartnerBlocked ? "Conversa bloqueada" : "Emojis"}
                   >
                     <i className="fa-solid fa-face-smile text-sm"></i>
                   </button>
@@ -1467,8 +2268,8 @@ export function ChatPanel({
                   <button
                     type="submit"
                     className={styles.sendButton}
-                    disabled={(!input.trim() && !stagedFile) || isUploading}
-                    title="Enviar Mensagem (Enter)"
+                    disabled={isPartnerBlocked || (!input.trim() && !stagedFile) || isUploading}
+                    title={isPartnerBlocked ? "Conversa bloqueada" : "Enviar Mensagem (Enter)"}
                   >
                     {isUploading ? (
                       <span className={styles.spinner} />
@@ -1484,6 +2285,42 @@ export function ChatPanel({
                   <Suspense fallback={<div style={{ padding: '16px', color: '#aaa' }}>Carregando...</div>}>
                     <EmojiPicker onEmojiClick={onEmojiClick} theme={"dark" as any} />
                   </Suspense>
+                </div>
+              )}
+
+              {/* Autocomplete de Menções (@) */}
+              {showMentionMenu && mentionFilter.length > 0 && (
+                <div className={styles.mentionMenu} ref={mentionMenuRef}>
+                  <div className={styles.mentionHeader}>
+                    <span>Membros (@)</span>
+                    <span style={{ fontSize: '10px', opacity: 0.7 }}>↑↓ navegar • Enter selecionar</span>
+                  </div>
+                  <div className={styles.mentionList}>
+                    {mentionFilter.map((m, i) => (
+                      <button
+                        key={m.id || m.name}
+                        type="button"
+                        className={`${styles.mentionItem} ${i === mentionHighlight ? styles.mentionItemActive : ''}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          applyMention(m.name);
+                        }}
+                        onMouseEnter={() => setMentionHighlight(i)}
+                      >
+                        {m.avatarUrl ? (
+                          <img src={m.avatarUrl} alt={m.name} className={styles.mentionAvatar} />
+                        ) : (
+                          <div className={styles.mentionAvatarFallback}>
+                            {m.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className={styles.mentionInfo}>
+                          <span className={styles.mentionName}>@{m.name}</span>
+                          {m.role && <span className={styles.mentionRole}>{m.role}</span>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1516,53 +2353,6 @@ export function ChatPanel({
                 </div>
               )}
             </div>
-
-            {viewingImage && (
-              <div className={styles.imageViewerOverlay} onClick={() => setViewingImage(null)}>
-                <div className={styles.imageViewerControls} onClick={(e) => e.stopPropagation()}>
-                  <a
-                    href={viewingImage}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={styles.imageViewerLink}
-                    onClick={(e) => {
-                      if (viewingImage.startsWith('data:')) {
-                        e.preventDefault();
-
-                        const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
-                        if (isElectron && (window as any).electron?.openBase64InBrowser) {
-                          (window as any).electron.openBase64InBrowser(viewingImage);
-                          return;
-                        }
-
-                        fetch(viewingImage)
-                          .then(res => res.blob())
-                          .then(blob => {
-                            const blobUrl = URL.createObjectURL(blob);
-                            window.open(blobUrl, '_blank');
-                          })
-                          .catch(() => {
-                            window.open(viewingImage, '_blank');
-                          });
-                      }
-                    }}
-                  >
-                    Abrir Original
-                  </a>
-                  <button className={styles.imageViewerClose} onClick={() => setViewingImage(null)}>×</button>
-                </div>
-                <img
-                  src={viewingImage}
-                  className={`${styles.imageViewerImage} ${imageZoom > 1 ? styles.zoomed : ''}`}
-                  style={{ transform: `scale(${imageZoom})` }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setImageZoom(z => z === 1 ? 2 : 1);
-                  }}
-                  alt="Ampliada"
-                />
-              </div>
-            )}
 
           </div>{/* end flipCardFront */}
 
@@ -1654,35 +2444,10 @@ export function ChatPanel({
 
                   if (!isSessionActive) {
                     return (
-                      <div className={styles.streamingLauncherCard}>
-                        <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : styles.streamingLauncherPrime}`}>
-                          {currentService === 'netflix' ? <NetflixIcon /> : <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i>}
-                        </div>
-                        <h3 className={styles.streamingLauncherTitle}>
-                          Sessão da {platformLabel} não iniciada
-                        </h3>
-                        <p className={styles.streamingLauncherDesc}>
-                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus filmes e séries sem sair do app.
-                        </p>
-                        <button
-                          className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : styles.streamingLauncherBtnPrime}`}
-                          onClick={() => {
-                            if (!inVoice) {
-                              toast.error(`Você precisa estar em uma call de voz para assistir ${platformLabel}.`);
-                              return;
-                            }
-                            setActiveStreaming({ service: currentService });
-                            setActiveMediaTab(currentService);
-                            setStreamingSession(currentService, true);
-                            const electron = (window as any).electron;
-                            if (electron?.setActiveMediaTab) {
-                              electron.setActiveMediaTab(currentService);
-                            }
-                          }}
-                        >
-                          <span>▶</span> Abrir {platformLabel} no Concord
-                        </button>
-                      </div>
+                      <StreamingComingSoon
+                        platform={currentService}
+                        onBack={() => setActiveMediaTab('youtube')}
+                      />
                     );
                   }
 
@@ -2147,15 +2912,27 @@ export function ChatPanel({
                             <span className={styles.timeText}>{formatTime(duration)}</span>
 
                             <div className={styles.volumeContainer}>
-                              <i className={`fa-solid ${ytVol === 0 || callMuted ? 'fa-volume-xmark' : ytVol < 50 ? 'fa-volume-low' : 'fa-volume-high'}`} style={{ fontSize: '13px', width: '16px', textAlign: 'center' }}></i>
+                              <button
+                                type="button"
+                                className={styles.volumeMuteBtn}
+                                onClick={handleToggleYtMute}
+                                title={ytVol === 0 || callMuted ? "Desmutar vídeo (Restaurar volume)" : "Mutar vídeo"}
+                                aria-label={ytVol === 0 || callMuted ? "Desmutar vídeo" : "Mutar vídeo"}
+                              >
+                                <i className={`fa-solid ${ytVol === 0 || callMuted ? 'fa-volume-xmark' : ytVol < 50 ? 'fa-volume-low' : 'fa-volume-high'}`} style={{ fontSize: '13px', width: '16px', textAlign: 'center' }}></i>
+                              </button>
                               <input
                                 type="range"
                                 min={0}
                                 max={100}
                                 value={ytVol}
-                                onChange={(e) => setYtVol(parseInt(e.target.value))}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (val > 0) prevYtVolRef.current = val;
+                                  setYtVol(val);
+                                }}
                                 className={styles.volumeSlider}
-                                title="Volume"
+                                title={`Volume: ${ytVol}%`}
                               />
                             </div>
 
@@ -2387,6 +3164,252 @@ export function ChatPanel({
 
         </div>{/* end flipCardInner */}
       </div>{/* end flipCard */}
+
+      {/* ═══ PORTAL: LIGHTBOX / VISUALIZADOR DE IMAGEM AMPLIADA ═══ */}
+      {viewingImage && createPortal(
+        <div
+          className={styles.lightboxOverlay}
+          onClick={() => setViewingImage(null)}
+        >
+          <div className={styles.lightboxTopBar} onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.lightboxZoomControls} onMouseDown={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className={`${styles.lightboxBtn} ${imageZoom <= 1 ? styles.lightboxBtnDisabled : ''}`}
+                disabled={imageZoom <= 1}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (imageZoom > 1) {
+                    setImageZoom((z) => Math.max(1, Number((z - 0.25).toFixed(2))));
+                  }
+                }}
+                title={imageZoom <= 1 ? "Zoom mínimo (100%)" : "Diminuir Zoom (-)"}
+              >
+                <i className="fa-solid fa-magnifying-glass-minus"></i>
+              </button>
+              <span className={styles.lightboxZoomPercent}>{Math.round(imageZoom * 100)}%</span>
+              <button
+                type="button"
+                className={styles.lightboxBtn}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setImageZoom((z) => Math.min(3, Number((z + 0.25).toFixed(2))));
+                }}
+                title="Aumentar Zoom (+)"
+              >
+                <i className="fa-solid fa-magnifying-glass-plus"></i>
+              </button>
+              {imageZoom !== 1 && (
+                <button
+                  type="button"
+                  className={styles.lightboxBtnText}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setImageZoom(1);
+                  }}
+                  title="Ajustar à tela (100%)"
+                >
+                  Ajustar (100%)
+                </button>
+              )}
+            </div>
+
+            <div className={styles.lightboxActions} onMouseDown={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                className={styles.lightboxBtnText}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const ok = await copyImageToClipboard(viewingImage);
+                  if (ok) toast.success('Imagem copiada para a área de transferência!');
+                  else toast.error('Não foi possível copiar a imagem.');
+                }}
+                title="Copiar imagem"
+              >
+                <i className="fa-regular fa-copy"></i>
+                <span>Copiar Imagem</span>
+              </button>
+
+              <button
+                type="button"
+                className={styles.lightboxBtnText}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (viewingImage.startsWith('data:')) {
+                    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                    if (isElectron && (window as any).electron?.openBase64InBrowser) {
+                      (window as any).electron.openBase64InBrowser(viewingImage);
+                      return;
+                    }
+                  }
+                  window.open(viewingImage, '_blank');
+                }}
+                title="Abrir no navegador"
+              >
+                <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                <span>Abrir Original</span>
+              </button>
+
+              <button
+                type="button"
+                className={styles.lightboxCloseBtn}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewingImage(null);
+                }}
+                title="Fechar (Esc)"
+              >
+                <i className="fa-solid fa-xmark"></i>
+              </button>
+            </div>
+          </div>
+
+          <div
+            className={styles.lightboxViewport}
+            onClick={() => setViewingImage(null)}
+          >
+            <div
+              className={styles.lightboxImageContainer}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={viewingImage}
+                className={`${styles.lightboxImage} ${imageZoom > 1 ? styles.lightboxImageZoomed : ''}`}
+                style={imageZoom > 1 ? { transform: `scale(${imageZoom})`, transformOrigin: 'center center' } : {}}
+                onClick={() => setImageZoom((z) => (z === 1 ? 2 : 1))}
+                title={imageZoom === 1 ? 'Clique para ampliar (2x)' : 'Clique para ajustar à tela'}
+                alt="Visualização de imagem"
+              />
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ═══ PORTAL: MENU DE CONTEXTO (RIGHT-CLICK) ═══ */}
+      {contextMenu && createPortal(
+        <div
+          className={styles.contextMenuOverlay}
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu(null);
+          }}
+        >
+          <div
+            className={styles.contextMenu}
+            style={{
+              top: Math.min(contextMenu.y, window.innerHeight - 260),
+              left: Math.min(contextMenu.x, window.innerWidth - 220),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Quick Reactions Bar */}
+            <div className={styles.contextMenuQuickReactions}>
+              {['👍', '❤️', '😂', '🔥', '🚀'].map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  className={styles.contextMenuEmojiBtn}
+                  onClick={() => {
+                    handleToggleReaction(contextMenu.msg.id, em);
+                    setContextMenu(null);
+                  }}
+                  title={`Reagir com ${em}`}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.contextMenuDivider} />
+
+            <button
+              type="button"
+              className={styles.contextMenuItem}
+              onClick={() => handleStartReply(contextMenu.msg)}
+            >
+              <i className="fa-solid fa-reply"></i>
+              <span>Responder</span>
+            </button>
+
+            {contextMenu.isImage && contextMenu.imageUrl && (
+              <>
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={async () => {
+                    setContextMenu(null);
+                    const ok = await copyImageToClipboard(contextMenu.imageUrl!);
+                    if (ok) toast.success('Imagem copiada para a área de transferência!');
+                    else toast.error('Não foi possível copiar a imagem.');
+                  }}
+                >
+                  <i className="fa-regular fa-copy"></i>
+                  <span>Copiar Imagem</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    setViewingImage(contextMenu.imageUrl!);
+                    setImageZoom(1);
+                    setContextMenu(null);
+                  }}
+                >
+                  <i className="fa-solid fa-expand"></i>
+                  <span>Ver em Tela Cheia</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    setContextMenu(null);
+                    const url = contextMenu.imageUrl!;
+                    if (url.startsWith('data:')) {
+                      const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                      if (isElectron && (window as any).electron?.openBase64InBrowser) {
+                        (window as any).electron.openBase64InBrowser(url);
+                        return;
+                      }
+                    }
+                    window.open(url, '_blank');
+                  }}
+                >
+                  <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                  <span>Abrir no Navegador</span>
+                </button>
+              </>
+            )}
+
+            {contextMenu.msg.message && (
+              <button
+                type="button"
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  const parsed = parseReplyMessage(contextMenu.msg.message);
+                  const textToCopy = parsed ? parsed.actualText : contextMenu.msg.message;
+                  navigator.clipboard.writeText(textToCopy);
+                  toast.success('Texto copiado!');
+                  setContextMenu(null);
+                }}
+              >
+                <i className="fa-solid fa-clipboard"></i>
+                <span>Copiar Texto</span>
+              </button>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

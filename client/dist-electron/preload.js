@@ -24,6 +24,7 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     maximize: () => electron_1.ipcRenderer.send('window-maximize'),
     close: () => electron_1.ipcRenderer.send('window-close'),
     copyToClipboard: (text) => electron_1.ipcRenderer.send('copy-to-clipboard', text),
+    copyImageToClipboard: (url) => electron_1.ipcRenderer.invoke('copy-image-to-clipboard', url),
     forceUnmute: () => electron_1.ipcRenderer.send('force-unmute'),
     onDeepLink: (callback) => {
         const subscription = (_event, url) => callback(url);
@@ -35,6 +36,8 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     openBase64InBrowser: (data) => electron_1.ipcRenderer.send('open-base64-in-browser', data),
     savePreferences: (prefs) => electron_1.ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => electron_1.ipcRenderer.invoke('load-preferences'),
+    saveSecureToken: (key, value) => electron_1.ipcRenderer.invoke('save-secure-token', key, value),
+    loadSecureToken: (key) => electron_1.ipcRenderer.invoke('load-secure-token', key),
     toggleMiniPlayer: (isMini) => electron_1.ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState) => electron_1.ipcRenderer.send('open-pip-window', initialState),
     closePipWindow: () => electron_1.ipcRenderer.send('close-pip-window'),

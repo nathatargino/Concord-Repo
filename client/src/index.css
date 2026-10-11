@@ -531,3 +531,427 @@ input, button, textarea {
 .plyr__video-embed iframe {
   pointer-events: none !important;
 }
+
+/* ==========================================================================
+   CONCORD MODERN LIGHT THEME (Clean, Crisp, High-Contrast Contemporary Design)
+   ========================================================================== */
+
+html[data-theme="light"],
+body[data-theme="light"],
+:root[data-theme="light"] {
+  --bg-base: #ebedef;
+  --bg-surface: #f2f3f5;
+  --bg-elevated: #ffffff;
+  --bg-rail: #e3e5e8;
+  --dark-base: #f2f3f5;
+  --border-subtle: #d1d5db;
+  --border-card: #cbd5e1;
+  --accent-primary: #5865f2;
+  --accent-bright: #4752c4;
+  --neon-color: #0284c7;
+  --danger-neon: #e11d48;
+  --success-color: #059669;
+  --text-primary: #0f172a;
+  --text-main: #334155;
+  --text-muted: #64748b;
+}
+
+html[data-theme="light"] body {
+  background-color: #ebedef !important;
+  color: #334155 !important;
+}
+
+/* Light Scrollbars */
+html[data-theme="light"] ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+}
+
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Titlebar */
+html[data-theme="light"] [class*="titlebar"] {
+  background: #e3e5e8 !important;
+  border-bottom: 1px solid #d1d5db !important;
+  color: #334155 !important;
+}
+
+html[data-theme="light"] [class*="titlebar"] [class*="left"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="titlebar"] [class*="controlButton"] {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="titlebar"] [class*="controlButton"]:hover {
+  background: rgba(0, 0, 0, 0.08) !important;
+  color: #0f172a !important;
+}
+
+/* Primary Server Rail */
+html[data-theme="light"] [class*="serverRail"],
+html[data-theme="light"] [class*="railContainer"] {
+  background: #e3e5e8 !important;
+  border-right: 1px solid #d1d5db !important;
+}
+
+html[data-theme="light"] [class*="railDivider"] {
+  background: #cbd5e1 !important;
+}
+
+/* Sidebar */
+html[data-theme="light"] [class*="sidebarContainer"] {
+  background: #e8eaed !important;
+  border-right: 1px solid #d1d5db !important;
+}
+
+html[data-theme="light"] [class*="serverHeaderCard"],
+html[data-theme="light"] [class*="sidebarHeader"] {
+  background: #ffffff !important;
+  border-bottom: 1px solid #d1d5db !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="serverNameText"],
+html[data-theme="light"] [class*="categoryTitle"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="categoryHeader"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="channelItem"] {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="channelItem"]:hover {
+  background: rgba(88, 101, 242, 0.09) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="channelItemActive"] {
+  background: rgba(88, 101, 242, 0.16) !important;
+  color: #4338ca !important;
+  font-weight: 700 !important;
+}
+
+html[data-theme="light"] [class*="userFooter"],
+html[data-theme="light"] [class*="myUserBar"] {
+  background: #e3e5e8 !important;
+  border-top: 1px solid #d1d5db !important;
+}
+
+html[data-theme="light"] [class*="myNameText"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="myTagText"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="controlBtn"] {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="controlBtn"]:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="userCard"] {
+  color: #334155 !important;
+}
+
+html[data-theme="light"] [class*="userCard"]:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+
+html[data-theme="light"] [class*="userName"] {
+  color: #0f172a !important;
+}
+
+/* Chat Section & Panel (Canvas: confortavel off-white; Surface: elevated card) */
+html[data-theme="light"] [class*="chatSection"] {
+  background: #f2f3f5 !important;
+}
+
+html[data-theme="light"] [class*="flipCardFront"],
+html[data-theme="light"] [class*="chatContainer"] {
+  background: #f2f3f5 !important;
+}
+
+html[data-theme="light"] [class*="chatHeader"] {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="channelTitle"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="channelTopic"],
+html[data-theme="light"] [class*="channelDescription"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="messageList"] {
+  background: #f2f3f5 !important;
+}
+
+html[data-theme="light"] [class*="messageRow"]:hover {
+  background: rgba(0, 0, 0, 0.03) !important;
+}
+
+html[data-theme="light"] [class*="senderName"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="timestamp"] {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="light"] [class*="otherBubble"] {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="myBubble"] {
+  background: linear-gradient(135deg, #5865f2, #4752c4) !important;
+  color: #ffffff !important;
+  border: none !important;
+  box-shadow: 0 2px 10px rgba(88, 101, 242, 0.25) !important;
+}
+
+html[data-theme="light"] [class*="inputContainer"] {
+  background: #f2f3f5 !important;
+  border-top: 1px solid #e2e8f0 !important;
+}
+
+html[data-theme="light"] [class*="chatForm"] {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="chatInput"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="chatInput"]::placeholder {
+  color: #94a3b8 !important;
+}
+
+html[data-theme="light"] [class*="formIconBtn"],
+html[data-theme="light"] [class*="actionBtnGiphy"],
+html[data-theme="light"] [class*="actionBtnEmoji"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="formIconBtn"]:hover,
+html[data-theme="light"] [class*="actionBtnGiphy"]:hover,
+html[data-theme="light"] [class*="actionBtnEmoji"]:hover {
+  color: #4f46e5 !important;
+}
+
+/* HomeHub Light Theme */
+html[data-theme="light"] [class*="homeSection"] {
+  background: #f8fafc !important;
+}
+
+html[data-theme="light"] [class*="heroGreeting"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="heroSub"] {
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="quickConnectBox"] {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="quickConnectInput"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="actionCard"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="actionCard"]:hover {
+  background: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] [class*="actionTitle"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="actionSub"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="roomCard"],
+html[data-theme="light"] [class*="serverCard"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+}
+
+html[data-theme="light"] [class*="roomCard"]:hover,
+html[data-theme="light"] [class*="serverCard"]:hover {
+  background: #f8fafc !important;
+  border-color: #818cf8 !important;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.12) !important;
+}
+
+html[data-theme="light"] [class*="recentServerCard"] {
+  border-color: rgba(129, 140, 248, 0.4) !important;
+  background: linear-gradient(135deg, #ffffff, #f8fafc) !important;
+}
+
+html[data-theme="light"] [class*="roomName"],
+html[data-theme="light"] [class*="serverName"] {
+  color: #0f172a !important;
+}
+
+/* Modals: Permanecem em tema escuro fixo mesmo quando o modo claro está ativo */
+html[data-theme="light"] [class*="modal"],
+html[data-theme="light"] [class*="Modal"],
+html[data-theme="light"] [class*="overlay"],
+html[data-theme="light"] [class*="Overlay"] {
+  color-scheme: dark !important;
+}
+
+/* Inputs, textareas e campos dentro de qualquer modal mantêm o tema escuro */
+html[data-theme="light"] [class*="modal"] input,
+html[data-theme="light"] [class*="Modal"] input,
+html[data-theme="light"] [class*="overlay"] input,
+html[data-theme="light"] [class*="Overlay"] input,
+html[data-theme="light"] [class*="modal"] textarea,
+html[data-theme="light"] [class*="Modal"] textarea,
+html[data-theme="light"] [class*="overlay"] textarea,
+html[data-theme="light"] [class*="Overlay"] textarea,
+html[data-theme="light"] [class*="modal"] [class*="input"],
+html[data-theme="light"] [class*="Modal"] [class*="input"],
+html[data-theme="light"] [class*="overlay"] [class*="input"],
+html[data-theme="light"] [class*="Overlay"] [class*="input"],
+html[data-theme="light"] [class*="serverNameInput"] {
+  background: #151821 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] [class*="modal"] input::placeholder,
+html[data-theme="light"] [class*="Modal"] input::placeholder,
+html[data-theme="light"] [class*="overlay"] input::placeholder,
+html[data-theme="light"] [class*="Overlay"] input::placeholder {
+  color: #6b7280 !important;
+}
+
+html[data-theme="light"] [class*="modal"] [class*="label"],
+html[data-theme="light"] [class*="Modal"] [class*="label"],
+html[data-theme="light"] [class*="overlay"] [class*="label"],
+html[data-theme="light"] [class*="Overlay"] [class*="label"] {
+  color: #9ca3af !important;
+}
+
+html[data-theme="light"] [class*="modal"] [class*="modalTitle"],
+html[data-theme="light"] [class*="Modal"] [class*="modalTitle"],
+html[data-theme="light"] [class*="overlay"] [class*="modalTitle"],
+html[data-theme="light"] [class*="Overlay"] [class*="modalTitle"],
+html[data-theme="light"] [class*="modal"] [class*="title"],
+html[data-theme="light"] [class*="Modal"] [class*="title"] {
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] [class*="modal"] [class*="modalSubtitle"],
+html[data-theme="light"] [class*="Modal"] [class*="modalSubtitle"],
+html[data-theme="light"] [class*="overlay"] [class*="modalSubtitle"],
+html[data-theme="light"] [class*="Overlay"] [class*="modalSubtitle"],
+html[data-theme="light"] [class*="modal"] [class*="subtitle"],
+html[data-theme="light"] [class*="Modal"] [class*="subtitle"],
+html[data-theme="light"] [class*="modal"] [class*="modalDesc"],
+html[data-theme="light"] [class*="Modal"] [class*="modalDesc"] {
+  color: #9ca3af !important;
+}
+
+html[data-theme="light"] [class*="tabContainer"] {
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+html[data-theme="light"] [class*="tabBtn"] {
+  color: #64748b !important;
+}
+
+html[data-theme="light"] [class*="tabBtnActive"] {
+  background: #ffffff !important;
+  color: #4f46e5 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06) !important;
+}
+
+/* Status Bar */
+html[data-theme="light"] [class*="statusBar"] {
+  background: #f1f5f9 !important;
+  border-top: 1px solid #e2e8f0 !important;
+  color: #475569 !important;
+}
+
+/* Music Panel & Side Panels */
+html[data-theme="light"] [class*="musicPanelContainer"],
+html[data-theme="light"] [class*="sidePanels"] {
+  background: #f8fafc !important;
+  border-left: 1px solid #e2e8f0 !important;
+}
+
+html[data-theme="light"] [class*="musicCard"],
+html[data-theme="light"] [class*="queueItem"] {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* Floating Call Bar Light Theme */
+html[data-theme="light"] [class*="FloatingCallBar_bar"] {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.14) !important;
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="FloatingCallBar_roomName"] {
+  color: #0f172a !important;
+}
+
+html[data-theme="light"] [class*="FloatingCallBar_iconBtn"] {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+html[data-theme="light"] [class*="FloatingCallBar_iconBtn"]:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+

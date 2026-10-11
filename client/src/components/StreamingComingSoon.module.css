@@ -1,0 +1,120 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  text-align: center;
+  width: 90%;
+  max-width: 320px;
+  aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  background: radial-gradient(circle at center, rgba(30, 31, 54, 0.5) 0%, rgba(15, 16, 28, 0.75) 100%);
+  border-radius: 16px;
+  margin: 24px auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.iconWrapper {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 12px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s ease;
+}
+
+.iconWrapper:hover {
+  transform: scale(1.05);
+}
+
+.netflixTheme {
+  background: linear-gradient(135deg, rgba(229, 9, 20, 0.25), rgba(229, 9, 20, 0.08));
+  border: 1px solid rgba(229, 9, 20, 0.45);
+  color: #e50914;
+}
+
+.primeTheme {
+  background: linear-gradient(135deg, rgba(0, 168, 225, 0.25), rgba(0, 168, 225, 0.08));
+  border: 1px solid rgba(0, 168, 225, 0.45);
+  color: #00a8e1;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+}
+
+.netflixBadge {
+  background: rgba(229, 9, 20, 0.15);
+  border: 1px solid rgba(229, 9, 20, 0.3);
+  color: #ff4b55;
+}
+
+.primeBadge {
+  background: rgba(0, 168, 225, 0.15);
+  border: 1px solid rgba(0, 168, 225, 0.3);
+  color: #38bdf8;
+}
+
+.title {
+  font-family: 'Space Grotesk', 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0 0 8px 0;
+}
+
+.description {
+  font-size: 12px;
+  color: #94a3b8;
+  max-width: 260px;
+  line-height: 1.45;
+  margin: 0 0 16px 0;
+}
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.backBtn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateX(-2px);
+}

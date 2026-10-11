@@ -18,10 +18,21 @@ import {
   findRoomInSupabase,
   isUuid,
   supabase,
-  removeLocalServerMember
+  removeLocalServerMember,
+  formatRoomTimeRemaining,
+  removeRecentRoom,
+  sendFriendRequestToSupabase,
+  cancelFriendRequestInSupabase,
+  fetchFriendsFromSupabase,
+  blockUserInSupabase,
+  unblockUserInSupabase,
+  getOrCreatePersistentId,
 } from '../lib/supabase';
-import type { ServerChannel } from '../types';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import type { ServerChannel, CustomRole } from '../types';
 import { notifyInChat } from '../utils/systemMessage';
+import { ManageRolesModal } from './ManageRolesModal';
 
 interface Props {
   onScreenShareClick: (userId: string) => void;
@@ -35,6 +46,7 @@ interface Props {
   onDeleteChannel?: (channelId: string) => void;
   onUpdateServer?: (serverId: string, newName?: string, newIconUrl?: string) => void;
   onSetUserRole?: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
+  onSetCustomRole?: (payload: { roomId: string; targetUserId: string; targetUsername: string; customRole: CustomRole | null }) => void;
   onUpdateProfile?: (name: string, avatarUrl: string | null) => void;
 }
 
@@ -50,6 +62,7 @@ export const Sidebar: React.FC<Props> = ({
   onDeleteChannel,
   onUpdateServer,
   onSetUserRole,
+  onSetCustomRole,
   onUpdateProfile,
 }) => {
   const { 
@@ -79,7 +92,27 @@ export const Sidebar: React.FC<Props> = ({
     amSharing,
     messages,
     openUserProfile,
+    activeRailContext,
+    setActiveRailContext,
+    recentRooms,
+    refreshRecentRooms,
+    openActionModal,
+    setIsServer,
+    myTag,
+    homeTab,
+    setHomeTab,
+    friends,
+    setFriends,
+    directChats,
+    activeDmChat,
+    setActiveDmChat,
+    setCreateRoomPromptOpen,
+    activeCallInfo,
   } = useAppStore();
+
+  const [copiedFooterUser, setCopiedFooterUser] = useState(false);
+
+  const navigate = useNavigate();
 
   const { localMutedUsers, userVolumes, setUserVolume, micMuted, callMuted, toggleMicMute, toggleCallMute } = useAudioStore();
 
@@ -114,6 +147,7 @@ export const Sidebar: React.FC<Props> = ({
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'server' | 'profile' | 'audio'>('server');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const isEffectiveServer = Boolean(
@@ -148,20 +182,29 @@ export const Sidebar: React.FC<Props> = ({
       }
     }
   }, [myAvatarUrl, effectiveMyAvatar, setMyAvatarUrl]);
-  const isOwner = 
-    (room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)) || 
-    myMember?.role === 'owner' || 
-    (!room?.subOwnerIds?.includes(myId) && room?.adminIds?.[0] === myId) || 
-    myRole === 'owner' || 
-    users.find(u => u.id === myId)?.role === 'owner' || 
-    (Boolean(room?.ownerId) && room?.ownerId === myId);
+  // Modal para gerenciamento de cargos (Nome + Emoji)
+  const [manageRoleTarget, setManageRoleTarget] = useState<{
+    userId: string;
+    username: string;
+    avatarUrl?: string | null;
+    customRole?: CustomRole | null;
+  } | null>(null);
+
+  const isOwner = isEffectiveServer
+    ? (myMember?.role === 'owner' || 
+       myRole === 'owner' || 
+       users.find(u => u.id === myId)?.role === 'owner' || 
+       (Boolean(room?.ownerId) && (room?.ownerId === myId || room?.ownerId === getOrCreatePersistentId())))
+    : (Boolean(room?.adminIds?.includes(myId) && !room?.subOwnerIds?.includes(myId)));
 
   const isSubOwner = 
     !isOwner && (
-      Boolean(room?.subOwnerIds?.includes(myId)) || 
       myMember?.role === 'sub_owner' || 
       myRole === 'sub_owner' || 
-      users.find(u => u.id === myId)?.role === 'sub_owner'
+      users.find(u => u.id === myId)?.role === 'sub_owner' ||
+      Boolean(room?.subOwnerIds?.includes(myId)) ||
+      Boolean(myMember?.customRole?.isAdmin) ||
+      Boolean(users.find(u => u.id === myId)?.customRole?.isAdmin)
     );
 
   const canManageServer = isOwner || isSubOwner;
@@ -479,6 +522,15 @@ export const Sidebar: React.FC<Props> = ({
     setShowProfileModal(true);
   };
 
+  useEffect(() => {
+    const handleOpenSettingsEvent = () => {
+      setProfileModalTab('server');
+      setShowProfileModal(true);
+    };
+    window.addEventListener('concord:open-server-settings', handleOpenSettingsEvent);
+    return () => window.removeEventListener('concord:open-server-settings', handleOpenSettingsEvent);
+  }, []);
+
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -610,56 +662,272 @@ export const Sidebar: React.FC<Props> = ({
 
   const isTargetOffline = Boolean(contextMenu?.isOffline || (!targetUserInContextMenu && targetMemberEntry));
   const canModerateTarget = isOwner ? !isTargetOwner : (isSubOwner && !isTargetOwner && !isTargetSubOwner);
+  const isHomeView = activeRailContext === 'home' && (!room?.id || window.location.hash === '#/' || window.location.hash === '');
 
   return (
     <aside className={styles.sidebar}>
-      {/* ── SERVER HEADER ── */}
-      <div className={styles.header}>
-        <div 
-          className={styles.serverHeaderLeft}
-          onClick={handleOpenSettings}
-          style={{ cursor: 'pointer' }}
-          title="Configurações do Servidor"
-        >
-          <div className={styles.serverAvatarWrapper}>
-            {serverIconUrl || room?.iconUrl ? (
-              <img src={serverIconUrl || room?.iconUrl || ''} alt="Server Avatar" className={styles.serverAvatarImg} />
-            ) : (
-              <div className={styles.serverAvatarFallback}>
-                {(room?.name || serverName || 'Concord').charAt(0).toUpperCase()}
-              </div>
-            )}
-            <span className={styles.serverOnlineBadge} />
-          </div>
-          <div className={styles.serverInfo}>
-            <h1 className={styles.serverTitle} title={room?.name || serverName || 'Concord'}>
-              <span>{room?.name || serverName || 'Concord'}</span>
-              <i className="fa-solid fa-circle-check" style={{ color: '#7c5cff', fontSize: '12px' }} />
-            </h1>
-            <p className={styles.serverSubtitle}>
-              {users.length} {users.length === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
-            </p>
+      {/* ── HEADER ── */}
+      {isHomeView ? (
+        <div className={styles.header}>
+          <div className={styles.serverHeaderLeft}>
+            <div className={styles.serverAvatarWrapper}>
+              {!logoError ? (
+                <img 
+                  src="/logo.png" 
+                  alt="" 
+                  className={styles.serverAvatarImg} 
+                  onError={() => setLogoError(true)}
+                  style={{ objectFit: 'contain', padding: '2px', background: 'transparent' }} 
+                />
+              ) : (
+                <div className={styles.serverAvatarFallback} style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>
+                  <i className="fa-solid fa-compass" style={{ fontSize: '16px', color: '#fff' }} />
+                </div>
+              )}
+              <span className={styles.serverOnlineBadge} />
+            </div>
+            <div className={styles.serverInfo}>
+              <h1 className={styles.serverTitle}>
+                <span>Hub Concord</span>
+                <i className="fa-solid fa-compass" style={{ color: '#7c5cff', fontSize: '12px' }} />
+              </h1>
+              <p className={styles.serverSubtitle}>Início & Salas Rápidas</p>
+            </div>
           </div>
         </div>
+      ) : (
+        <div className={styles.header}>
+          <div 
+            className={styles.serverHeaderLeft}
+            onClick={handleOpenSettings}
+            style={{ cursor: 'pointer' }}
+            title="Configurações do Servidor"
+          >
+            <div className={styles.serverAvatarWrapper}>
+              {serverIconUrl || room?.iconUrl ? (
+                <img src={serverIconUrl || room?.iconUrl || ''} alt="Server Avatar" className={styles.serverAvatarImg} />
+              ) : (
+                <div className={styles.serverAvatarFallback}>
+                  {(room?.name || serverName || 'Concord').charAt(0).toUpperCase()}
+                </div>
+              )}
+              <span className={styles.serverOnlineBadge} />
+            </div>
+            <div className={styles.serverInfo}>
+              <h1 className={styles.serverTitle} title={room?.name || serverName || 'Concord'}>
+                <span>{room?.name || serverName || 'Concord'}</span>
+                <i className="fa-solid fa-circle-check" style={{ color: '#7c5cff', fontSize: '12px' }} />
+              </h1>
+              <p className={styles.serverSubtitle}>
+                {users.length} {users.length === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
+              </p>
+            </div>
+          </div>
 
-        <button 
-          className={styles.headerChevronBtn} 
-          onClick={handleOpenSettings}
-          title="Configurações do Servidor"
-        >
-          <i className="fa-solid fa-chevron-down" style={{ fontSize: '12px' }} />
-        </button>
-      </div>
+          <button 
+            className={styles.headerChevronBtn} 
+            onClick={handleOpenSettings}
+            title="Configurações do Servidor"
+          >
+            <i className="fa-solid fa-chevron-down" style={{ fontSize: '12px' }} />
+          </button>
+        </div>
+      )}
 
       <div className={styles.sections}>
-        {/* ── SEÇÃO DE CANAIS DE TEXTO ── */}
-        <section className={styles.section}>
-          <div className={styles.sectionLabel}>
-            <div className={styles.sectionLabelLeft}>
-              <i className="fa-regular fa-comments" style={{ fontSize: '12px' }} />
-              <span>Canais de Texto</span>
-            </div>
-            {isEffectiveServer && canManageServer && (
+        {isHomeView ? (
+          <>
+            {/* ── ATALHOS RÁPIDOS DO HUB ── */}
+            <section className={styles.section}>
+              <div className={styles.sectionLabel}>
+                <span>Navegação</span>
+              </div>
+              <div className={styles.channelList}>
+                <button
+                  className={`${styles.channelItem} ${homeTab === 'hub' ? styles.channelActive : ''}`}
+                  onClick={() => {
+                    setHomeTab('hub');
+                    setActiveRailContext('home');
+                    navigate('/');
+                  }}
+                >
+                  <span className={styles.channelItemLeft}>
+                    <i className="fa-solid fa-house" style={{ color: '#7c5cff' }} />
+                    <span className={styles.channelName}>Central de Início</span>
+                  </span>
+                </button>
+
+                <button
+                  className={`${styles.channelItem} ${homeTab === 'friends' ? styles.channelActive : ''}`}
+                  onClick={() => {
+                    setHomeTab('friends');
+                    setActiveRailContext('home');
+                    navigate('/');
+                  }}
+                >
+                  <span className={styles.channelItemLeft}>
+                    <i className="fa-solid fa-user-group" style={{ color: '#818cf8' }} />
+                    <span className={styles.channelName}>Amigos</span>
+                  </span>
+                  {friends.filter(f => f.status === 'pending').length > 0 && (
+                    <span className={styles.badgeCount}>
+                      {friends.filter(f => f.status === 'pending').length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  className={styles.channelItem}
+                  onClick={() => setCreateRoomPromptOpen(true)}
+                >
+                  <span className={styles.channelItemLeft}>
+                    <i className="fa-solid fa-bolt" style={{ color: '#10b981' }} />
+                    <span className={styles.channelName}>Criar Sala (14h)</span>
+                  </span>
+                </button>
+
+                <button
+                  className={styles.channelItem}
+                  onClick={() => openActionModal('create-server')}
+                >
+                  <span className={styles.channelItemLeft}>
+                    <i className="fa-solid fa-plus-circle" style={{ color: '#a78bfa' }} />
+                    <span className={styles.channelName}>Criar Servidor</span>
+                  </span>
+                </button>
+              </div>
+            </section>
+
+            {/* ── SALAS TEMPORÁRIAS ATIVAS (14h) ── */}
+            <section className={styles.section}>
+              <div className={styles.sectionLabel}>
+                <div className={styles.sectionLabelLeft}>
+                  <i className="fa-solid fa-clock" style={{ fontSize: '11px', color: '#fbbf24' }} />
+                  <span>Salas Ativas (14h)</span>
+                </div>
+                {recentRooms.length > 0 && <span className={styles.badgeCount}>{recentRooms.length}</span>}
+              </div>
+              <div className={styles.channelList}>
+                {recentRooms.length === 0 ? (
+                  <div style={{ padding: '12px 8px', fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
+                    Nenhuma sala ativa
+                  </div>
+                ) : (
+                  recentRooms.map((r) => (
+                    <div key={r.id} className={styles.channelRow}>
+                      <button
+                        className={styles.channelItem}
+                        onClick={() => {
+                          setIsServer(false);
+                          setActiveRailContext(r.id);
+                          navigate(`/room/${r.id}?code=${r.code}`);
+                        }}
+                        title={`Entrar na sala #${r.code}`}
+                      >
+                        <span className={styles.channelItemLeft}>
+                          <i className="fa-solid fa-door-open" style={{ color: '#fbbf24' }} />
+                          <span className={styles.channelName}>{r.name}</span>
+                        </span>
+                        <span style={{ fontSize: '10px', color: '#fbbf24', marginLeft: 'auto', fontWeight: 600 }}>
+                          {formatRoomTimeRemaining(r.expiresAt).replace(' restantes', '')}
+                        </span>
+                      </button>
+                      <div className={styles.channelActions}>
+                        <button
+                          className={styles.channelActionBtn}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+                            const baseUrl = isElectron ? 'https://concord-repo.pages.dev' : window.location.origin;
+                            const link = `${baseUrl}/#/room/${r.id}?code=${r.code}`;
+                            if ((window as any).electron?.copyToClipboard) {
+                              (window as any).electron.copyToClipboard(link);
+                            } else {
+                              await navigator.clipboard.writeText(link);
+                            }
+                            toast.success('Link copiado!');
+                          }}
+                          title="Copiar link"
+                        >
+                          <i className="fa-regular fa-clone" />
+                        </button>
+                        <button
+                          className={`${styles.channelActionBtn} ${styles.channelActionBtnDanger}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeRecentRoom(r.id);
+                            refreshRecentRooms();
+                          }}
+                          title="Remover do histórico"
+                        >
+                          <i className="fa-solid fa-xmark" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
+            {/* ── MENSAGENS DIRETAS (DMs) ── */}
+            <section className={styles.section}>
+              <div className={styles.sectionLabel}>
+                <div className={styles.sectionLabelLeft}>
+                  <i className="fa-solid fa-message" style={{ fontSize: '11px', color: '#818cf8' }} />
+                  <span>Mensagens Diretas</span>
+                </div>
+                {directChats.length > 0 && <span className={styles.badgeCount}>{directChats.length}</span>}
+              </div>
+              <div className={styles.channelList}>
+                {directChats.length === 0 ? (
+                  <div style={{ padding: '10px 8px', fontSize: '12px', color: '#6b7280', textAlign: 'center' }}>
+                    Nenhuma conversa iniciada
+                  </div>
+                ) : (
+                  directChats.map((chat) => {
+                    const isDmActive = homeTab === 'dm' && activeDmChat?.id === chat.id;
+                    const partnerName = chat.partnerName || (chat as any).other_user_name || 'Usuário';
+                    const partnerAvatar = chat.partnerAvatarUrl || (chat as any).other_user_avatar;
+                    return (
+                      <div key={chat.id} className={styles.channelRow}>
+                        <button
+                          className={`${styles.channelItem} ${isDmActive ? styles.channelActive : ''}`}
+                          onClick={() => {
+                            setActiveDmChat(chat);
+                            setHomeTab('dm');
+                          }}
+                          title={`Conversar com ${partnerName}`}
+                        >
+                          <span className={styles.channelItemLeft} style={{ gap: '8px' }}>
+                            <div style={{ position: 'relative', width: 22, height: 22, flexShrink: 0 }}>
+                              {partnerAvatar ? (
+                                <img src={partnerAvatar} alt={partnerName} style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover' }} />
+                              ) : (
+                                <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#6366f1', color: '#fff', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                                  {partnerName.slice(0, 2).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            <span className={styles.channelName}>{partnerName}</span>
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
+            {/* ── SEÇÃO DE CANAIS DE TEXTO ── */}
+            <section className={styles.section}>
+              <div className={styles.sectionLabel}>
+                <div className={styles.sectionLabelLeft}>
+                  <i className="fa-regular fa-comments" style={{ fontSize: '12px' }} />
+                  <span>Canais de Texto</span>
+                </div>
+                {isEffectiveServer && canManageServer && (
               <button 
                 className={styles.addChannelBtn} 
                 onClick={() => setShowCreateChannelModal(true)}
@@ -787,10 +1055,15 @@ export const Sidebar: React.FC<Props> = ({
               ) : (
                 voiceUsers.map((user, idx) => {
                   const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
-                  const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
-                  const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+                  const isUserOwner = isEffectiveServer
+                    ? (mem?.role === 'owner' || user?.role === 'owner' || (Boolean(room?.ownerId) && (room?.ownerId === user.persistentId || room?.ownerId === user.id)))
+                    : (Boolean(room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)));
+                  const isUserSubOwner = isEffectiveServer
+                    ? (!isUserOwner && (mem?.role === 'sub_owner' || user?.role === 'sub_owner' || Boolean(room?.subOwnerIds?.includes(user.id))))
+                    : Boolean(room?.subOwnerIds?.includes(user.id));
                   const isCurrentUser = user.id === myId || (Boolean(user.name) && Boolean(myName) && user.name.trim().toLowerCase() === myName.trim().toLowerCase());
                   const userAvatar = user.avatarUrl || (isCurrentUser ? (myAvatarUrl || localStorage.getItem('concord_avatar_url')) : null) || mem?.avatarUrl || null;
+                  const userCustomRole = user.customRole || mem?.customRole || null;
 
                   return (
                     <UserCard
@@ -805,6 +1078,7 @@ export const Sidebar: React.FC<Props> = ({
                       callMuted={isCurrentUser ? callMuted : user.callMuted}
                       isOwner={isUserOwner}
                       isSubOwner={isUserSubOwner}
+                      customRole={userCustomRole}
                       onScreenShareClick={onScreenShareClick}
                       onContextMenu={(e, id, name, isOffline) => handleContextMenu(e, id, name, isOffline)}
                     />
@@ -832,10 +1106,15 @@ export const Sidebar: React.FC<Props> = ({
             <div className={styles.userList}>
               {onlineMembers.map((user, idx) => {
                 const mem = serverMembers.find(m => m.username.toLowerCase() === (user.name || '').toLowerCase());
-                const isUserOwner = (room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)) || mem?.role === 'owner';
-                const isUserSubOwner = room?.subOwnerIds?.includes(user.id) || mem?.role === 'sub_owner';
+                const isUserOwner = isEffectiveServer
+                  ? (mem?.role === 'owner' || user?.role === 'owner' || (Boolean(room?.ownerId) && (room?.ownerId === user.persistentId || room?.ownerId === user.id)))
+                  : (Boolean(room?.adminIds?.includes(user.id) && !room?.subOwnerIds?.includes(user.id)));
+                const isUserSubOwner = isEffectiveServer
+                  ? (!isUserOwner && (mem?.role === 'sub_owner' || user?.role === 'sub_owner' || Boolean(room?.subOwnerIds?.includes(user.id))))
+                  : Boolean(room?.subOwnerIds?.includes(user.id));
                 const isCurrentUser = user.id === myId || (Boolean(user.name) && Boolean(myName) && user.name.trim().toLowerCase() === myName.trim().toLowerCase());
                 const userAvatar = user.avatarUrl || (isCurrentUser ? (myAvatarUrl || localStorage.getItem('concord_avatar_url')) : null) || mem?.avatarUrl || null;
+                const userCustomRole = user.customRole || mem?.customRole || null;
 
                 return (
                   <UserCard
@@ -850,15 +1129,18 @@ export const Sidebar: React.FC<Props> = ({
                     callMuted={isCurrentUser ? callMuted : user.callMuted}
                     isOwner={isUserOwner}
                     isSubOwner={isUserSubOwner}
+                    customRole={userCustomRole}
                     onScreenShareClick={onScreenShareClick}
                     onContextMenu={(e, id, name, isOffline) => handleContextMenu(e, id, name, isOffline)}
                     onAvatarClick={(id, name, avatar, isOwner, isSubOwner, isMe) => {
+                      const cleanMyTag = (myTag || localStorage.getItem('concord_user_tag') || '7236').replace('#', '');
                       openUserProfile({
                         id,
                         name,
                         avatarUrl: avatar,
                         role: isOwner ? 'owner' : isSubOwner ? 'sub_owner' : 'member',
                         isMe,
+                        tag: isMe ? cleanMyTag : undefined,
                       });
                     }}
                   />
@@ -922,6 +1204,20 @@ export const Sidebar: React.FC<Props> = ({
                       ) : member.role === 'sub_owner' ? (
                         <i className={`fa-solid fa-shield ${styles.subOwnerShield}`} title="Sub Dono" />
                       ) : null}
+                      {member.customRole && (
+                        <span 
+                          className={styles.userRoleBadge} 
+                          style={{
+                            borderColor: member.customRole.color || '#7c5cff',
+                            color: member.customRole.color || '#a78bfa',
+                            background: `${member.customRole.color || '#7c5cff'}22`,
+                          }}
+                          title={`Cargo: ${member.customRole.name}`}
+                        >
+                          <span>{member.customRole.emoji}</span>
+                          <span className={styles.userRoleBadgeText}>{member.customRole.name}</span>
+                        </span>
+                      )}
                     </div>
                   ))
                 )}
@@ -929,61 +1225,74 @@ export const Sidebar: React.FC<Props> = ({
             </div>
           </section>
         )}
+          </>
+        )}
       </div>
 
-      {/* ── ACTIVE VOICE CALL FLOATING WIDGET ── */}
-      {inVoice ? (
-        <div className={styles.activeVoiceWidget}>
-          <div className={styles.activeVoiceTop}>
-            <div className={styles.activeVoiceLeft}>
-              <span className={styles.pingDotWrapper}>
-                <span className={styles.pingDotAnimate} />
-                <span className={styles.pingDotSolid} />
-              </span>
-              <div style={{ lineHeight: 1.2 }}>
-                <p className={styles.activeVoiceTitle}>Voz Conectada</p>
-                <p className={styles.activeVoiceSubtitle}>Call Geral / 24ms</p>
+      {/* ── ACTIVE VOICE CALL FLOATING WIDGET (Apenas visível se estiver exatamente na sala/servidor da chamada) ── */}
+      {(() => {
+        const isCurrentCallRoom = inVoice && activeRailContext !== 'home' && (
+          !activeCallInfo ||
+          activeCallInfo.roomId === room?.id ||
+          activeCallInfo.roomId === activeRailContext ||
+          (activeCallInfo.code && (room?.code?.toUpperCase() === activeCallInfo.code.toUpperCase() || activeRailContext.toUpperCase() === activeCallInfo.code.toUpperCase()))
+        );
+
+        if (!isCurrentCallRoom) return null;
+
+        return (
+          <div className={styles.activeVoiceWidget}>
+            <div className={styles.activeVoiceTop}>
+              <div className={styles.activeVoiceLeft}>
+                <span className={styles.pingDotWrapper}>
+                  <span className={styles.pingDotAnimate} />
+                  <span className={styles.pingDotSolid} />
+                </span>
+                <div style={{ lineHeight: 1.2 }}>
+                  <p className={styles.activeVoiceTitle}>Voz Conectada</p>
+                  <p className={styles.activeVoiceSubtitle}>Call Geral / 24ms</p>
+                </div>
               </div>
+              <button
+                id="hangupBtn"
+                onClick={onLeaveVoice}
+                className={styles.hangupBtn}
+                title="Desconectar da chamada"
+              >
+                <i className="fa-solid fa-phone-slash" style={{ fontSize: '12px' }} />
+              </button>
             </div>
-            <button
-              id="hangupBtn"
-              onClick={onLeaveVoice}
-              className={styles.hangupBtn}
-              title="Desconectar da chamada"
-            >
-              <i className="fa-solid fa-phone-slash" style={{ fontSize: '12px' }} />
-            </button>
+            <div className={styles.activeVoiceButtons}>
+              <button
+                onClick={onLeaveVoice}
+                className={styles.leaveCallBtn}
+              >
+                <i className="fa-solid fa-power-off" style={{ fontSize: '10px' }} /> Sair Call
+              </button>
+              <button
+                id="screenShareBtn"
+                onClick={amSharing ? onStopScreenShare : onStartScreenShare}
+                className={`${styles.screenBtn} ${amSharing ? styles.screenBtnActive : ''}`}
+              >
+                <i className="fa-solid fa-desktop" style={{ fontSize: '10px' }} /> {amSharing ? 'Parar Tela' : 'Tela'}
+              </button>
+            </div>
           </div>
-          <div className={styles.activeVoiceButtons}>
-            <button
-              onClick={onLeaveVoice}
-              className={styles.leaveCallBtn}
-            >
-              <i className="fa-solid fa-power-off" style={{ fontSize: '10px' }} /> Sair Call
-            </button>
-            <button
-              id="screenShareBtn"
-              onClick={amSharing ? onStopScreenShare : onStartScreenShare}
-              className={`${styles.screenBtn} ${amSharing ? styles.screenBtnActive : ''}`}
-            >
-              <i className="fa-solid fa-desktop" style={{ fontSize: '10px' }} /> {amSharing ? 'Parar Tela' : 'Tela'}
-            </button>
-          </div>
-        </div>
-      ) : null}
+        );
+      })()}
 
       {/* ── USER CONTROL BAR (FOOTER) ── */}
       <div className={styles.userControlFooter}>
-        <div 
-          className={styles.userControlLeft}
-          onClick={() => {
-            setProfileModalTab('profile');
-            setShowProfileModal(true);
-          }}
-          style={{ cursor: 'pointer' }}
-          title="Configurações e Meu Perfil"
-        >
-          <div className={styles.myAvatarWrapper}>
+        <div className={styles.userControlLeft}>
+          <div 
+            className={styles.myAvatarWrapper}
+            onClick={() => {
+              setProfileModalTab('profile');
+              setShowProfileModal(true);
+            }}
+            style={{ cursor: 'pointer' }}
+            title="Abrir configurações e perfil"
+          >
             {effectiveMyAvatar && !avatarLoadError ? (
               <img 
                 src={effectiveMyAvatar} 
@@ -998,9 +1307,34 @@ export const Sidebar: React.FC<Props> = ({
             )}
             <span className={styles.myStatusDot} />
           </div>
-          <div className={styles.myInfo}>
+
+          <div 
+            className={styles.myInfo}
+            onClick={(e) => {
+              e.stopPropagation();
+              const cleanTag = (myTag || localStorage.getItem('concord_user_tag') || (myId ? myId.slice(0, 4).toUpperCase() : '7236')).replace('#', '');
+              const userFullIdentifier = `${myName || 'Usuário'}#${cleanTag}`;
+              if ((window as any).electron?.copyToClipboard) {
+                (window as any).electron.copyToClipboard(userFullIdentifier);
+              } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(userFullIdentifier);
+              }
+              setCopiedFooterUser(true);
+              toast.success(`Usuário Copiado: ${userFullIdentifier}`, { id: 'user-id-copied' });
+              setTimeout(() => setCopiedFooterUser(false), 2500);
+            }}
+            title="Clique para copiar seu usuário (ex: MISERA GAMES#7236)"
+          >
             <div className={styles.myNameText}>{myName || 'Usuário'}</div>
-            <div className={styles.myTagText}>#{myId ? myId.slice(0, 4).toUpperCase() : '9921'}</div>
+            {copiedFooterUser ? (
+              <span className={styles.copiedBadge}>
+                <i className="fa-solid fa-check" /> Copiado!
+              </span>
+            ) : (
+              <div className={styles.myTagText}>
+                #{myTag || localStorage.getItem('concord_user_tag') || (myId ? myId.slice(0, 4).toUpperCase() : '7236')}
+              </div>
+            )}
           </div>
         </div>
         <div className={styles.userControlButtons}>
@@ -1267,6 +1601,7 @@ export const Sidebar: React.FC<Props> = ({
                 avatarUrl: resolvedAvatar,
                 role: isTargetOwner ? 'owner' : isTargetSubOwner ? 'sub_owner' : 'member',
                 isMe: isCurrentUser,
+                tag: isCurrentUser ? (myTag || localStorage.getItem('concord_user_tag') || '7236').replace('#', '') : undefined,
               });
               setContextMenu(null);
             }}
@@ -1274,6 +1609,126 @@ export const Sidebar: React.FC<Props> = ({
             <i className="fa-solid fa-id-card" style={{ width: 14, color: '#7c5cff' }} />
             Ver Perfil
           </button>
+
+          {/* Opção: Adicionar Amigo ou Pedido Pendente */}
+          {(() => {
+            const isCurrentUser = contextMenu.targetId === myId || (Boolean(targetDisplayName) && Boolean(myName) && targetDisplayName.trim().toLowerCase() === myName.trim().toLowerCase());
+            if (isCurrentUser) return null;
+
+            const targetMember = serverMembers.find(m => m.username.toLowerCase() === (targetDisplayName || '').toLowerCase());
+            const targetName = (targetDisplayName || targetMember?.username || '').trim();
+            const targetUid = targetMember?.user_id || contextMenu.targetId;
+
+            const friendRel = friends.find(f => 
+              (targetUid && (f.friendId === targetUid || f.userId === targetUid)) ||
+              (targetName && (f.friendName?.trim().toLowerCase() === targetName.toLowerCase() || (f as any).userName?.trim().toLowerCase() === targetName.toLowerCase()))
+            );
+
+            if (friendRel?.status === 'accepted') {
+              return null; // Já são amigos
+            }
+
+            if (friendRel?.status === 'pending') {
+              return (
+                <button
+                  className={styles.contextMenuItem}
+                  onClick={async () => {
+                    setContextMenu(null);
+                    try {
+                      const ok = await cancelFriendRequestInSupabase(friendRel.id);
+                      if (ok) {
+                        toast.success('Solicitação de amizade cancelada.');
+                        const updated = await fetchFriendsFromSupabase();
+                        setFriends(updated);
+                      } else {
+                        toast.error('Erro ao cancelar solicitação.');
+                      }
+                    } catch {
+                      toast.error('Erro ao cancelar solicitação.');
+                    }
+                  }}
+                  title="Cancelar solicitação de amizade pendente"
+                  style={{ color: '#f87171' }}
+                >
+                  <i className="fa-solid fa-user-xmark" style={{ width: 14, color: '#f87171' }} />
+                  Cancelar Pedido
+                </button>
+              );
+            }
+
+            return (
+              <button
+                className={styles.contextMenuItem}
+                onClick={async () => {
+                  const candidateName = targetName;
+                  const candidateId = isUuid(targetUid) ? targetUid : undefined;
+                  setContextMenu(null);
+                  if (!candidateName && !candidateId) return;
+
+                  try {
+                    const res = await sendFriendRequestToSupabase(candidateName, candidateId);
+                    if (res.success) {
+                      toast.success(res.message);
+                      const updated = await fetchFriendsFromSupabase();
+                      setFriends(updated);
+                    } else {
+                      toast.error(res.message);
+                    }
+                  } catch {
+                    toast.error('Erro ao enviar pedido de amizade.');
+                  }
+                }}
+              >
+                <i className="fa-solid fa-user-plus" style={{ width: 14, color: '#10b981' }} />
+                Adicionar Amigo
+              </button>
+            );
+          })()}
+
+          {/* Opção: Bloquear Usuário / Desbloquear Usuário */}
+          {(() => {
+            const isCurrentUser = contextMenu.targetId === myId || (Boolean(targetDisplayName) && Boolean(myName) && targetDisplayName.trim().toLowerCase() === myName.trim().toLowerCase());
+            if (isCurrentUser) return null;
+
+            const targetMember = serverMembers.find(m => m.username.toLowerCase() === (targetDisplayName || '').toLowerCase());
+            const targetName = (targetDisplayName || targetMember?.username || '').trim();
+            const targetUid = targetMember?.user_id || contextMenu.targetId;
+
+            const isBlocked = friends.some(f => 
+              f.status === 'blocked' && (
+                (targetUid && (f.friendId === targetUid || f.userId === targetUid)) ||
+                (targetName && (f.friendName?.trim().toLowerCase() === targetName.toLowerCase() || (f as any).userName?.trim().toLowerCase() === targetName.toLowerCase()))
+              )
+            );
+
+            return (
+              <button
+                className={styles.contextMenuItem}
+                onClick={async () => {
+                  setContextMenu(null);
+                  if (isBlocked) {
+                    const match = friends.find(f => f.status === 'blocked' && ((targetUid && (f.friendId === targetUid || f.userId === targetUid)) || (targetName && f.friendName?.toLowerCase() === targetName.toLowerCase())));
+                    if (match) {
+                      await unblockUserInSupabase(match.id);
+                      toast.success(`${targetName} foi desbloqueado.`);
+                      const updated = await fetchFriendsFromSupabase();
+                      setFriends(updated);
+                    }
+                  } else {
+                    if (window.confirm(`Deseja bloquear ${targetName}?`)) {
+                      await blockUserInSupabase(targetUid, targetName);
+                      toast.success(`${targetName} foi bloqueado.`);
+                      const updated = await fetchFriendsFromSupabase();
+                      setFriends(updated);
+                    }
+                  }
+                }}
+              >
+                <i className={`fa-solid ${isBlocked ? 'fa-lock-open' : 'fa-ban'}`} style={{ width: 14, color: isBlocked ? '#10b981' : '#ef4444' }} />
+                {isBlocked ? 'Desbloquear Usuário' : 'Bloquear Usuário'}
+              </button>
+            );
+          })()}
 
           <div className={styles.contextMenuDivider} />
 
@@ -1335,6 +1790,30 @@ export const Sidebar: React.FC<Props> = ({
                   Rebaixar para Membro
                 </button>
               )}
+            </>
+          )}
+
+          {/* Gerenciar Cargos do Servidor (Nome + Emoji) */}
+          {canManageServer && (
+            <>
+              <div className={styles.contextMenuDivider} />
+              <button 
+                className={styles.contextMenuItem}
+                onClick={() => {
+                  const targetMember = serverMembers.find(m => m.username.toLowerCase() === (targetDisplayName || '').toLowerCase());
+                  const targetOnlineUser = users.find(u => u.id === contextMenu.targetId || (u.name && u.name.toLowerCase() === (targetDisplayName || '').toLowerCase()));
+                  setManageRoleTarget({
+                    userId: contextMenu.targetId,
+                    username: targetDisplayName || targetMember?.username || 'Membro',
+                    avatarUrl: targetOnlineUser?.avatarUrl || targetMember?.avatarUrl || null,
+                    customRole: targetOnlineUser?.customRole || targetMember?.customRole || null,
+                  });
+                  setContextMenu(null);
+                }}
+              >
+                <i className="fa-solid fa-tags" style={{ width: 14, color: '#f59e0b' }} />
+                Definir Cargo (Nome + Emoji)
+              </button>
             </>
           )}
 
@@ -1400,6 +1879,31 @@ export const Sidebar: React.FC<Props> = ({
         </div>,
         document.body
       )}
+
+      {/* ── MODAL: GERENCIAMENTO DE CARGOS (Nome + Emoji) ── */}
+      {manageRoleTarget && (
+        <ManageRolesModal
+          isOpen={Boolean(manageRoleTarget)}
+          onClose={() => setManageRoleTarget(null)}
+          serverId={room?.id || ''}
+          targetUserId={manageRoleTarget.userId}
+          targetUsername={manageRoleTarget.username}
+          targetAvatarUrl={manageRoleTarget.avatarUrl}
+          currentCustomRole={manageRoleTarget.customRole}
+          socketEmit={(_event, payload) => {
+            if (onSetCustomRole) onSetCustomRole(payload);
+          }}
+          onRoleSaved={(role) => {
+            setServerMembers((prev) =>
+              prev.map((m) =>
+                m.username.toLowerCase() === manageRoleTarget.username.toLowerCase() || m.id === manageRoleTarget.userId
+                  ? { ...m, customRole: role }
+                  : m
+              )
+            );
+          }}
+        />
+      )}
     </aside>
   );
 };
@@ -1416,6 +1920,7 @@ interface UserCardProps {
   callMuted: boolean;
   isOwner: boolean;
   isSubOwner: boolean;
+  customRole?: CustomRole | null;
   onScreenShareClick: (userId: string) => void;
   onContextMenu: (e: React.MouseEvent, id: string, name?: string, isOffline?: boolean) => void;
   onAvatarClick?: (id: string, name: string, avatarUrl: string | null, isOwner: boolean, isSubOwner: boolean, isMe: boolean) => void;
@@ -1432,6 +1937,7 @@ const UserCard: React.FC<UserCardProps> = ({
   callMuted,
   isOwner,
   isSubOwner,
+  customRole,
   onScreenShareClick,
   onContextMenu,
   onAvatarClick,
@@ -1475,6 +1981,20 @@ const UserCard: React.FC<UserCardProps> = ({
             ) : isSubOwner ? (
               <i className={`fa-solid fa-shield ${styles.subOwnerShield}`} title="Sub Dono" />
             ) : null}
+            {customRole && (
+              <span
+                className={styles.userRoleBadge}
+                style={{
+                  borderColor: customRole.color || '#7c5cff',
+                  color: customRole.color || '#a78bfa',
+                  background: `${customRole.color || '#7c5cff'}22`,
+                }}
+                title={`Cargo: ${customRole.name}`}
+              >
+                <span>{customRole.emoji}</span>
+                <span className={styles.userRoleBadgeText}>{customRole.name}</span>
+              </span>
+            )}
           </div>
           {screenSharing ? (
             <span className={styles.userSubtitle}>Transmitindo</span>

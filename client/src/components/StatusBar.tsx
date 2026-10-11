@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import styles from './StatusBar.module.css';
-import { leaveServerFromSupabase, removeMyServer } from '../lib/supabase';
+import { leaveServerFromSupabase, removeMyServer, markServerAsLeft } from '../lib/supabase';
 
 function formatTimeLeft(ms: number): { text: string; isWarning: boolean; isCritical: boolean } {
   if (ms <= 0) return { text: 'Expirada', isWarning: true, isCritical: true };
@@ -20,7 +20,7 @@ function formatTimeLeft(ms: number): { text: string; isWarning: boolean; isCriti
 }
 
 export const StatusBar: React.FC = () => {
-  const { connected, myName, room, isServer } = useAppStore();
+  const { connected, myName, myId, room, isServer } = useAppStore();
   const navigate = useNavigate();
   const [timeLeft, setTimeLeft] = useState<ReturnType<typeof formatTimeLeft> | null>(null);
   const [copied, setCopied] = useState(false);
@@ -103,9 +103,10 @@ export const StatusBar: React.FC = () => {
     setIsLeaving(true);
     try {
       if (room.isServer || isServer) {
-        await leaveServerFromSupabase(room.id, myName);
         removeMyServer(room.id);
-        removeMyServer(room.code);
+        if (room.code) removeMyServer(room.code);
+        markServerAsLeft(room.id, room.code);
+        await leaveServerFromSupabase(room.id, myName, myId, room.code);
       }
     } catch (err) {
       console.warn('Erro ao sair do servidor:', err);

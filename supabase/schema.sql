@@ -14,9 +14,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Ensure email and encrypted_password columns exist if table was created previously
+-- Ensure profile columns exist
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS encrypted_password TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS custom_tag TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'online';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS settings JSONB DEFAULT '{}'::jsonb;
 
 -- Enforce unique usernames (case-insensitive)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_username_lower ON public.profiles (LOWER(username));
@@ -83,8 +87,9 @@ CREATE TABLE IF NOT EXISTS public.rooms (
 ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS is_server BOOLEAN DEFAULT false;
 ALTER TABLE public.rooms ADD COLUMN IF NOT EXISTS icon_url TEXT;
 
--- Enforce unique server names (case-insensitive) for servers (is_server = true)
-CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_server_name_unique ON public.rooms (LOWER(name)) WHERE (is_server = true);
+-- Allow multiple servers or rooms with the same readable name (uniqueness is strictly on code/id)
+DROP INDEX IF EXISTS public.idx_rooms_server_name_unique;
+DROP INDEX IF EXISTS idx_rooms_server_name_unique;
 
 -- Enable RLS on rooms
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
@@ -206,4 +211,135 @@ CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON public.server_members
 CREATE INDEX IF NOT EXISTS idx_messages_room_id ON public.messages(room_id);
 CREATE INDEX IF NOT EXISTS idx_messages_channel_id ON public.messages(channel_id);
 CREATE INDEX IF NOT EXISTS idx_participants_room_id ON public.rooms_participants(room_id);
+
+
+-- 7. FRIENDSHIPS TABLE (Social Friend System: pending, accepted, blocked)
+CREATE TABLE IF NOT EXISTS public.friendships (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    friend_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'blocked')),
+    requester_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, friend_id)
+);
+
+ALTER TABLE public.friendships ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own friendships."
+    ON public.friendships FOR SELECT
+    USING (auth.uid() = user_id OR auth.uid() = friend_id);
+
+CREATE POLICY "Users can send friendship requests."
+    ON public.friendships FOR INSERT
+    WITH CHECK (auth.uid() = user_id OR auth.uid() = requester_id);
+
+CREATE POLICY "Users can update their friendship status."
+    ON public.friendships FOR UPDATE
+    USING (auth.uid() = user_id OR auth.uid() = friend_id);
+
+CREATE POLICY "Users can remove friendships."
+    ON public.friendships FOR DELETE
+    USING (auth.uid() = user_id OR auth.uid() = friend_id);
+
+CREATE INDEX IF NOT EXISTS idx_friendships_user_id ON public.friendships(user_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_friend_id ON public.friendships(friend_id);
+
+
+-- 8. DIRECT CHATS TABLE (1:1 Private DM Channels)
+CREATE TABLE IF NOT EXISTS public.direct_chats (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user1_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    user2_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user1_id, user2_id)
+);
+
+ALTER TABLE public.direct_chats ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own direct chats."
+    ON public.direct_chats FOR SELECT
+    USING (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+CREATE POLICY "Users can create direct chats."
+    ON public.direct_chats FOR INSERT
+    WITH CHECK (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+CREATE POLICY "Users can update their direct chats."
+    ON public.direct_chats FOR UPDATE
+    USING (auth.uid() = user1_id OR auth.uid() = user2_id);
+
+CREATE INDEX IF NOT EXISTS idx_direct_chats_user1 ON public.direct_chats(user1_id);
+CREATE INDEX IF NOT EXISTS idx_direct_chats_user2 ON public.direct_chats(user2_id);
+
+
+-- 9. DIRECT MESSAGES TABLE (Private 1:1 Messages)
+CREATE TABLE IF NOT EXISTS public.direct_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    chat_id UUID REFERENCES public.direct_chats(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    sender_name TEXT NOT NULL,
+    content TEXT NOT NULL,
+    msg_type TEXT DEFAULT 'text',
+    file_url TEXT,
+    file_name TEXT,
+    avatar_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE public.direct_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view direct messages of their chats."
+    ON public.direct_messages FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.direct_chats dc
+            WHERE dc.id = direct_messages.chat_id
+            AND (dc.user1_id = auth.uid() OR dc.user2_id = auth.uid())
+        )
+    );
+
+CREATE POLICY "Users can send direct messages."
+    ON public.direct_messages FOR INSERT
+    WITH CHECK (auth.uid() = sender_id);
+
+CREATE INDEX IF NOT EXISTS idx_direct_messages_chat_id ON public.direct_messages(chat_id);
+CREATE INDEX IF NOT EXISTS idx_direct_messages_sender_id ON public.direct_messages(sender_id);
+
+
+-- 10. USER RECENT ROOMS TABLE (Cloud-persisted 14h temporary rooms for multi-device sync)
+CREATE TABLE IF NOT EXISTS public.user_recent_rooms (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    room_id UUID REFERENCES public.rooms(id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_accessed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, room_id)
+);
+
+ALTER TABLE public.user_recent_rooms ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their cloud recent rooms."
+    ON public.user_recent_rooms FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their cloud recent rooms."
+    ON public.user_recent_rooms FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their cloud recent rooms."
+    ON public.user_recent_rooms FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can remove their cloud recent rooms."
+    ON public.user_recent_rooms FOR DELETE
+    USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_recent_rooms_user ON public.user_recent_rooms(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_recent_rooms_expires ON public.user_recent_rooms(expires_at);
 

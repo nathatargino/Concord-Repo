@@ -1,13 +1,29 @@
 .appContainer {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   width: 100%;
   background: var(--dark-base, #090a0f);
   color: var(--text-primary, #f3f4f6);
   overflow: hidden;
   position: relative;
-  user-select: none;
+}
+
+.homeSection {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--bg-surface, #141524);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Allow text selection in chat messages and content */
+:global(.selectableText),
+:global([data-selectable="true"]),
+.chatSection {
+  user-select: text;
 }
 
 
@@ -79,4 +95,14 @@
     flex: 1;
     min-width: 300px;
   }
+}
+
+:global([data-theme="light"]) .appContainer {
+  background: #ebedef !important;
+  color: #060607 !important;
+}
+
+:global([data-theme="light"]) .homeSection {
+  background: #f2f3f5 !important;
+  border-color: #e5e7eb !important;
 }

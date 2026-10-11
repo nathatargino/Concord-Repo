@@ -908,4 +908,184 @@
   border-color: rgba(244, 63, 94, 0.3);
 }
 
+/* ─── Aparência e Tema ─── */
+.appearanceSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.themeOptionsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+
+.themeOptionCard {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  color: inherit;
+}
+
+.themeOptionCard:hover {
+  background: rgba(124, 92, 255, 0.08);
+  border-color: rgba(124, 92, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.themeOptionCardActive {
+  background: rgba(124, 92, 255, 0.15) !important;
+  border-color: #7c5cff !important;
+  box-shadow: 0 0 0 1px #7c5cff, 0 6px 20px rgba(124, 92, 255, 0.25);
+}
+
+.themeOptionIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: #a78bfa;
+  flex-shrink: 0;
+}
+
+.themeOptionCardActive .themeOptionIcon {
+  background: #7c5cff;
+  color: #ffffff;
+}
+
+.themeOptionInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.themeOptionTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f3f4f6;
+}
+
+.themeOptionDesc {
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.25;
+}
+
+.themeCheckIcon {
+  color: #7c5cff;
+  font-size: 15px;
+  margin-left: auto;
+}
+
+/* ── Seção de Notificações do Sistema ── */
+.notificationSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.checkboxCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.checkboxCard:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(124, 92, 255, 0.3);
+}
+
+.checkboxCardActive {
+  background: rgba(124, 92, 255, 0.1);
+  border-color: rgba(124, 92, 255, 0.45);
+}
+
+.checkboxInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+.checkboxTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notificationIcon {
+  font-size: 14px;
+  color: #7c5cff;
+}
+
+.checkboxTitle {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.checkboxDescription {
+  font-size: 11.5px;
+  color: #9ca3af;
+  line-height: 1.35;
+}
+
+.switch {
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 11px;
+  position: relative;
+  transition: background-color 0.2s ease;
+  flex-shrink: 0;
+}
+
+.switchOn {
+  background: #7c5cff;
+}
+
+.switchHandle {
+  width: 18px;
+  height: 18px;
+  background: #ffffff;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.switchOn .switchHandle {
+  transform: translateX(18px);
+}
+
+
 

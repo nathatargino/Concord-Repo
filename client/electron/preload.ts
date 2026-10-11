@@ -49,9 +49,10 @@ declare global {
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
             /** Native Windows Notifications */
             showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) => void;
-            /** Native Google OAuth Authentication Window */
             openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
             cancelGoogleAuth?: () => void;
+            saveSecureToken?: (key: string, value: string) => Promise<boolean>;
+            loadSecureToken?: (key: string) => Promise<string | null>;
         }
     }
 }
@@ -79,6 +80,7 @@ contextBridge.exposeInMainWorld('electron', {
     maximize: () => ipcRenderer.send('window-maximize'),
     close: () => ipcRenderer.send('window-close'),
     copyToClipboard: (text: string) => ipcRenderer.send('copy-to-clipboard', text),
+    copyImageToClipboard: (url: string) => ipcRenderer.invoke('copy-image-to-clipboard', url),
     forceUnmute: () => ipcRenderer.send('force-unmute'),
     onDeepLink: (callback: (url: string) => void) => {
         const subscription = (_event: any, url: string) => callback(url);
@@ -90,6 +92,8 @@ contextBridge.exposeInMainWorld('electron', {
     openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data),
     savePreferences: (prefs: Record<string, string>) => ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => ipcRenderer.invoke('load-preferences'),
+    saveSecureToken: (key: string, value: string) => ipcRenderer.invoke('save-secure-token', key, value),
+    loadSecureToken: (key: string) => ipcRenderer.invoke('load-secure-token', key),
     toggleMiniPlayer: (isMini: boolean) => ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState: any) => ipcRenderer.send('open-pip-window', initialState),
     closePipWindow: () => ipcRenderer.send('close-pip-window'),

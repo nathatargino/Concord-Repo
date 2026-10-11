@@ -19,6 +19,18 @@ export const ScreenSharePanel: React.FC<Props> = ({
 }) => {
   const { screenShareUserId, screenShareUserName, myId } = useAppStore();
   const { screenShareVol, setScreenShareVol } = useAudioStore();
+  const prevScreenVolRef = useRef<number>(screenShareVol > 0 ? screenShareVol : 100);
+
+  const handleToggleScreenMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (screenShareVol > 0) {
+      prevScreenVolRef.current = screenShareVol;
+      setScreenShareVol(0);
+    } else {
+      const restored = prevScreenVolRef.current > 0 ? prevScreenVolRef.current : 50;
+      setScreenShareVol(restored);
+    }
+  };
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -131,13 +143,24 @@ export const ScreenSharePanel: React.FC<Props> = ({
                 onMouseDown={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <span className={styles.volIcon}>🔊</span>
+                <span 
+                  className={styles.volIcon}
+                  onClick={handleToggleScreenMute}
+                  title={screenShareVol === 0 ? "Desmutar transmissão" : "Mutar transmissão"}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                >
+                  {screenShareVol === 0 ? '🔇' : '🔊'}
+                </span>
                 <input
                   type="range"
                   min="0"
                   max="200"
                   value={screenShareVol}
-                  onChange={(e) => setScreenShareVol(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val > 0) prevScreenVolRef.current = val;
+                    setScreenShareVol(val);
+                  }}
                   onMouseDown={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   className={styles.volSlider}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
@@ -94,7 +94,7 @@ export function useScreenShare(
   emit: EmitFn,
   addScreenShareTrack: (stream: MediaStream) => void,
   removeScreenShareTrack: () => void,
-  _getRemoteAudioStreams?: GetRemoteStreamsFn,
+  getRemoteAudioStreams?: GetRemoteStreamsFn,
 ) {
   const streamRef = useRef<MediaStream | null>(null);
   const echoFilterRef = useRef<EchoFilter | null>(null);
@@ -111,6 +111,49 @@ export function useScreenShare(
     }
     echoFilterRef.current = null;
   }, []);
+
+  /**
+   * Process the loopback audio through the echo filter so that remote
+   * participants' voices (playing through the speakers) are subtracted
+   * from the captured audio before it is sent via WebRTC.
+   */
+  const filterLoopbackEcho = useCallback((stream: MediaStream): MediaStream => {
+    try {
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack) return stream;
+
+      disposeEchoFilter();
+
+      const filter = new EchoFilter();
+      const remoteStreams = getRemoteAudioStreams ? getRemoteAudioStreams() : new Map();
+      const cleanTrack = filter.start(audioTrack, remoteStreams);
+      echoFilterRef.current = filter;
+
+      if (cleanTrack && cleanTrack !== audioTrack) {
+        const filtered = new MediaStream();
+        stream.getVideoTracks().forEach((t) => filtered.addTrack(t));
+        filtered.addTrack(cleanTrack);
+        return filtered;
+      }
+
+      return stream;
+    } catch (err) {
+      console.warn('[ScreenShare] Error in filterLoopbackEcho, using raw stream:', err);
+      return stream;
+    }
+  }, [getRemoteAudioStreams, disposeEchoFilter]);
+
+  // Keep active echo filter synced with newly joined/speaking remote peers in real-time
+  useEffect(() => {
+    if (!getRemoteAudioStreams) return;
+    const interval = setInterval(() => {
+      if (echoFilterRef.current && getRemoteAudioStreams) {
+        const remoteStreams = getRemoteAudioStreams();
+        echoFilterRef.current.updateRemoteStreams(remoteStreams);
+      }
+    }, 1200);
+    return () => clearInterval(interval);
+  }, [getRemoteAudioStreams]);
 
   const stopScreenShare = useCallback(() => {
     isRequestingRef.current = false;
@@ -136,8 +179,9 @@ export function useScreenShare(
       const stream = await captureDisplayMedia(withAudio);
       streamRef.current = stream;
 
-      // Send the high-fidelity loopback audio track directly through WebRTC
-      addScreenShareTrack(stream);
+      // Filter echo from the loopback audio before sending via WebRTC
+      const processed = filterLoopbackEcho(stream);
+      addScreenShareTrack(processed);
 
       emit('start_screen_share');
       useAppStore.getState().setAmSharing(true);
@@ -172,7 +216,7 @@ export function useScreenShare(
     } finally {
       isRequestingRef.current = false;
     }
-  }, [emit, addScreenShareTrack, stopScreenShare]);
+  }, [emit, filterLoopbackEcho, addScreenShareTrack, stopScreenShare]);
 
   const doChangeScreenShare = useCallback(async (withAudio: boolean = true) => {
     if (isRequestingRef.current) return;
@@ -185,8 +229,9 @@ export function useScreenShare(
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = stream;
 
-      // Send the new stream directly through WebRTC
-      addScreenShareTrack(stream);
+      // Re-apply echo filter for the new stream
+      const processed = filterLoopbackEcho(stream);
+      addScreenShareTrack(processed);
 
       // Listen for user stopping via browser UI
       const videoTrack = stream.getVideoTracks()[0];
@@ -205,7 +250,7 @@ export function useScreenShare(
     } finally {
       isRequestingRef.current = false;
     }
-  }, [addScreenShareTrack, stopScreenShare]);
+  }, [filterLoopbackEcho, addScreenShareTrack, stopScreenShare]);
 
   const startScreenShare = useCallback(async () => {
     if (isRequestingRef.current || useAppStore.getState().amSharing) {

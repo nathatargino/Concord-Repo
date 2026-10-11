@@ -1,0 +1,434 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   ── INVITE FRIENDS MODAL (Estilo Discord Moderno / Concord) ──
+   ═══════════════════════════════════════════════════════════════════════ */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(7, 8, 14, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  background: #13141f;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(124, 92, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: scaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes scaleUp {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.header {
+  padding: 22px 24px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.serverIconMini {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.serverIconFallback {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #7c5cff, #5034d6);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.headerTitleCol {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.closeBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  transform: rotate(90deg);
+}
+
+/* Search Bar */
+.searchWrap {
+  padding: 16px 24px 8px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 36px;
+  color: #64748b;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 9px 12px 9px 34px;
+  font-size: 13.5px;
+  color: #ffffff;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.searchInput:focus {
+  border-color: #7c5cff;
+  box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.2);
+}
+
+.searchInput::placeholder {
+  color: #64748b;
+}
+
+/* Friends List */
+.friendsList {
+  padding: 8px 16px 16px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.friendRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+
+.friendRow:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.friendLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.avatarWrapper {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatarFallback {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #2a2d3d;
+  color: #e2e8f0;
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.statusDot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #13141f;
+}
+
+.statusOnline {
+  background: #10b981;
+}
+
+.statusOffline {
+  background: #64748b;
+}
+
+.friendInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.friendName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friendTag {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+/* Action Buttons */
+.inviteBtn {
+  padding: 7px 16px;
+  border-radius: 8px;
+  background: #7c5cff;
+  border: none;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.inviteBtn:hover:not(:disabled) {
+  background: #6a48f2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(124, 92, 255, 0.35);
+}
+
+.inviteBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.inviteBtnSent {
+  padding: 7px 16px;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid #10b981;
+  color: #10b981;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Empty State */
+.emptyState {
+  padding: 32px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.emptyIcon {
+  font-size: 32px;
+  color: #64748b;
+  opacity: 0.7;
+}
+
+.emptyText {
+  font-size: 13.5px;
+  color: #94a3b8;
+  margin: 0;
+  max-width: 300px;
+  line-height: 1.4;
+}
+
+/* Footer & Copy Link */
+.footer {
+  padding: 16px 24px;
+  background: rgba(10, 11, 18, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.footerLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.linkBox {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 4px 6px 4px 12px;
+  gap: 8px;
+}
+
+.linkInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  font-size: 12.5px;
+  color: #cbd5e1;
+  outline: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.copyBtn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #7c5cff;
+  border: none;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.copyBtn:hover {
+  background: #6a48f2;
+}
+
+.copyBtnCopied {
+  background: #10b981 !important;
+  color: #ffffff !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ── MODO CLARO ──
+   ═══════════════════════════════════════════════════════════════════════ */
+:global(html[data-theme="light"]) .modal {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
+}
+
+:global(html[data-theme="light"]) .title {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .subtitle {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .searchInput {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .friendRow:hover {
+  background: #f1f5f9;
+}
+
+:global(html[data-theme="light"]) .friendName {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .statusDot {
+  border-color: #ffffff;
+}
+
+:global(html[data-theme="light"]) .footer {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+:global(html[data-theme="light"]) .linkBox {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+:global(html[data-theme="light"]) .linkInput {
+  color: #334155;
+}

@@ -1,9 +1,11 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
+import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
+import { notifyInChat } from '../utils/systemMessage';
 import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo, WatchSession } from '../types';
 
@@ -14,13 +16,15 @@ interface ServerToClientEvents {
     userName: string,
     message: string,
     timestamp: string,
-    type?: 'text' | 'image' | 'giphy' | 'file',
+    type?: 'text' | 'image' | 'giphy' | 'file' | 'system',
     url?: string,
     filename?: string,
     channelId?: string,
     avatarUrl?: string | null,
     isHistory?: boolean,
-    sentAt?: number
+    sentAt?: number,
+    roomId?: string,
+    customRole?: any
   ) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
@@ -52,6 +56,7 @@ interface ServerToClientEvents {
   channel_updated: (channel: ServerChannel) => void;
   channel_deleted: (channelId: string) => void;
   user_role_updated: (data: { userId: string; role: 'owner' | 'sub_owner' | 'member' }) => void;
+  member_custom_role_updated: (data: any) => void;
   screen_viewer_joined: (viewer: { id: string; name: string }) => void;
   screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
 }
@@ -108,6 +113,7 @@ interface ClientToServerEvents {
   watch_session_end: () => void;
   watch_session_query: () => void;
   watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
+  set_member_custom_role: (data: any) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -142,9 +148,8 @@ export interface SocketCallbacks {
 //
 // ⚠️  Se web e desktop não se enxergam na mesma sala, provavelmente estão em servidores
 //      diferentes. Certifique-se de ter um .env.local com VITE_SERVER_URL=http://localhost:3001
-//      ao desenvolver localmente.
-const SOCKET_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
-console.log('[Socket] Servidor alvo:', SOCKET_URL, '| PROD:', import.meta.env.PROD, '| VITE_SERVER_URL:', import.meta.env.VITE_SERVER_URL || '(não definido)');
+import { SOCKET_URL } from '../config';
+
 const APP_SOCKET_START_TIME = Date.now();
 
 export function useSocket(callbacks: SocketCallbacks) {
@@ -244,10 +249,69 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setUsers(users);
     });
 
-    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl, isHistory, sentAt) => {
+    socket.on('member_custom_role_updated' as any, (data: any) => {
+      const myId = socket.id || useAppStore.getState().myId;
+      const persistentId = getOrCreatePersistentId();
+      const myName = (useAppStore.getState().myName || getSavedUsername() || '').trim().toLowerCase();
+      const targetId = data.targetUserId;
+      const targetName = (data.targetUsername || '').trim().toLowerCase();
+
+      const isMe = Boolean(
+        (targetId && (targetId === myId || targetId === persistentId)) ||
+        (targetName && targetName === myName)
+      );
+
+      const currentUsers = useAppStore.getState().users;
+      const updatedUsers = currentUsers.map((u) => {
+        if (u.id === data.targetUserId || (u.name && u.name.toLowerCase() === targetName)) {
+          return { ...u, customRole: data.customRole };
+        }
+        return u;
+      });
+      useAppStore.getState().setUsers(updatedUsers);
+
+      const currentMembers = useAppStore.getState().serverMembers;
+      const updatedMembers = currentMembers.map((m) => {
+        if (m.id === data.targetUserId || (m.username && m.username.toLowerCase() === targetName)) {
+          return { ...m, customRole: data.customRole };
+        }
+        return m;
+      });
+      useAppStore.getState().setServerMembers(updatedMembers);
+
+      if (isMe) {
+        if (data.customRole?.isAdmin && useAppStore.getState().myRole !== 'owner') {
+          useAppStore.getState().setMyRole('sub_owner');
+        } else if (!data.customRole?.isAdmin && useAppStore.getState().myRole === 'sub_owner') {
+          useAppStore.getState().setMyRole('member');
+        }
+
+        if (data.customRole?.name) {
+          const sysMsg = `Seu cargo foi alterado para ${data.customRole.name}`;
+          const notificationsEnabled = useAppStore.getState().systemNotificationsEnabled;
+          if (notificationsEnabled) {
+            const currentMsgs = useAppStore.getState().messages;
+            const alreadyAdded = currentMsgs.some(
+              (m) => m.isSystem && m.message === sysMsg && Date.now() - (m.sentAt || 0) < 5000
+            );
+            if (!alreadyAdded) {
+              notifyInChat(sysMsg);
+            }
+            toast(sysMsg, {
+              icon: data.customRole.emoji || '🛡️',
+              duration: 4500,
+            });
+          }
+        }
+      }
+    });
+
+    socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl, isHistory, sentAt, roomId, customRole) => {
       const isSystem = userName === 'Sistema' || (type as string) === 'system' || (typeof message === 'string' && message.startsWith('O usuário ') && message.includes(' executou o comando /'));
+      const targetRoomId = roomId || store.room?.id;
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        roomId: targetRoomId,
         userName: isSystem ? 'Sistema' : userName,
         message,
         timestamp,
@@ -255,8 +319,9 @@ export function useSocket(callbacks: SocketCallbacks) {
         type: type || 'text',
         url,
         filename,
-        channelId: channelId || 'ch-geral',
+        channelId: channelId || (store.isServer ? 'ch-geral' : undefined),
         avatarUrl: isSystem ? null : (avatarUrl || null),
+        customRole: customRole || null,
       };
       store.addMessage(newMsg);
 
@@ -301,6 +366,14 @@ export function useSocket(callbacks: SocketCallbacks) {
           avatarUrl: avatarUrl || null,
           sentAt: typeof sentAt === 'number' && sentAt > 0 ? sentAt : Date.now(),
         });
+      }
+    });
+
+    socket.on('message_reaction' as any, (messageId: string, emoji: string, userName: string) => {
+      const cleanMy = (store.myName || '').trim().toLowerCase();
+      const cleanSender = (userName || '').trim().toLowerCase();
+      if (!cleanMy || cleanSender !== cleanMy) {
+        store.toggleMessageReaction(messageId, emoji, userName);
       }
     });
 

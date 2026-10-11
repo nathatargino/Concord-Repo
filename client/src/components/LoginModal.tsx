@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './LoginModal.module.css';
-import { supabase, syncProfileAfterAuth } from '../lib/supabase';
+import { supabase, syncProfileAfterAuth, syncCloudUserData } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
@@ -117,11 +117,20 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
     };
   }, [onLogin]);
 
-  // Fechar ao apertar Escape
+  // Fechar ao apertar Escape ou cancelar OAuth
   useEffect(() => {
-    if (!onClose) return;
+    const handleAuthCancelled = () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      setIsGoogleLoading(false);
+    };
+
+    window.addEventListener('concord:google-auth-cancelled', handleAuthCancelled);
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && onClose) {
         e.stopPropagation();
         if (isGoogleLoading) {
           cancelGoogleAuth();
@@ -130,7 +139,10 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('concord:google-auth-cancelled', handleAuthCancelled);
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
   }, [onClose, isGoogleLoading]);
 
   // Helper: salva preferências no Electron e no localStorage
@@ -198,6 +210,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
               pollTimerRef.current = null;
               setIsGoogleLoading(false);
               const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(session.user);
+              await syncCloudUserData(session.user.id);
               if (finalName) {
                 localStorage.setItem('concord_username', finalName);
                 localStorage.setItem('concord_username_v1', finalName);
@@ -234,6 +247,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
                 try { popup.close(); } catch {}
               }
               const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(session.user);
+              await syncCloudUserData(session.user.id);
               if (finalName) {
                 localStorage.setItem('concord_username', finalName);
                 localStorage.setItem('concord_username_v1', finalName);
@@ -301,6 +315,7 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
           }
 
           const displayName = profile?.username || data.user.user_metadata?.username || username || data.user.email?.split('@')[0] || 'Usuário';
+          await syncCloudUserData(data.user.id);
           localStorage.setItem('concord_username', displayName);
           localStorage.setItem('concord_username_v1', displayName);
           savePrefsToElectron({ concord_username: displayName, concord_avatar_url: avatar || '' });

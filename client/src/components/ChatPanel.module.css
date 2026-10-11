@@ -3,13 +3,53 @@
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: rgba(24, 27, 36, 0.75);
+  background: var(--bg-base, #0b0c14);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   position: relative;
   overflow: hidden;
+}
+
+/* Background Ambient Glows (Idêntico ao Hub Concord) */
+.blob1 {
+  position: absolute;
+  top: -100px;
+  left: 20%;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+  pointer-events: none;
+  filter: blur(40px);
+  z-index: 0;
+}
+
+.blob2 {
+  position: absolute;
+  bottom: 0;
+  right: 10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.08) 0%, rgba(0, 0, 0, 0) 70%);
+  pointer-events: none;
+  filter: blur(50px);
+  z-index: 0;
+}
+
+.msgRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(124, 92, 255, 0.4);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .chatPanel.dragging {
@@ -217,23 +257,37 @@
 }
 
 .systemMessage {
-  background: rgba(124, 58, 237, 0.12);
-  border: 1px solid rgba(124, 58, 237, 0.28);
-  border-radius: 20px;
-  padding: 5px 16px;
-  font-size: 11.5px;
+  background: rgba(30, 24, 54, 0.72);
+  border: 1px solid rgba(139, 92, 246, 0.32);
+  border-left: 3px solid #8b5cf6;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
   font-weight: 500;
-  color: #c4b5fd;
+  color: #ddd6fe;
   text-align: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+}
+
+:global([data-theme="light"]) .systemMessage {
+  background: rgba(245, 243, 255, 0.95);
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-left: 3px solid #7c3aed;
+  color: #5b21b6;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.08);
 }
 
 .systemMessageIcon {
-  font-size: 12px;
-  opacity: 0.85;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.92;
 }
 
 .messageRow {
@@ -241,6 +295,43 @@
   gap: 14px;
   align-items: flex-start;
   width: 100%;
+  position: relative;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.messageRow:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.consecutiveRow {
+  margin-top: -10px !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
+.consecutiveGutter {
+  width: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.gutterTimestamp {
+  opacity: 0;
+  font-size: 10px;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.15s ease;
+  user-select: none;
+}
+
+.messageRow:hover .gutterTimestamp {
+  opacity: 1;
 }
 
 .messageRowMe {
@@ -259,14 +350,17 @@
   justify-content: flex-start !important;
 }
 
-.messageRowMe .myBubble,
-.messageRowMe .otherBubble {
+.messageRowMe .myBubble {
   border-radius: 16px !important;
   border-top-right-radius: 4px !important;
   border-top-left-radius: 16px !important;
   align-self: flex-end !important;
   margin-left: auto !important;
+  margin-right: 0 !important;
   text-align: left !important;
+  background: rgba(124, 92, 255, 0.22) !important;
+  border: 1px solid rgba(124, 92, 255, 0.4) !important;
+  color: #ffffff !important;
 }
 
 .messageRowMe .imageCard,
@@ -274,6 +368,12 @@
 .messageRowMe .fileContainer {
   align-self: flex-end !important;
   margin-left: auto !important;
+  margin-right: 0 !important;
+}
+
+.messageRowMe .messageActionBar {
+  left: 12px !important;
+  right: auto !important;
 }
 
 .messageRowOther {
@@ -288,14 +388,16 @@
 }
 
 .messageRowOther .otherBubble,
-.messageRowOther .otherText,
-.messageRowOther .myBubble {
-  border-radius: 16px !important;
+.messageRowOther .otherText {
+  border-radius: 12px !important;
   border-top-left-radius: 4px !important;
-  border-top-right-radius: 16px !important;
+  border-top-right-radius: 12px !important;
   align-self: flex-start !important;
   margin-right: auto !important;
   text-align: left !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #e2e8f0 !important;
 }
 
 .messageAvatar {
@@ -574,6 +676,33 @@
 .chatForm:focus-within {
   border-color: rgba(124, 92, 255, 0.6);
   box-shadow: 0 0 0 1px rgba(124, 92, 255, 0.2);
+}
+
+.chatFormBlocked {
+  opacity: 0.6;
+  border-color: rgba(239, 68, 68, 0.2) !important;
+  background: rgba(17, 19, 25, 0.8) !important;
+  cursor: not-allowed;
+}
+
+.chatInputDisabled {
+  cursor: not-allowed !important;
+  color: #64748b !important;
+}
+
+.blockedNoticeBanner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  animation: fadeIn 0.2s ease;
 }
 
 .formIconBtn {
@@ -2469,8 +2598,701 @@
   box-shadow: 0 0 12px rgba(124, 92, 255, 0.3);
 }
 
+/* ─── Habilitação de Seleção de Texto no Chat ─── */
+.messageList,
+.messageRow,
+.myBubble,
+.otherBubble,
+.otherText,
+.senderName,
+.messageContentCol,
+.timestamp,
+.replyQuoteHeader,
+.replyQuoteSnippet {
+  user-select: text !important;
+}
 
+/* ─── Jumbo Emojis (Escala ampliada para mensagens contendo apenas emojis) ─── */
+.jumboEmoji {
+  font-size: 2.75rem !important;
+  line-height: 1.25 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 2px 4px !important;
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
 
+/* ─── Barra de Ações Rápidas em Mensagens (Discord Style Hover Bar) ─── */
+.messageActionBar {
+  position: absolute;
+  top: -14px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #181a24;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 3px 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: all 0.15s ease-in-out;
+  z-index: 20;
+}
 
+.messageRow:hover .messageActionBar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
 
+.quickReactionsGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  padding-right: 4px;
+  margin-right: 2px;
+}
 
+.actionBarEmojiBtn {
+  background: transparent;
+  border: none;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 4px;
+  transition: background 0.12s, transform 0.12s;
+  line-height: 1;
+}
+
+.actionBarEmojiBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.2);
+}
+
+.actionBarBtn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+
+.actionBarBtn:hover {
+  background: rgba(124, 92, 255, 0.25);
+  color: #c4b5fd;
+}
+
+/* ─── Citação / Resposta na Mensagem (Discord Style Reply Ribbon) ─── */
+.replyQuoteHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 3px;
+  opacity: 0.9;
+}
+
+.replyQuoteHeader i {
+  font-size: 10px;
+  transform: rotate(180deg) scaleY(-1);
+  color: #7c5cff;
+}
+
+.replyQuoteUser {
+  font-weight: 600;
+  color: #a78bfa;
+}
+
+.replyQuoteSnippet {
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+  font-style: italic;
+}
+
+/* ─── Barra de Resposta Ativa acima do Input ─── */
+.replyBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: rgba(124, 92, 255, 0.14);
+  border: 1px solid rgba(124, 92, 255, 0.28);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  font-size: 12.5px;
+  color: #e9d5ff;
+  width: 100%;
+}
+
+.replyBannerContent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyBannerContent i {
+  color: #a78bfa;
+  font-size: 11px;
+}
+
+.replyBannerSnippet {
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+  font-style: italic;
+}
+
+.replyBannerCancel {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.replyBannerCancel:hover {
+  background: rgba(244, 63, 94, 0.2);
+  color: #f43f5e;
+}
+
+/* ─── Badges de Reações com Emojis ─── */
+.reactionsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.reactionBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reactionBadge:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.reactionBadgeActive {
+  background: rgba(124, 92, 255, 0.22) !important;
+  border-color: #7c5cff !important;
+  color: #c4b5fd !important;
+}
+
+.reactionEmoji {
+  font-size: 13.5px;
+  line-height: 1;
+}
+
+.reactionCount {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* ─── Portal: Visualizador de Imagens (Lightbox) ─── */
+.lightboxOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  background: rgba(7, 8, 14, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease-out;
+  overflow: hidden;
+}
+
+.lightboxTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: rgba(14, 15, 24, 0.95);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 100005;
+  flex-shrink: 0;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxZoomControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxBtn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f3f4f6;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  pointer-events: auto;
+  position: relative;
+  z-index: 100006;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxBtn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.lightboxBtn:disabled,
+.lightboxBtnDisabled {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #64748b !important;
+  cursor: not-allowed !important;
+  opacity: 0.45 !important;
+  transform: none !important;
+  pointer-events: none !important;
+}
+
+.lightboxZoomPercent {
+  font-size: 13px;
+  font-weight: 600;
+  color: #cbd5e1;
+  min-width: 44px;
+  text-align: center;
+  user-select: none;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxBtnText {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f3f4f6;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.15s ease;
+  pointer-events: auto;
+  position: relative;
+  z-index: 100006;
+  -webkit-app-region: no-drag !important;
+}
+
+.lightboxBtnText:hover {
+  background: rgba(124, 92, 255, 0.25);
+  border-color: #7c5cff;
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.lightboxCloseBtn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #e5e7eb;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer !important;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  -webkit-app-region: no-drag !important;
+  z-index: 100006;
+}
+
+.lightboxCloseBtn:hover {
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+  transform: scale(1.05);
+}
+
+.lightboxViewport {
+  flex: 1;
+  width: 100vw;
+  height: calc(100vh - 60px);
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  box-sizing: border-box;
+}
+
+.lightboxImageContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: min-content;
+  min-height: min-content;
+  margin: auto;
+}
+
+.lightboxImage {
+  max-width: calc(100vw - 80px);
+  max-height: calc(100vh - 140px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.75);
+  cursor: zoom-in;
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: block;
+}
+
+.lightboxImageZoomed {
+  cursor: zoom-out !important;
+}
+
+/* ─── Portal: Menu de Contexto (Right Click) ─── */
+.contextMenuOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100002;
+  background: transparent;
+}
+
+.contextMenu {
+  position: fixed;
+  z-index: 100003;
+  background: #181924;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 210px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.12s ease-out;
+}
+
+.contextMenuQuickReactions {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 6px 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 2px;
+}
+
+.contextMenuEmojiBtn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: transform 0.1s, background 0.1s;
+  line-height: 1;
+}
+
+.contextMenuEmojiBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: scale(1.2);
+}
+
+.contextMenuDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}
+
+.contextMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.contextMenuItem:hover {
+  background: #5865f2;
+  color: #ffffff;
+}
+
+.contextMenuItem i {
+  font-size: 13px;
+  width: 16px;
+  text-align: center;
+}
+
+/* ─── Mention Autocomplete Menu (@) ─── */
+.mentionMenu {
+  position: absolute;
+  bottom: 74px;
+  left: 20px;
+  right: 20px;
+  max-width: 380px;
+  background: #181926;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.mentionHeader {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mentionList {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 2px;
+}
+
+.mentionItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: #e2e8f0;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.1s ease;
+  width: 100%;
+}
+
+.mentionItem:hover,
+.mentionItemActive {
+  background: rgba(99, 102, 241, 0.2);
+  color: #ffffff;
+}
+
+.mentionAvatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.mentionAvatarFallback {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mentionInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mentionName {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mentionRole {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* Mentioned Message Highlight (Amber/Gold) */
+.messageRowMentioned {
+  background: rgba(245, 158, 11, 0.12) !important;
+  border-left: 3px solid #f59e0b !important;
+  border-radius: 4px;
+}
+
+.messageRowMentioned:hover {
+  background: rgba(245, 158, 11, 0.18) !important;
+}
+
+/* Light Theme Overrides */
+:global([data-theme="light"]) .chatPanel {
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+:global([data-theme="light"]) .chatHeader {
+  background: #ffffff;
+  border-bottom-color: #e5e7eb;
+}
+
+:global([data-theme="light"]) .headerTitle {
+  color: #2e3338;
+}
+
+:global([data-theme="light"]) .headerTopic {
+  color: #4f545c;
+}
+
+:global([data-theme="light"]) .chatInput {
+  background: #f2f3f5;
+  color: #2e3338;
+  border-color: #e5e7eb;
+}
+
+:global([data-theme="light"]) .myBubble {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+:global([data-theme="light"]) .otherBubble {
+  background: #f2f3f5;
+  color: #2e3338;
+}
+
+:global([data-theme="light"]) .senderName {
+  color: #2e3338;
+}
+
+:global([data-theme="light"]) .timestamp {
+  color: #747f8d;
+}
+
+:global([data-theme="light"]) .mentionMenu {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+:global([data-theme="light"]) .mentionItem {
+  color: #2e3338;
+}
+
+:global([data-theme="light"]) .mentionItem:hover,
+:global([data-theme="light"]) .mentionItemActive {
+  background: #f2f3f5;
+  color: #7c3aed;
+}
+
+.volumeContainer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.volumeMuteBtn {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--text-primary, #ffffff);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.volumeMuteBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--accent-bright, #a78bfa);
+  transform: scale(1.08);
+}
+
+.volumeSlider {
+  width: 72px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--accent-primary, #7c3aed);
+}
+
+:global(.concord-mention-tag) {
+  cursor: pointer !important;
+  user-select: text;
+}
+
+:global(.concord-mention-tag:hover) {
+  filter: brightness(1.25) drop-shadow(0 0 6px rgba(129, 140, 248, 0.4));
+  text-decoration: underline !important;
+}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { notifyInChat } from './utils/systemMessage';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
@@ -8,7 +8,7 @@ import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
-import { supabase, saveMyServer, findRoomInSupabase, isUuid, syncProfileAfterAuth, getOrCreatePersistentId, getSavedUsername, saveUsername } from './lib/supabase';
+import { supabase, saveMyServer, saveRecentRoom, findRoomInSupabase, isUuid, syncProfileAfterAuth, syncCloudUserData, getOrCreatePersistentId, getSavedUsername, saveUsername, fetchDirectChatsFromSupabase, joinServerInSupabase, ensureSupabaseSessionRestored } from './lib/supabase';
 import type { UserInfo } from './types';
 import toast from 'react-hot-toast';
 
@@ -24,17 +24,62 @@ import { ScreenSharePanel } from './components/ScreenSharePanel';
 import { ScreenPickerModal } from './components/ScreenPickerModal';
 import { AccountModals } from './components/AccountModals';
 import { UserProfileModal } from './components/UserProfileModal';
+import { ServerRail } from './components/ServerRail';
+import { HomeHub } from './components/HomeHub';
+import { ServerActionModal } from './components/ServerActionModal';
+import { FloatingCallBar } from './components/FloatingCallBar';
+import { DiscordLoadingScreen } from './components/DiscordLoadingScreen';
 
 import styles from './App.module.css';
 
+const LAST_LAUNCH_DAY_KEY = 'concord_last_launch_day_v1';
+
+// Deduplica callbacks de OAuth entregues por múltiplos canais (janela de 60s)
+const handledAuthCallbacks = new Map<string, number>();
+function shouldHandleAuthCallback(key: string): boolean {
+  const now = Date.now();
+  handledAuthCallbacks.forEach((ts, k) => {
+    if (now - ts > 60_000) handledAuthCallbacks.delete(k);
+  });
+  if (handledAuthCallbacks.has(key)) return false;
+  handledAuthCallbacks.set(key, now);
+  return true;
+}
+
 export default function App() {
-  const { roomId } = useParams<{ roomId: string }>();
+  const { roomId: paramRoomId } = useParams<{ roomId?: string }>();
+  const location = useLocation();
+  const roomMatch = location.pathname.match(/^\/room\/([^/?#]+)/);
+  const dmMatch = location.pathname.match(/^\/dm\/([^/?#]+)/);
+  const roomId = paramRoomId || (roomMatch ? roomMatch[1] : undefined);
+  const dmChatId = dmMatch ? dmMatch[1] : undefined;
+
   const navigate = useNavigate();
   const store = useAppStore();
   const isPiPActive = useAppStore(s => s.isPiPActive);
   const [showLogin, setShowLogin] = useState(true);
   const [loginError, setLoginError] = useState('');
   const rawMicStreamRef = useRef<MediaStream | null>(null);
+
+  // Tela de loading estilo Discord na primeira vez do dia
+  const [showDailyLoading, setShowDailyLoading] = useState(() => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const last = localStorage.getItem(LAST_LAUNCH_DAY_KEY);
+      return last !== today;
+    } catch {
+      return false;
+    }
+  });
+  const [isAppLoaded, setIsAppLoaded] = useState(false);
+
+  const handleLoadingFinished = () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      localStorage.setItem(LAST_LAUNCH_DAY_KEY, today);
+    } catch {}
+    setShowDailyLoading(false);
+  };
 
   // ─── AUDIO SYSTEM ────────────────────────────────────────────────
   const audio = useAudio();
@@ -103,24 +148,59 @@ export default function App() {
             const access_token = hashParams.get('access_token') || searchParams.get('access_token');
             const refresh_token = hashParams.get('refresh_token') || searchParams.get('refresh_token');
             const code = searchParams.get('code') || hashParams.get('code');
+            const authError = hashParams.get('error') || searchParams.get('error');
+            const authErrorDescription = hashParams.get('error_description') || searchParams.get('error_description');
+
+            // O mesmo callback pode chegar por múltiplos canais (HTTP, POST e protocolo concord://).
+            // Processa apenas uma vez para evitar toasts/erros duplicados.
+            const callbackKey = authError || authErrorDescription
+              ? `error:${authError || ''}:${authErrorDescription || ''}`
+              : `ok:${code || access_token || ''}`;
+            if (!shouldHandleAuthCallback(callbackKey)) return;
+
+            // Cancelamento/erro do OAuth: nenhum feedback de sucesso, apenas sai do estado de carregamento
+            if (authError || authErrorDescription) {
+              window.dispatchEvent(new CustomEvent('concord:google-auth-cancelled'));
+              if (authError === 'access_denied') {
+                toast('Login com Google cancelado.', { icon: 'ℹ️', id: 'google-auth-cancelled' });
+              } else {
+                console.warn('[Auth] Erro no callback OAuth:', authError, authErrorDescription);
+                toast.error('Não foi possível concluir o login com o Google.', { id: 'google-auth-error' });
+              }
+              return;
+            }
+
+            // Nada a processar (callback sem tokens/código) -> não dispara feedback algum
+            if (!(access_token && refresh_token) && !code) return;
 
             const handleAuthenticatedUser = async (user: any) => {
               const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
+              await syncCloudUserData(user.id);
               socket.emit('set_username', finalName, finalAvatar || null);
               setShowLogin(false);
               setLoginError('');
-              toast.success(`Autenticado com sucesso como ${finalName}!`);
+              toast.success(`Autenticado com sucesso como ${finalName}!`, { id: 'auth-success' });
+            };
+
+            const handleAuthFailure = (err?: { message?: string } | null) => {
+              console.warn('[Auth] Falha ao concluir sessão OAuth:', err?.message);
+              window.dispatchEvent(new CustomEvent('concord:google-auth-cancelled'));
+              toast.error('Não foi possível concluir o login com o Google.', { id: 'google-auth-error' });
             };
 
             if (access_token && refresh_token) {
               const { data, error } = await supabase.auth.setSession({ access_token, refresh_token });
               if (!error && data?.user) {
                 await handleAuthenticatedUser(data.user);
+              } else {
+                handleAuthFailure(error);
               }
             } else if (code) {
               const { data, error } = await supabase.auth.exchangeCodeForSession(code);
               if (!error && data?.user) {
                 await handleAuthenticatedUser(data.user);
+              } else {
+                handleAuthFailure(error);
               }
             }
           } else if (parsed.hostname === 'join') {
@@ -257,44 +337,95 @@ export default function App() {
     rtc.getRemoteAudioStreams
   );
 
+  // ─── DIRECT CHAT ROUTE (/dm/:chatId) ──────────────────────────────
+  useEffect(() => {
+    if (!dmChatId) return;
+    store.setActiveRailContext('home');
+    store.setHomeTab('dm');
+    if (store.activeDmChat?.id === dmChatId) return;
+
+    const existing = store.directChats.find((c) => c.id === dmChatId);
+    if (existing) {
+      store.setActiveDmChat(existing);
+    } else {
+      fetchDirectChatsFromSupabase().then((chats) => {
+        store.setDirectChats(chats);
+        const match = chats.find((c) => c.id === dmChatId);
+        if (match) store.setActiveDmChat(match);
+      });
+    }
+  }, [dmChatId]);
+
   // ─── JOIN ROOM on mount ───────────────────────────────────────────
   useEffect(() => {
     if (!roomId) {
-      navigate('/');
+      store.setActiveRailContext('home');
       return;
     }
+    store.setActiveRailContext(roomId);
+    store.clearMessages();
 
-    const tryJoin = async () => {
-      let persistentId = getOrCreatePersistentId();
+    const persistentId = getOrCreatePersistentId();
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashParams = window.location.hash.includes('?')
+      ? new URLSearchParams(window.location.hash.substring(window.location.hash.indexOf('?')))
+      : new URLSearchParams();
 
-      const searchParams = new URLSearchParams(window.location.search);
-      const hashParams = window.location.hash.includes('?')
-        ? new URLSearchParams(window.location.hash.substring(window.location.hash.indexOf('?')))
-        : new URLSearchParams();
+    const codeParam = searchParams.get('code') || hashParams.get('code') || (roomId.startsWith('SRV-') ? roomId : '');
+    const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.toUpperCase().startsWith('SRV-') || roomId.toUpperCase().startsWith('SRV-');
 
-      const codeParam = searchParams.get('code') || hashParams.get('code') || (roomId.startsWith('SRV-') ? roomId : '');
-      const isServerParam = searchParams.get('server') === '1' || hashParams.get('server') === '1' || codeParam.startsWith('SRV-') || roomId.startsWith('SRV-');
+    // 1. Resolução instantânea via cache em memória (store.servers / local) para transição veloz (0ms)
+    const cachedServer = (store.servers || []).find(
+      s => s.id === roomId || (s.code && s.code.toUpperCase() === roomId.toUpperCase()) || (codeParam && s.code && s.code.toUpperCase() === codeParam.toUpperCase())
+    );
 
-      // Consultar metadados reais do Supabase para obter ID canônico, nome, logo e autor
-      let dbRoom = await findRoomInSupabase(roomId);
-      if (!dbRoom && codeParam) {
-        dbRoom = await findRoomInSupabase(codeParam);
-      }
-      const targetRoomId = dbRoom?.id || roomId;
-      const targetCode = dbRoom?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
-      const targetName = dbRoom?.name || (isServerParam ? (store.serverName || 'Servidor Concord') : 'Sala Concord');
-      const targetIconUrl = dbRoom?.icon_url || null;
-      const isServer = dbRoom?.is_server ?? isServerParam;
+    const initialRoomId = cachedServer?.id || roomId;
+    const initialCode = cachedServer?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
+    const initialIsServer = cachedServer ? true : isServerParam;
+    const initialName = cachedServer?.name || (initialIsServer ? (store.serverName && store.serverName !== 'Sala Concord' ? store.serverName : 'Servidor Concord') : `Sala ${initialCode}`);
+    const initialIconUrl = cachedServer?.icon_url || null;
+    const initialIsOwner = cachedServer?.role === 'owner';
 
-      if (isServer) {
-        store.setIsServer(true);
-        if (targetName) store.setServerName(targetName);
-        if (targetIconUrl) store.setServerIconUrl(targetIconUrl);
-      }
+    if (initialIsServer) {
+      store.setIsServer(true);
+      if (initialName) store.setServerName(initialName);
+      if (initialIconUrl) store.setServerIconUrl(initialIconUrl);
+    } else {
+      store.setIsServer(false);
+    }
 
-      // Validar autoria real no Supabase
-      let isOwner = false;
+    // Inicializa imediatamente o estado da sala para transição sem delay visual (0ms)
+    store.setRoom({
+      id: initialRoomId,
+      code: initialCode,
+      name: initialName,
+      iconUrl: initialIconUrl || undefined,
+      isServer: initialIsServer,
+      createdAt: Date.now(),
+      expiresAt: initialIsServer ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
+      userCount: 1,
+      adminIds: initialIsOwner ? [socket.socket?.id || 'admin'] : [],
+      channels: initialIsServer ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
+    });
+
+    const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
+    socket.emit('join_room', initialRoomId, persistentId, initialCode, initialIsServer, initialName, currentAvatar);
+
+    // 2. Consulta de enriquecimento de metadados no Supabase em segundo plano (não bloqueia a navegação)
+    (async () => {
       try {
+        let dbRoom = await findRoomInSupabase(roomId);
+        if (!dbRoom && codeParam) {
+          dbRoom = await findRoomInSupabase(codeParam);
+        }
+
+        const targetRoomId = dbRoom?.id || initialRoomId;
+        const targetCode = dbRoom?.code || initialCode;
+        const isServer = dbRoom?.is_server !== undefined ? dbRoom.is_server : initialIsServer;
+        const targetName = dbRoom?.name || initialName;
+        const targetIconUrl = dbRoom?.icon_url || initialIconUrl;
+
+        let isOwner = initialIsOwner;
         const { data: { user } } = await supabase.auth.getUser();
         if (user && isServer) {
           if (dbRoom?.created_by && user.id === dbRoom.created_by) {
@@ -309,58 +440,92 @@ export default function App() {
             if (mem?.role === 'owner') isOwner = true;
           }
         }
+
+        if (targetName !== initialName || targetIconUrl !== initialIconUrl) {
+          if (isServer) {
+            store.setServerName(targetName);
+            if (targetIconUrl) store.setServerIconUrl(targetIconUrl);
+          }
+          store.setRoom({
+            id: targetRoomId,
+            code: targetCode,
+            name: targetName,
+            iconUrl: targetIconUrl || undefined,
+            isServer,
+            createdAt: Date.now(),
+            expiresAt: isServer ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
+            userCount: 1,
+            adminIds: isServer ? (isOwner ? [socket.socket?.id || 'admin'] : []) : [socket.socket?.id || 'admin'],
+            channels: isServer ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
+          });
+        }
+
+        if (isServer || targetCode.toUpperCase().startsWith('SRV-') || targetRoomId.toLowerCase().startsWith('srv-') || dbRoom?.is_server) {
+          const srvData = {
+            id: targetRoomId,
+            code: targetCode,
+            name: targetName,
+            icon_url: targetIconUrl || undefined,
+            role: (isOwner ? 'owner' : 'member') as ('owner' | 'member'),
+          };
+          saveMyServer(srvData);
+          store.recordRecentServer(srvData);
+          joinServerInSupabase(targetRoomId).catch(() => {});
+        } else {
+          saveRecentRoom({
+            id: targetRoomId,
+            code: targetCode,
+            name: targetName,
+            createdAt: dbRoom?.created_at ? new Date(dbRoom.created_at).getTime() : Date.now(),
+          });
+        }
       } catch (err) {
-        console.warn('Erro ao checar permissões de autor no Supabase:', err);
+        console.warn('[Room] Enriquecimento assíncrono de sala:', err);
       }
-
-      // Pre-initialize room object em memória no store com permissões validadas
-      if (!store.room || store.room.id !== targetRoomId) {
-        store.setRoom({
-          id: targetRoomId,
-          code: targetCode,
-          name: targetName,
-          iconUrl: targetIconUrl || undefined,
-          isServer,
-          createdAt: Date.now(),
-          expiresAt: isServer ? Infinity : Date.now() + 14 * 60 * 60 * 1000,
-          userCount: 1,
-          adminIds: isServer ? (isOwner ? [socket.socket?.id || 'admin'] : []) : [socket.socket?.id || 'admin'],
-          channels: isServer ? [{ id: 'ch-geral', name: 'geral' }] : undefined,
-        });
-      }
-
-      // Atualizar no histórico "Meus Servidores"
-      if (isServer) {
-        saveMyServer({
-          id: targetRoomId,
-          code: targetCode,
-          name: targetName,
-          icon_url: targetIconUrl || undefined,
-          role: isOwner ? 'owner' : 'member',
-        });
-      }
-
-      const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
-      socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName, currentAvatar);
-    };
-
-    const timer = setTimeout(tryJoin, 100);
-    return () => clearTimeout(timer);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
   // ─── LOGIN E NOME DE USUÁRIO ───────────────────────────────────────
   useEffect(() => {
     const syncUserProfile = async () => {
+      // Hidratar localStorage a partir de electron.loadPreferences() para persistência resiliente em novas builds e reinstalações
+      const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+      if (isElectron && (window as any).electron?.loadPreferences) {
+        try {
+          const prefs = await (window as any).electron.loadPreferences();
+          if (prefs && typeof prefs === 'object') {
+            for (const [k, v] of Object.entries(prefs)) {
+              if (v && typeof v === 'string') {
+                const current = localStorage.getItem(k);
+                // Hidrata se chave não existir ou se a chave local estiver com array vazio '[]' enquanto prefs tem dados válidos
+                if (!current || (current.trim() === '[]' && v.trim() !== '[]')) {
+                  localStorage.setItem(k, v);
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // Restaura a sessão segura do Supabase a partir do DPAPI do Electron antes de consultar getUser()
+      await ensureSupabaseSessionRestored();
+
+      // Carrega imediatamente os servidores restaurados do armazenamento local / Electron
+      await store.refreshServers();
+
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
+          await syncCloudUserData(user.id);
+          await store.refreshServers();
           if (finalName && finalName.trim()) {
             store.setMyName(finalName.trim());
             socket.emit('set_username', finalName.trim(), finalAvatar || store.myAvatarUrl || null);
             setShowLogin(false);
             setLoginError('');
+            setIsAppLoaded(true);
             return;
           }
         }
@@ -379,6 +544,8 @@ export default function App() {
       } else {
         setShowLogin(true);
       }
+      await store.refreshServers();
+      setIsAppLoaded(true);
     };
 
     syncUserProfile();
@@ -472,6 +639,27 @@ export default function App() {
       const processedStream = await audio.processMicStream(stream);
       await rtc.joinVoice(store.myId, processedStream);
       store.setInVoice(true);
+      const callRoomId = store.room?.id || roomId || 'concord';
+      const callRoomName = store.room?.name || store.serverName || 'Chamada Concord';
+      const callRoomCode = store.room?.code || '';
+      store.setActiveCallInfo({
+        roomId: callRoomId,
+        roomName: callRoomName,
+        code: callRoomCode,
+        isServer: Boolean(store.isServer),
+      });
+
+      // Gravar servidor no histórico dos últimos servidores em que esteve em call
+      if (store.isServer && (callRoomId || callRoomCode)) {
+        store.recordRecentCallServer({
+          id: callRoomId,
+          code: callRoomCode || 'CONCORD',
+          name: callRoomName,
+          icon_url: store.serverIconUrl || store.room?.iconUrl,
+          role: 'member',
+        });
+      }
+
       socket.emit('update_media_state', useAudioStore.getState().micMuted, useAudioStore.getState().callMuted);
       monitorSpeaking(processedStream, store.myId);
     } catch (err) {
@@ -484,6 +672,7 @@ export default function App() {
     rtc.leaveVoice();
     audio.cleanup();
     store.setInVoice(false);
+    store.setActiveCallInfo(null);
     if (store.amSharing) {
       screenShare.stopScreenShare();
     }
@@ -501,6 +690,7 @@ export default function App() {
 
 
   const isPipRoute = window.location.hash.startsWith('#/pip');
+  const isHome = !roomId || store.activeRailContext === 'home';
 
   if (isPipRoute) {
     return <PiPPlayer />;
@@ -508,7 +698,17 @@ export default function App() {
 
   return (
     <div className={`${styles.appContainer}`}>
+      {showDailyLoading && (
+        <DiscordLoadingScreen 
+          isReady={isAppLoaded} 
+          onFinished={handleLoadingFinished} 
+        />
+      )}
+
       {showLogin && <LoginModal onLogin={handleLogin} initialError={loginError} />}
+
+      {/* ── 1. PRIMARY SERVER RAIL (EXTREMA ESQUERDA ~72px) ── */}
+      <ServerRail />
 
       <div className={styles.mainLayout}>
         <Sidebar
@@ -530,6 +730,7 @@ export default function App() {
           onDeleteChannel={(channelId) => socket.emit('delete_channel', channelId)}
           onUpdateServer={(serverId, newName, newIconUrl) => socket.emit('update_server', serverId, newName, newIconUrl)}
           onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
+          onSetCustomRole={(payload) => socket.emit('set_member_custom_role', payload)}
           onUpdateProfile={(name, avatarUrl) => {
             socket.emit('set_username', name, avatarUrl);
             socket.emit('update_avatar', avatarUrl);
@@ -544,59 +745,75 @@ export default function App() {
           }}
         />
 
-        <div className={styles.chatSection}>
-          <ChatPanel
-            onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
-              socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
-            }}
-            onMusicAction={(action) => {
-              socket.emit('music_action', action);
-            }}
-            onMusicSeek={(time) => {
-              socket.emit('music_seek', time);
-              yt.seekTo(time);
-            }}
-            getYtCurrentTime={yt.getCurrentTime}
-            getYtDuration={yt.getDuration}
-            onSetCC={yt.setCC}
-            onSetQuality={yt.setQuality}
-            getYtAvailableQualities={yt.getAvailableQualities}
-            getYtQuality={yt.getQuality}
-            onWatchSessionStart={(data) => {
-              socket.emit('watch_session_start', data);
-            }}
-            onWatchSessionAction={(data) => {
-              socket.emit('watch_session_action', data);
-            }}
-            onWatchSessionHeartbeat={(data) => {
-              socket.emit('watch_session_heartbeat', data);
-            }}
-            onWatchSessionEnd={() => {
-              socket.emit('watch_session_end');
-            }}
-          />
-        </div>
+        {/* ── 2. VIEWPORT PRINCIPAL (HOME HUB OU CANAL/CALL) ── */}
+        {isHome && store.homeTab !== 'dm' ? (
+          <div className={styles.homeSection}>
+            <HomeHub />
+          </div>
+        ) : (
+          <>
+            <div className={styles.chatSection}>
+              <ChatPanel
+                onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
+                  socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
+                }}
+                onReaction={(messageId, emoji) => {
+                  socket.emit('message_reaction' as any, messageId, emoji);
+                }}
+                onMusicAction={(action) => {
+                  socket.emit('music_action', action);
+                }}
+                onMusicSeek={(time) => {
+                  socket.emit('music_seek', time);
+                  yt.seekTo(time);
+                }}
+                getYtCurrentTime={yt.getCurrentTime}
+                getYtDuration={yt.getDuration}
+                onSetCC={yt.setCC}
+                onSetQuality={yt.setQuality}
+                getYtAvailableQualities={yt.getAvailableQualities}
+                getYtQuality={yt.getQuality}
+                onWatchSessionStart={(data) => {
+                  socket.emit('watch_session_start', data);
+                }}
+                onWatchSessionAction={(data) => {
+                  socket.emit('watch_session_action', data);
+                }}
+                onWatchSessionHeartbeat={(data) => {
+                  socket.emit('watch_session_heartbeat', data);
+                }}
+                onWatchSessionEnd={() => {
+                  socket.emit('watch_session_end');
+                }}
+              />
+            </div>
 
-        <div className={styles.sidePanels}>
-          <MusicPanel
-            onRequestMusic={(url, title, playNow) => {
-              if (!store.inVoice) {
-                notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
-                return;
-              }
-              socket.emit('request_music', url, title, playNow);
-            }}
-            onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
-            onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
-            inVoice={store.inVoice}
-          />
-          <AudioControls onUnlockAudio={yt.unlock} />
-          <BroadcasterScreenPanel
-            onStopSharing={screenShare.stopScreenShare}
-            onChangeSharing={screenShare.changeScreenShare}
-          />
-        </div>
+            {!isHome && (
+              <div className={styles.sidePanels}>
+                <MusicPanel
+                  onRequestMusic={(url, title, playNow) => {
+                    if (!store.inVoice) {
+                      notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
+                      return;
+                    }
+                    socket.emit('request_music', url, title, playNow);
+                  }}
+                  onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
+                  onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
+                  inVoice={store.inVoice}
+                />
+                <AudioControls onUnlockAudio={yt.unlock} />
+                <BroadcasterScreenPanel
+                  onStopSharing={screenShare.stopScreenShare}
+                  onChangeSharing={screenShare.changeScreenShare}
+                />
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      <ServerActionModal />
 
       <ScreenSharePanel
         onClose={() => store.setScreenShare(null)}
@@ -618,6 +835,23 @@ export default function App() {
         onClose={screenShare.closePicker}
         onConfirm={screenShare.confirmPicker}
       />
+
+      {/* ── 3. FLOATING CALL OVERLAY BAR (PERSISTENTE NA NAVEGAÇÃO FORA DA SALA DA CALL) ── */}
+      {store.inVoice && (isHome || store.activeRailContext === 'home' || (store.activeCallInfo && store.activeCallInfo.roomId !== roomId && store.activeCallInfo.roomId !== store.room?.id && (!store.room?.code || store.activeCallInfo.code?.toUpperCase() !== store.room.code.toUpperCase()))) && (
+        <FloatingCallBar
+          onLeaveVoice={handleLeaveVoice}
+          onToggleMic={() => {
+            const next = !useAudioStore.getState().micMuted;
+            useAudioStore.getState().setMicMuted(next);
+            socket.emit('update_media_state', next, useAudioStore.getState().callMuted);
+          }}
+          onToggleDeafen={() => {
+            const next = !useAudioStore.getState().callMuted;
+            useAudioStore.getState().setCallMuted(next);
+            socket.emit('update_media_state', useAudioStore.getState().micMuted, next);
+          }}
+        />
+      )}
     </div>
   );
 }

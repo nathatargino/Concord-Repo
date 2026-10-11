@@ -93,7 +93,7 @@ export function createRoom(
   const room: RoomState = {
     id,
     code,
-    name: serverName || (isServer ? 'Servidor Concord' : 'Sala Concord'),
+    name: serverName || (isServer ? 'Servidor Concord' : `Sala ${code}`),
     isServer: !!isServer,
     channels: isServer ? [defaultChannel] : [],
     createdAt: now,
@@ -221,6 +221,10 @@ function broadcastUserList(io: IoServer, room: RoomState) {
 }
 
 function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState) {
+  // Servidores permanentes NUNCA reatribuem cargo de Dono/Admin quando um usuário desconecta ou fica offline!
+  // O dono só pode mudar se explicitamente transferido ou sair voluntariamente.
+  if (room.isServer) return;
+
   if (room.adminIds.includes(socketId)) {
     room.adminIds = room.adminIds.filter(id => id !== socketId);
     if (room.adminIds.length === 0 && room.users.size > 0) {
@@ -314,10 +318,10 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             for (const candidate of candidates) {
               const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate);
               
-              // Tenta buscar sem a coluna is_server primeiro para não quebrar em bancos desatualizados
+              // Buscar sala respeitando a coluna is_server
               const { data, error } = await supabaseClient
                 .from('rooms')
-                .select('id, code, name, icon_url, created_by')
+                .select('id, code, name, icon_url, created_by, is_server')
                 .or(isUUID ? `id.eq.${candidate},code.ilike.${candidate}` : `code.ilike.${candidate}`)
                 .maybeSingle();
 
@@ -326,46 +330,52 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
               }
 
               if (data) {
-                dbRoom = { ...data, is_server: true }; // Assumimos que se achou no DB é um servidor para retrocompatibilidade
+                const isServerRoom = Boolean(data.is_server) || (Boolean(data.code) && data.code.toUpperCase().startsWith('SRV-'));
+                dbRoom = { ...data, is_server: isServerRoom };
                 break;
               }
             }
 
             if (dbRoom) {
-              isServer = true;
-              console.log(`[Room] Restaurando servidor "${dbRoom.name}" (${dbRoom.id}) do Supabase após reinício`);
+              const isServerRoom = Boolean(dbRoom.is_server);
+              isServer = isServerRoom;
+              console.log(`[Room] Restaurando ${isServerRoom ? 'servidor' : 'sala temporária'} "${dbRoom.name}" (${dbRoom.id}) do Supabase`);
 
-              // Buscar canais do servidor
+              // Buscar canais se for servidor
               let restoredChannels: any[] = [];
-              try {
-                const { data: chData } = await supabaseClient
-                  .from('server_channels')
-                  .select('id, name, server_id')
-                  .eq('server_id', dbRoom.id)
-                  .order('created_at', { ascending: true });
-                if (chData && chData.length > 0) {
-                  restoredChannels = chData.map((ch: any) => ({ id: ch.id, name: ch.name, serverId: ch.server_id }));
+              if (isServerRoom) {
+                try {
+                  const { data: chData } = await supabaseClient
+                    .from('server_channels')
+                    .select('id, name, server_id')
+                    .eq('server_id', dbRoom.id)
+                    .order('created_at', { ascending: true });
+                  if (chData && chData.length > 0) {
+                    restoredChannels = chData.map((ch: any) => ({ id: ch.id, name: ch.name, serverId: ch.server_id }));
+                  }
+                } catch (chErr) {
+                  console.warn('[Room] Erro ao restaurar canais:', chErr);
                 }
-              } catch (chErr) {
-                console.warn('[Room] Erro ao restaurar canais:', chErr);
-              }
-              if (restoredChannels.length === 0) {
-                restoredChannels = [{ id: 'ch-geral', name: 'Geral', serverId: dbRoom.id }];
+                if (restoredChannels.length === 0) {
+                  restoredChannels = [{ id: 'ch-geral', name: 'Geral', serverId: dbRoom.id }];
+                }
               }
 
-              // Buscar admins/donos do servidor
+              // Buscar admins/donos se for servidor
               let restoredAdminPersistentIds: string[] = [];
-              try {
-                const { data: memData } = await supabaseClient
-                  .from('server_members')
-                  .select('user_id')
-                  .eq('server_id', dbRoom.id)
-                  .in('role', ['owner', 'sub_owner']);
-                if (memData) {
-                  restoredAdminPersistentIds = memData.map((m: any) => m.user_id).filter(Boolean);
+              if (isServerRoom) {
+                try {
+                  const { data: memData } = await supabaseClient
+                    .from('server_members')
+                    .select('user_id')
+                    .eq('server_id', dbRoom.id)
+                    .in('role', ['owner', 'sub_owner']);
+                  if (memData) {
+                    restoredAdminPersistentIds = memData.map((m: any) => m.user_id).filter(Boolean);
+                  }
+                } catch (memErr) {
+                  console.warn('[Room] Erro ao restaurar admins:', memErr);
                 }
-              } catch (memErr) {
-                console.warn('[Room] Erro ao restaurar admins:', memErr);
               }
 
               // Restaurar room em memória com dados do Supabase
@@ -375,10 +385,10 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 code: dbRoom.code,
                 name: dbRoom.name,
                 iconUrl: dbRoom.icon_url || undefined,
-                isServer: true,
+                isServer: isServerRoom,
                 channels: restoredChannels,
                 createdAt: now,
-                expiresAt: Infinity,
+                expiresAt: isServerRoom ? Infinity : now + ROOM_DURATION_MS,
                 adminIds: [],
                 adminPersistentIds: restoredAdminPersistentIds,
                 ownerId: dbRoom.created_by || undefined,
@@ -403,15 +413,10 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           }
         }
 
-        // Se ainda não encontrou: para salas temporárias → erro, para servidores → cria em memória
+        // Se ainda não encontrou nem na memória nem no banco, rejeita estritamente
         if (!room) {
-          if (!isServer) {
-            socket.emit('room_error', 'Sala não encontrada ou expirada.');
-            return;
-          }
-
-          const code = fallbackCode ? fallbackCode.toUpperCase() : (cleanIdOrCode.length <= 10 ? cleanIdOrCode.toUpperCase() : generateCode());
-          room = createRoom(persistentId, code, cleanIdOrCode, isServer, serverNameHint);
+          socket.emit('room_error', 'Código de convite ou sala inválida ou expirada.');
+          return;
         }
       }
 
@@ -456,21 +461,25 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           .catch((err: any) => console.warn('[Hub Supabase Sync Error]:', err));
       }
 
-      // Leave previous room if any
+      // Leave previous room if any (preserva voz caso o usuário esteja em call)
       const prevRoomId = socket.data.roomId;
       if (prevRoomId && prevRoomId !== room.id) {
         const prevRoom = rooms.get(prevRoomId);
         if (prevRoom) {
-          handleLeaveVoice(socket, io, user, prevRoom);
-          prevRoom.users.delete(socket.id);
-          if (prevRoom.users.size === 0 && !prevRoom.isServer) {
-            destroyRoom(prevRoom.id);
+          if (!user.inVoice) {
+            handleLeaveVoice(socket, io, user, prevRoom);
+            prevRoom.users.delete(socket.id);
+            if (prevRoom.users.size === 0 && !prevRoom.isServer) {
+              destroyRoom(prevRoom.id);
+            } else {
+              handleAdminReassignment(socket.id, io, prevRoom);
+              broadcastUserList(io, prevRoom);
+            }
+            socket.leave(prevRoomId);
           } else {
-            handleAdminReassignment(socket.id, io, prevRoom);
-            broadcastUserList(io, prevRoom);
+            socket.data.voiceRoomId = prevRoomId;
           }
         }
-        socket.leave(prevRoomId);
       }
 
       socket.data.roomId = room.id;
@@ -584,7 +593,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (room.messageHistory.length > 0) {
           // Use cached in-memory history (already loaded by a previous joiner this session)
           for (const msg of room.messageHistory) {
-            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0);
+            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0, room.id);
           }
         } else if (supabaseClient) {
           // First join this session — load history from Supabase
@@ -612,7 +621,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                   sentAt: new Date(m.created_at).getTime(),
                 }));
                 for (const msg of room.messageHistory) {
-                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0);
+                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0, room.id);
                 }
               }
             }
@@ -902,7 +911,15 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         }
       }
 
-      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId, avatarUrl, false, now);
+      io.to(room.id).emit('receive_message', user.name, safe, timestamp, type, url, filename, channelId, avatarUrl, false, now, room.id, user.customRole || null);
+    });
+
+    // ─── MESSAGE REACTION ───────────────────────────────────────────
+    socket.on('message_reaction' as any, (messageId: string, emoji: string) => {
+      if (!user.name) return;
+      const room = getCurrentRoom();
+      if (!room) return;
+      io.to(room.id).emit('message_reaction', messageId, emoji, user.name);
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
@@ -1109,6 +1126,17 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       const room = getCurrentRoom();
       if (!room) return;
 
+      // Se já estava em call em outra sala/servidor, sai da call anterior
+      if (socket.data.voiceRoomId && socket.data.voiceRoomId !== room.id) {
+        const prevVoiceRoom = rooms.get(socket.data.voiceRoomId);
+        if (prevVoiceRoom) {
+          handleLeaveVoice(socket, io, user, prevVoiceRoom);
+          prevVoiceRoom.users.delete(socket.id);
+          socket.leave(socket.data.voiceRoomId);
+        }
+      }
+      socket.data.voiceRoomId = room.id;
+
       user.inVoice = true;
       room.voiceUsers.add(socket.id);
 
@@ -1128,9 +1156,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
     // ─── LEAVE VOICE ───────────────────────────────────────────────
     socket.on('leave_voice', () => {
-      const room = getCurrentRoom();
+      const vId = socket.data.voiceRoomId || socket.data.roomId;
+      const room = vId ? rooms.get(vId) : getCurrentRoom();
       if (!room) return;
       handleLeaveVoice(socket, io, user, room);
+      socket.data.voiceRoomId = undefined;
     });
 
     // ─── WEBRTC SIGNALING ──────────────────────────────────────────
@@ -1213,6 +1243,127 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
     });
 
+    // ─── DEFINIR CARGO PERSONALIZADO (Nome + Emoji) ─────────────────
+    socket.on('set_member_custom_role', (payload: {
+      roomId: string;
+      targetUserId: string;
+      targetUsername: string;
+      customRole: any;
+    }) => {
+      const room = rooms.get(payload.roomId) || getCurrentRoom();
+      if (!room || !room.isServer) return;
+
+      // 1. Atualizar no usuário online (se estiver conectado)
+      const targetUser = room.users.get(payload.targetUserId);
+      if (targetUser) {
+        targetUser.customRole = payload.customRole;
+        if (payload.customRole?.isAdmin && targetUser.role !== 'owner') {
+          targetUser.role = 'sub_owner';
+        } else if (!payload.customRole?.isAdmin && targetUser.role === 'sub_owner') {
+          targetUser.role = 'member';
+        }
+      }
+
+      // 2. Atualizar nos membros conhecidos do servidor (knownMembers)
+      if (!room.knownMembers) room.knownMembers = new Map();
+      const lowerName = (payload.targetUsername || '').trim().toLowerCase();
+      let mem = room.knownMembers.get(lowerName) || room.knownMembers.get(payload.targetUserId);
+      if (mem) {
+        mem.customRole = payload.customRole;
+        if (payload.customRole?.isAdmin && mem.role !== 'owner') {
+          mem.role = 'sub_owner';
+        } else if (!payload.customRole?.isAdmin && mem.role === 'sub_owner') {
+          mem.role = 'member';
+        }
+      } else {
+        mem = {
+          id: payload.targetUserId,
+          username: payload.targetUsername,
+          customRole: payload.customRole,
+          role: payload.customRole?.isAdmin ? 'sub_owner' : 'member',
+        };
+        room.knownMembers.set(lowerName, mem);
+      }
+
+      // 3. Atualizar no Supabase de forma assíncrona se disponível
+      if (supabaseClient && room.isServer) {
+        try {
+          supabaseClient
+            .from('server_members')
+            .update({
+              custom_role_name: payload.customRole?.name || null,
+              custom_role_emoji: payload.customRole?.emoji || null,
+              custom_role_color: payload.customRole?.color || null,
+              role: payload.customRole?.isAdmin ? 'sub_owner' : 'member',
+            })
+            .eq('server_id', room.id)
+            .ilike('username', payload.targetUsername)
+            .then(() => {})
+            .catch(() => {});
+        } catch {}
+      }
+
+      // 4. Notificar no chat do servidor caso tenha cargo definido
+      if (payload.customRole?.name) {
+        const now = Date.now();
+        const timeStr = new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (targetUser && targetUser.id) {
+          // Mensagem personalizada para o usuário que recebeu o cargo
+          io.to(targetUser.id).emit(
+            'receive_message',
+            'Sistema',
+            `Seu cargo foi alterado para ${payload.customRole.name}`,
+            timeStr,
+            'system',
+            undefined,
+            undefined,
+            'ch-geral',
+            null,
+            false,
+            now,
+            room.id,
+            null
+          );
+          // Notificação para os demais membros
+          socket.to(room.id).except(targetUser.id).emit(
+            'receive_message',
+            'Sistema',
+            `O cargo de ${payload.targetUsername} foi alterado para ${payload.customRole.name}`,
+            timeStr,
+            'system',
+            undefined,
+            undefined,
+            'ch-geral',
+            null,
+            false,
+            now,
+            room.id,
+            null
+          );
+        } else {
+          io.to(room.id).emit(
+            'receive_message',
+            'Sistema',
+            `O cargo de ${payload.targetUsername} foi alterado para ${payload.customRole.name}`,
+            timeStr,
+            'system',
+            undefined,
+            undefined,
+            'ch-geral',
+            null,
+            false,
+            now,
+            room.id,
+            null
+          );
+        }
+      }
+
+      // 5. Propagar para todos no servidor em tempo real
+      io.to(room.id).emit('member_custom_role_updated', payload);
+      broadcastUserList(io, room);
+    });
+
     // ─── DESTROY EMPTY SERVER ───────────────────────────────────────
     socket.on('destroy_empty_server', (serverId: string) => {
       forceDestroyServer(serverId);
@@ -1221,6 +1372,13 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     // ─── DISCONNECT ────────────────────────────────────────────────
     socket.on('disconnect', () => {
       console.log(`[-] Disconnected: ${socket.id}`);
+      if (socket.data.voiceRoomId) {
+        const vRoom = rooms.get(socket.data.voiceRoomId);
+        if (vRoom) {
+          handleLeaveVoice(socket, io, user, vRoom);
+          vRoom.users.delete(socket.id);
+        }
+      }
       const room = getCurrentRoom();
       if (!room) return;
 

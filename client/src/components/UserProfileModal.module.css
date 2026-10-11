@@ -202,6 +202,19 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.identityCard:hover {
+  background: #171a24;
+  border-color: rgba(124, 92, 255, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.identityCard:active {
+  transform: scale(0.99);
 }
 
 .userNameRow {
@@ -234,6 +247,44 @@
   color: #9ca3af;
   font-family: inherit;
   margin-top: 2px;
+}
+
+.copiedBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 1px 7px;
+  border-radius: 9999px;
+  animation: fadeIn 0.2s ease;
+}
+
+.copyHint {
+  font-size: 10.5px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.15s ease;
+}
+
+.identityCard:hover .copyHint {
+  color: #c4b5fd;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* ── Details Section ── */
@@ -275,29 +326,54 @@
 
 /* ── Friend Request Button ── */
 .friendRequestBtn {
-  background: rgba(124, 92, 255, 0.12);
-  border: 1px solid rgba(124, 92, 255, 0.25);
+  background: rgba(124, 92, 255, 0.16);
+  border: 1px solid rgba(124, 92, 255, 0.35);
   border-radius: 12px;
   height: 44px;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
-  color: #a78bfa;
+  color: #c4b5fd;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
   width: 100%;
-  cursor: not-allowed;
-  opacity: 0.7;
+  cursor: pointer;
   transition: all 0.2s ease;
   user-select: none;
   box-sizing: border-box;
+}
+
+.friendRequestBtn:hover:not(:disabled) {
+  background: #7c5cff;
+  border-color: #7c5cff;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(124, 92, 255, 0.35);
+}
+
+.friendRequestBtn:disabled {
+  opacity: 0.65;
+  cursor: default;
+  transform: none;
 }
 
 .friendRequestLeft {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.addBadge {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
 }
 
 .soonBadge {
@@ -310,6 +386,127 @@
   border-radius: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.friendRequestBtnAccepted {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+  color: #34d399 !important;
+  cursor: default !important;
+}
+
+.friendRequestBtnAccepted:hover {
+  background: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  color: #34d399 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.friendRequestBtnPending {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  color: #fbbf24 !important;
+  cursor: default !important;
+}
+
+.friendRequestBtnPending:hover {
+  background: rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+  color: #fbbf24 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.friendRequestBtnCancel {
+  background: rgba(239, 68, 68, 0.14) !important;
+  border: 1px solid rgba(239, 68, 68, 0.38) !important;
+  color: #f87171 !important;
+  cursor: pointer !important;
+}
+
+.friendRequestBtnCancel:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-color: #ef4444 !important;
+  color: #fca5a5 !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3) !important;
+}
+
+.cancelBadge {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+.blockUserBtn {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 12px;
+  height: 38px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.blockUserBtn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.45);
+  color: #fca5a5;
+  transform: translateY(-1px);
+}
+
+.unblockUserBtn {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 12px;
+  height: 38px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #34d399;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.unblockUserBtn:hover {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+  transform: translateY(-1px);
+}
+
+.acceptedBadge {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
 }
 
 /* ── Lightbox / Image Zoom Modal ── */

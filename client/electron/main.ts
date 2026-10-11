@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, nativeImage, protocol, net, BrowserView, WebContentsView, Tray, Menu } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, nativeImage, protocol, net, BrowserView, WebContentsView, Tray, Menu, safeStorage } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
@@ -18,9 +18,6 @@ import { autoUpdater } from 'electron-updater';
 // In a CommonJS build we don't have import.meta.url, but we are writing TS mapped to commonjs usually for electron, or ESM if packaged cleanly.
 const path = require('path');
 app.name = 'Concord';
-if (process.platform === 'win32') {
-    app.setAppUserModelId('com.concord.desktop');
-}
 const isDev = !app.isPackaged;
 const isWindowsStore = Boolean(
     (process as any).windowsStore ||
@@ -28,15 +25,27 @@ const isWindowsStore = Boolean(
     process.env.STORE_APP === 'true'
 );
 
+// No Windows normal (NSIS/exe), definimos o AUMID registrado no atalho para agrupar na barra de tarefas.
+// No Windows Store (AppX/MSIX), o Windows gerencia o AUMID a partir do AppxManifest.xml automaticamente;
+// sobrescrever o AUMID desassocia o processo do pacote da Store e reverte o ícone da barra de tarefas para o padrão.
+if (process.platform === 'win32' && !isWindowsStore) {
+    app.setAppUserModelId('com.concord.desktop');
+}
+
 function getAppIconPath(): string {
     const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
     const candidates = [
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', iconFile),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'public', iconFile),
+        path.join(process.resourcesPath, iconFile),
+        path.join(path.dirname(app.getAppPath()), 'build', iconFile),
         path.join(__dirname, isDev ? '../public' : '../dist', iconFile),
         path.join(__dirname, '../public', iconFile),
         path.join(__dirname, '../dist', iconFile),
         path.join(app.getAppPath(), isDev ? 'public' : 'dist', iconFile),
         path.join(app.getAppPath(), 'public', iconFile),
         path.join(app.getAppPath(), iconFile),
+        path.join(process.resourcesPath, 'app.asar.unpacked', 'dist', 'logo.png'),
         path.join(__dirname, isDev ? '../public/logo.png' : '../dist/logo.png'),
         path.join(__dirname, '../public/logo.png'),
         path.join(__dirname, '../dist/logo.png'),
@@ -164,6 +173,20 @@ let tray: Tray | null = null;
 let isQuitting = false;
 const appStartTime = Date.now();
 
+// Streaming Instances & Fullscreen State (Must be declared before createWindow event listeners)
+interface StreamingInstance {
+    service: 'netflix' | 'prime';
+    view: any;
+    currentUrl?: string;
+}
+
+const streamingInstances = new Map<'netflix' | 'prime', StreamingInstance>();
+let activeStreamingService: 'netflix' | 'prime' | null = null;
+let activeStreamingBounds: { x: number; y: number; width: number; height: number } | null = null;
+let isStreamingFullscreen = false;
+let isModalActive = false;
+let modalHiddenStreamingService: 'netflix' | 'prime' | null = null;
+
 const startHidden = !isDev && process.argv.includes('--hidden');
 
 function showMainWindow() {
@@ -287,14 +310,23 @@ function startLocalServer(): Promise<number> {
     });
 }
 
+// Tamanho mínimo da janela principal para evitar quebras no layout responsivo
+const MIN_WINDOW_WIDTH = 1152;
+const MIN_WINDOW_HEIGHT = 864;
+
 function createWindow(showWindow = !process.argv.includes('--hidden')) {
     fs.appendFileSync(logFile, `createWindow called! isDev=${isDev}, showWindow=${showWindow}\n`);
-    const appIcon = getAppIconPath();
+    const appIconPath = getAppIconPath();
+    const appIconNative = (appIconPath && fs.existsSync(appIconPath))
+        ? nativeImage.createFromPath(appIconPath)
+        : undefined;
+    const windowIcon = (appIconNative && !appIconNative.isEmpty()) ? appIconNative : appIconPath;
+
     mainWindow = new BrowserWindow({
-        width: 1200,
-        height: 800,
-        minWidth: 800,
-        minHeight: 600,
+        width: 1280,
+        height: 900,
+        minWidth: MIN_WINDOW_WIDTH,
+        minHeight: MIN_WINDOW_HEIGHT,
         backgroundColor: '#0e0e18',
         show: showWindow,
         webPreferences: {
@@ -306,7 +338,7 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
         },
         frame: false,
         titleBarStyle: 'hidden',
-        icon: appIcon,
+        icon: windowIcon,
     });
 
     if (showWindow) {
@@ -314,9 +346,9 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
         mainWindow.focus();
     }
 
-    if (appIcon && fs.existsSync(appIcon)) {
+    if (windowIcon) {
         try {
-            mainWindow.setIcon(appIcon);
+            mainWindow.setIcon(windowIcon as any);
         } catch (e) {}
     }
 
@@ -329,9 +361,9 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
 
     mainWindow.once('ready-to-show', () => {
         fs.appendFileSync(logFile, 'ready-to-show fired!\n');
-        if (appIcon && fs.existsSync(appIcon)) {
+        if (windowIcon) {
             try {
-                mainWindow?.setIcon(appIcon);
+                mainWindow?.setIcon(windowIcon as any);
             } catch (e) {}
         }
         if (showWindow) {
@@ -557,9 +589,13 @@ function startAuthLoopbackServer() {
 
             // Callback landing page
             if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl === '/' || reqUrl.startsWith('/?')) {
-                if (reqUrl.includes('code=') || reqUrl.includes('access_token=')) {
-                    try {
-                        const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:54321');
+                try {
+                    const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:54321');
+                    const sp = parsedUrl.searchParams;
+                    // Compara parâmetros exatos (evita falso positivo de 'error_code=' ao procurar 'code=')
+                    const hasAuthPayload = Boolean(sp.get('code') || sp.get('access_token'));
+                    const hasAuthError = Boolean(sp.get('error') || sp.get('error_description'));
+                    if (hasAuthPayload || hasAuthError) {
                         const fullUrl = `concord://auth/callback${parsedUrl.search}${parsedUrl.hash}`;
                         showMainWindow();
                         if (mainWindow && mainWindow.webContents) {
@@ -567,14 +603,14 @@ function startAuthLoopbackServer() {
                         } else {
                             pendingDeepLink = fullUrl;
                         }
-                    } catch {}
-                }
+                    }
+                } catch {}
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                 res.end(`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>Concord — Autenticado</title>
+  <title>Concord</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -639,28 +675,60 @@ function startAuthLoopbackServer() {
 </head>
 <body>
   <div class="card">
-    <div class="icon">✨</div>
-    <h2>Autenticado com Sucesso!</h2>
-    <p>Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...</p>
-    <a id="openBtn" class="btn" href="#">Abrir Concord Desktop</a>
+    <div class="icon" id="statusIcon">⏳</div>
+    <h2 id="statusTitle">Processando...</h2>
+    <p id="statusText">Aguarde um instante.</p>
+    <a id="openBtn" class="btn" href="#" style="display:none">Abrir Concord Desktop</a>
   </div>
   <script>
     const hash = window.location.hash || '';
     const search = window.location.search || '';
-    const deepLink = 'concord://auth/callback' + search + hash;
+    const params = new URLSearchParams(search);
+    new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash).forEach((v, k) => { if (!params.has(k)) params.set(k, v); });
+
+    const authError = params.get('error');
+    const authErrorDescription = params.get('error_description');
+    const hasAuthPayload = Boolean(params.get('code') || params.get('access_token'));
+
+    const icon = document.getElementById('statusIcon');
+    const title = document.getElementById('statusTitle');
+    const text = document.getElementById('statusText');
     const btn = document.getElementById('openBtn');
-    btn.href = deepLink;
 
-    fetch('/auth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ hash, search })
-    }).catch(() => {});
+    function notifyApp() {
+      fetch('/auth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hash, search })
+      }).catch(() => {});
+    }
 
-    window.location.href = deepLink;
-    setTimeout(() => {
-      try { window.close(); } catch(e) {}
-    }, 1200);
+    if (authError || authErrorDescription) {
+      // Cancelamento/erro: NUNCA exibir sucesso. Apenas informa o app para sair do estado de carregamento.
+      const cancelled = authError === 'access_denied';
+      icon.textContent = cancelled ? '↩️' : '⚠️';
+      title.textContent = cancelled ? 'Login cancelado' : 'Não foi possível autenticar';
+      text.textContent = cancelled
+        ? 'Você cancelou o login com o Google. Pode fechar esta aba e voltar ao Concord.'
+        : (authErrorDescription || 'Ocorreu um erro durante a autenticação. Tente novamente pelo Concord.');
+      notifyApp();
+    } else if (hasAuthPayload) {
+      const deepLink = 'concord://auth/callback' + search + hash;
+      icon.textContent = '✨';
+      title.textContent = 'Autenticado com Sucesso!';
+      text.textContent = 'Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...';
+      btn.href = deepLink;
+      btn.style.display = 'inline-block';
+      notifyApp();
+      window.location.href = deepLink;
+      setTimeout(() => {
+        try { window.close(); } catch (e) {}
+      }, 1200);
+    } else {
+      icon.textContent = 'ℹ️';
+      title.textContent = 'Nenhuma autenticação pendente';
+      text.textContent = 'Inicie o login com o Google pelo Concord para continuar.';
+    }
   </script>
 </body>
 </html>`);
@@ -978,6 +1046,30 @@ ipcMain.on('copy-to-clipboard', (event, text) => {
     clipboard.writeText(text);
 });
 
+ipcMain.handle('copy-image-to-clipboard', async (_event, dataUrlOrUrl: string) => {
+    try {
+        if (!dataUrlOrUrl) return false;
+        let img: Electron.NativeImage;
+        if (dataUrlOrUrl.startsWith('data:')) {
+            img = nativeImage.createFromDataURL(dataUrlOrUrl);
+        } else if (dataUrlOrUrl.startsWith('http://') || dataUrlOrUrl.startsWith('https://')) {
+            const response = await net.fetch(dataUrlOrUrl);
+            const arrayBuffer = await response.arrayBuffer();
+            img = nativeImage.createFromBuffer(Buffer.from(arrayBuffer));
+        } else {
+            img = nativeImage.createFromPath(dataUrlOrUrl);
+        }
+        if (!img.isEmpty()) {
+            clipboard.writeImage(img);
+            return true;
+        }
+        return false;
+    } catch (err) {
+        console.error('[Main] copy-image-to-clipboard error:', err);
+        return false;
+    }
+});
+
 // Native Windows Notifications for Chat Messages
 ipcMain.on('show-chat-notification', async (_event, data: {
     userName: string;
@@ -1226,6 +1318,10 @@ ipcMain.on('open-base64-in-browser', (event, base64Data) => {
 // Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
 // because we use a separate folder (not the app install dir or userData)
 
+// ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
+// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
+// because we use a separate folder (not the app install dir or userData)
+
 function getPrefsPath(): string {
     // Use a stable path in the user's AppData that is NOT cleaned by the uninstaller
     const appDataDir = path.join(os.homedir(), 'AppData', 'Roaming', 'ConcordUserData');
@@ -1237,31 +1333,182 @@ function getPrefsPath(): string {
     return path.join(appDataDir, 'prefs.json');
 }
 
-ipcMain.on('save-preferences', async (_event, prefs: Record<string, string>) => {
+/**
+ * Tenta fazer parse do JSON com tolerância a falhas.
+ * Se houver caracteres excedentes após o último `}` (corrupção por concorrência ou crash),
+ * extrai e recupera o objeto JSON intacto.
+ */
+function safeParseJsonWithRecovery<T = Record<string, any>>(raw: string): { data: T | null; wasRecovered: boolean } {
+    if (!raw || !raw.trim()) return { data: null, wasRecovered: false };
     try {
-        const prefsPath = getPrefsPath();
-        // Merge with existing prefs so we never lose other saved keys
-        let existing: Record<string, string> = {};
-        if (fs.existsSync(prefsPath)) {
-            const raw = await fs.promises.readFile(prefsPath, 'utf-8');
-            existing = JSON.parse(raw);
+        return { data: JSON.parse(raw) as T, wasRecovered: false };
+    } catch {
+        // Tentar recuperação iterativa buscando o delimitador '}' que fecha o JSON válido
+        try {
+            let idx = raw.length;
+            while (idx > 0) {
+                const nextBrace = raw.lastIndexOf('}', idx - 1);
+                if (nextBrace === -1) break;
+                try {
+                    const candidate = raw.substring(0, nextBrace + 1);
+                    const parsed = JSON.parse(candidate) as T;
+                    console.warn('[Prefs] Recuperado JSON com sucesso após remoção de bytes corrompidos.');
+                    return { data: parsed, wasRecovered: true };
+                } catch {
+                    idx = nextBrace;
+                }
+            }
+        } catch (recoverErr) {
+            console.error('[Prefs] Falha ao tentar auto-recuperar JSON:', recoverErr);
         }
-        await fs.promises.writeFile(prefsPath, JSON.stringify({ ...existing, ...prefs }, null, 2), 'utf-8');
-    } catch (e) {
-        console.error('Failed to save preferences:', e);
     }
+    return { data: null, wasRecovered: false };
+}
+
+/**
+ * Escrita atômica resiliente com backup.
+ * Grava primeiro em .tmp, faz flush em disco, cria backup .bak e renomeia atomicamente.
+ */
+function writeAtomicSync(filePath: string, content: string): void {
+    const tmpPath = filePath + '.tmp';
+    const bakPath = filePath + '.bak';
+    try {
+        fs.writeFileSync(tmpPath, content, 'utf-8');
+        if (fs.existsSync(filePath)) {
+            try {
+                fs.copyFileSync(filePath, bakPath);
+            } catch {}
+        }
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            fs.renameSync(tmpPath, filePath);
+        } catch {
+            fs.copyFileSync(tmpPath, filePath);
+            try { fs.unlinkSync(tmpPath); } catch {}
+        }
+    } catch (err) {
+        console.error('[Main] Erro na escrita atômica do arquivo:', filePath, err);
+        try {
+            if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+        } catch {}
+    }
+}
+
+// Fila serializada assíncrona para garantir que múltiplas chamadas concorrentes de savePreferences não colidam
+let prefsWriteQueue: Promise<void> = Promise.resolve();
+
+function readPrefsFromDisk(): Record<string, string> {
+    const prefsPath = getPrefsPath();
+    const bakPath = prefsPath + '.bak';
+
+    if (fs.existsSync(prefsPath)) {
+        try {
+            const raw = fs.readFileSync(prefsPath, 'utf-8');
+            const result = safeParseJsonWithRecovery<Record<string, string>>(raw);
+            if (result.data) {
+                // Se foi recuperado de corrupção, regravar versão limpa atomicamente de imediato
+                if (result.wasRecovered) {
+                    writeAtomicSync(prefsPath, JSON.stringify(result.data, null, 2));
+                }
+                return result.data;
+            }
+        } catch (e) {
+            console.warn('[Prefs] Erro ao ler prefs.json principal:', e);
+        }
+    }
+
+    // Se o principal não existe ou falhou, tenta recuperar do backup .bak
+    if (fs.existsSync(bakPath)) {
+        try {
+            const bakRaw = fs.readFileSync(bakPath, 'utf-8');
+            const bakResult = safeParseJsonWithRecovery<Record<string, string>>(bakRaw);
+            if (bakResult.data) {
+                console.log('[Prefs] Restaurado preferências a partir do backup .bak com sucesso.');
+                writeAtomicSync(prefsPath, JSON.stringify(bakResult.data, null, 2));
+                return bakResult.data;
+            }
+        } catch (e) {
+            console.warn('[Prefs] Erro ao ler backup .bak:', e);
+        }
+    }
+
+    return {};
+}
+
+ipcMain.on('save-preferences', (_event, prefs: Record<string, string>) => {
+    if (!prefs || typeof prefs !== 'object') return;
+    prefsWriteQueue = prefsWriteQueue.then(async () => {
+        try {
+            const prefsPath = getPrefsPath();
+            const existing = readPrefsFromDisk();
+            const merged = { ...existing, ...prefs };
+            writeAtomicSync(prefsPath, JSON.stringify(merged, null, 2));
+        } catch (e) {
+            console.error('Failed to save preferences:', e);
+        }
+    }).catch(err => {
+        console.error('[Prefs] Erro na fila de escrita de preferências:', err);
+    });
 });
 
 ipcMain.handle('load-preferences', () => {
     try {
-        const prefsPath = getPrefsPath();
-        if (fs.existsSync(prefsPath)) {
-            return JSON.parse(fs.readFileSync(prefsPath, 'utf-8'));
-        }
+        return readPrefsFromDisk();
     } catch (e) {
         console.error('Failed to load preferences:', e);
+        return {};
     }
-    return {};
+});
+
+// Secure token storage via Electron safeStorage (DPAPI on Windows)
+ipcMain.handle('save-secure-token', async (_event, key: string, value: string) => {
+    try {
+        if (!key || typeof value !== 'string') return false;
+        const prefsPath = getPrefsPath();
+        const securePath = path.join(path.dirname(prefsPath), 'secure_tokens.json');
+        let tokens: Record<string, string> = {};
+        if (fs.existsSync(securePath)) {
+            try {
+                const raw = await fs.promises.readFile(securePath, 'utf8');
+                const parsed = safeParseJsonWithRecovery<Record<string, string>>(raw);
+                if (parsed.data) tokens = parsed.data;
+            } catch {}
+        }
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+            tokens[key] = safeStorage.encryptString(value).toString('base64');
+        } else {
+            tokens[key] = Buffer.from(value, 'utf8').toString('base64');
+        }
+        writeAtomicSync(securePath, JSON.stringify(tokens, null, 2));
+        return true;
+    } catch (err) {
+        console.error('[Main] save-secure-token error:', err);
+        return false;
+    }
+});
+
+ipcMain.handle('load-secure-token', async (_event, key: string) => {
+    try {
+        if (!key) return null;
+        const prefsPath = getPrefsPath();
+        const securePath = path.join(path.dirname(prefsPath), 'secure_tokens.json');
+        if (!fs.existsSync(securePath)) return null;
+        const raw = await fs.promises.readFile(securePath, 'utf8');
+        const parsed = safeParseJsonWithRecovery<Record<string, string>>(raw);
+        if (!parsed.data) return null;
+        const tokenRaw = parsed.data[key];
+        if (!tokenRaw) return null;
+        if (safeStorage && safeStorage.isEncryptionAvailable()) {
+            return safeStorage.decryptString(Buffer.from(tokenRaw, 'base64'));
+        } else {
+            return Buffer.from(tokenRaw, 'base64').toString('utf8');
+        }
+    } catch (err) {
+        console.error('[Main] load-secure-token error:', err);
+        return null;
+    }
 });
 
 // ─── YOUTUBE QUALITY CONTROL ──────────────────────────────────────────────────
@@ -1434,18 +1681,6 @@ ipcMain.handle('yt-get-qualities', async () => {
 // Widevine Streaming View Management (WebContentsView / BrowserView)
 // Multi-platform support: Netflix & Prime Video simultaneously in memory
 // ==========================================
-interface StreamingInstance {
-    service: 'netflix' | 'prime';
-    view: any;
-    currentUrl?: string;
-}
-
-const streamingInstances = new Map<'netflix' | 'prime', StreamingInstance>();
-let activeStreamingService: 'netflix' | 'prime' | null = null;
-let activeStreamingBounds: { x: number; y: number; width: number; height: number } | null = null;
-let isStreamingFullscreen = false;
-let isModalActive = false;
-let modalHiddenStreamingService: 'netflix' | 'prime' | null = null;
 
 function getActiveStreamingInstance(): StreamingInstance | undefined {
     if (activeStreamingService && streamingInstances.has(activeStreamingService)) {

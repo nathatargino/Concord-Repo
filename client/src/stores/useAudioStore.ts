@@ -28,6 +28,7 @@ interface AudioState {
   setNoiseGateThreshold: (v: number) => void;
   setMicMuted: (v: boolean) => void;
   setServerMuted: (v: boolean) => void;
+  setCallMuted: (v: boolean) => void;
   toggleMicMute: () => void;
   toggleCallMute: () => void;
   toggleLocalMuteUser: (userId: string) => void;
@@ -110,6 +111,7 @@ export const useAudioStore = create<AudioState>()(
       setNoiseGateThreshold: (noiseGateThreshold) => set({ noiseGateThreshold }),
       setMicMuted: (micMuted) => set({ micMuted }),
       setServerMuted: (serverMuted) => set({ serverMuted, micMuted: serverMuted ? true : false }),
+      setCallMuted: (callMuted) => set({ callMuted }),
       toggleMicMute: () => set((s) => ({ micMuted: !s.micMuted })),
       toggleCallMute: () => set((s) => ({ callMuted: !s.callMuted })),
       toggleLocalMuteUser: (userId: string) => set((s) => {

@@ -7,15 +7,18 @@ import {
   savePrefsToElectron, 
   leaveServerFromSupabase, 
   removeMyServer,
+  markServerAsLeft,
   updateServerNameInSupabase,
   updateServerLogoInSupabase,
-  removeLocalServerMember
+  removeLocalServerMember,
+  saveUserSettingsToCloud
 } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { CustomSelect } from './CustomSelect';
 import { LoginModal } from './LoginModal';
 import toast from 'react-hot-toast';
+import { getStoredTheme, applyTheme, type ThemeMode } from '../utils/theme';
 
 interface Props {
   onClose: () => void;
@@ -38,8 +41,26 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     myName, 
     myAvatarUrl,
     myRole,
-    users
+    users,
+    systemNotificationsEnabled,
+    setSystemNotificationsEnabled
   } = useAppStore();
+
+  const [systemNotifications, setSystemNotifications] = useState<boolean>(systemNotificationsEnabled);
+
+  useEffect(() => {
+    setSystemNotifications(systemNotificationsEnabled);
+  }, [systemNotificationsEnabled]);
+
+  const handleToggleSystemNotifications = async (enabled: boolean) => {
+    setSystemNotifications(enabled);
+    setSystemNotificationsEnabled(enabled);
+    await saveUserSettingsToCloud({ systemNotifications: enabled });
+    toast.success(
+      enabled ? 'Notificações de sistema ativadas.' : 'Notificações de sistema desativadas.',
+      { icon: enabled ? '🔔' : '🔕' }
+    );
+  };
 
   const cleanMyName = (myName || '').trim().toLowerCase();
   const myMember = serverMembers.find(m => (m.username || '').trim().toLowerCase() === cleanMyName);
@@ -55,7 +76,9 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       Boolean(room?.subOwnerIds?.includes(myId)) || 
       myMember?.role === 'sub_owner' || 
       myRole === 'sub_owner' || 
-      users.find(u => u.id === myId)?.role === 'sub_owner'
+      users.find(u => u.id === myId)?.role === 'sub_owner' ||
+      Boolean(myMember?.customRole?.isAdmin) ||
+      Boolean(users.find(u => u.id === myId)?.customRole?.isAdmin)
     );
 
   const canEditServer = isOwner || isSubOwner;
@@ -88,6 +111,16 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
   const inviteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Tema Claro / Escuro
+  const [theme, setTheme] = useState<ThemeMode>(getStoredTheme);
+  useEffect(() => {
+    const handleThemeChange = (e: any) => {
+      if (e.detail?.theme) setTheme(e.detail.theme);
+    };
+    window.addEventListener('concord:theme-changed', handleThemeChange);
+    return () => window.removeEventListener('concord:theme-changed', handleThemeChange);
+  }, []);
 
   useEffect(() => {
     const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
@@ -421,26 +454,31 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     toast.success('Voltando ao Menu Principal...');
   };
 
-  const handleConfirmLeave = async () => {
+  const handleConfirmLeave = () => {
     if (!room) return;
     setIsLeaving(true);
-    try {
-      if (room.isServer || isServer) {
-        await leaveServerFromSupabase(room.id, myName);
-        removeMyServer(room.id);
-        removeMyServer(room.code);
-        toast.success('Você saiu do servidor.');
-      } else {
-        toast.success('Você saiu da sala.');
-      }
-    } catch (err) {
-      console.warn('Erro ao sair do servidor:', err);
-    } finally {
-      setIsLeaving(false);
-      setShowLeaveConfirmModal(false);
-      handleClose();
-      useAppStore.getState().setRoom(null);
-      navigate('/');
+    const roomId = room.id;
+    const roomCode = room.code;
+    const wasServer = room.isServer || isServer;
+
+    // 1. Ação otimista instantânea (0ms)
+    if (wasServer) {
+      removeMyServer(roomId);
+      if (roomCode) removeMyServer(roomCode);
+      markServerAsLeft(roomId, roomCode);
+    }
+    setShowLeaveConfirmModal(false);
+    handleClose();
+    useAppStore.getState().setRoom(null);
+    useAppStore.getState().setActiveRailContext('home');
+    navigate('/');
+    toast.success(wasServer ? 'Você saiu do servidor.' : 'Você saiu da sala.');
+
+    // 2. Limpeza no Supabase em segundo plano
+    if (wasServer) {
+      leaveServerFromSupabase(roomId, myName, myId, roomCode).catch((err) => {
+        console.warn('Erro ao sair do servidor em segundo plano:', err);
+      });
     }
   };
 
@@ -594,6 +632,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
         );
       }
 
+      await saveUserSettingsToCloud({ systemNotifications, theme });
       onUpdate(cleanName, avatarUrl);
       toast.success('Perfil atualizado e salvo com sucesso!');
       handleClose();
@@ -961,6 +1000,74 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                 placeholder="Digite seu nome..."
                 maxLength={32}
               />
+            </div>
+
+            {/* Tema e Aparência */}
+            <div className={styles.appearanceSection}>
+              <label className={styles.label}>Tema do Aplicativo</label>
+              <div className={styles.themeOptionsGrid}>
+                <button
+                  type="button"
+                  className={`${styles.themeOptionCard} ${theme === 'dark' ? styles.themeOptionCardActive : ''}`}
+                  onClick={() => {
+                    applyTheme('dark');
+                    setTheme('dark');
+                    saveUserSettingsToCloud({ theme: 'dark' });
+                  }}
+                >
+                  <div className={styles.themeOptionIcon}>
+                    <i className="fa-solid fa-moon" />
+                  </div>
+                  <div className={styles.themeOptionInfo}>
+                    <span className={styles.themeOptionTitle}>Tema Escuro</span>
+                    <span className={styles.themeOptionDesc}>Preto profundo e roxo neon clássico</span>
+                  </div>
+                  {theme === 'dark' && <i className={`fa-solid fa-circle-check ${styles.themeCheckIcon}`} />}
+                </button>
+
+                <button
+                  type="button"
+                  className={`${styles.themeOptionCard} ${theme === 'light' ? styles.themeOptionCardActive : ''}`}
+                  onClick={() => {
+                    applyTheme('light');
+                    setTheme('light');
+                    saveUserSettingsToCloud({ theme: 'light' });
+                  }}
+                >
+                  <div className={styles.themeOptionIcon}>
+                    <i className="fa-solid fa-sun" />
+                  </div>
+                  <div className={styles.themeOptionInfo}>
+                    <span className={styles.themeOptionTitle}>Tema Claro</span>
+                    <span className={styles.themeOptionDesc}>Tons neutros modernos e alto contraste</span>
+                  </div>
+                  {theme === 'light' && <i className={`fa-solid fa-circle-check ${styles.themeCheckIcon}`} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Notificações do Sistema no Chat */}
+            <div className={styles.notificationSection}>
+              <label className={styles.label}>Notificações do Sistema</label>
+              <div
+                className={`${styles.checkboxCard} ${systemNotifications ? styles.checkboxCardActive : ''}`}
+                onClick={() => handleToggleSystemNotifications(!systemNotifications)}
+                role="button"
+                tabIndex={0}
+              >
+                <div className={styles.checkboxInfo}>
+                  <div className={styles.checkboxTitleRow}>
+                    <i className={`fa-solid ${systemNotifications ? 'fa-bell' : 'fa-bell-slash'} ${styles.notificationIcon}`} />
+                    <span className={styles.checkboxTitle}>Mensagens do Sistema no Chat</span>
+                  </div>
+                  <span className={styles.checkboxDescription}>
+                    Exibir alertas e avisos automáticos do sistema no chat (como alterações de cargos e avisos operacionais).
+                  </span>
+                </div>
+                <div className={`${styles.switch} ${systemNotifications ? styles.switchOn : ''}`}>
+                  <div className={styles.switchHandle} />
+                </div>
+              </div>
             </div>
 
             <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>

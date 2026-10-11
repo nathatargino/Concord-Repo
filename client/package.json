@@ -7,7 +7,7 @@
     "email": "nathatargino@users.noreply.github.com"
   },
   "private": true,
-  "version": "1.0.101",
+  "version": "1.0.104",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -86,6 +86,10 @@
       "shortcutName": "Concord",
       "uninstallDisplayName": "Concord"
     },
+    "asarUnpack": [
+      "dist/icon.ico",
+      "dist/logo.png"
+    ],
     "appx": {
       "artifactName": "Concord-Store.msix",
       "identityName": "NathSTargino.Concord-VoiceChat",

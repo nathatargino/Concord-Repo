@@ -14,14 +14,13 @@ import {
 } from '../lib/supabase';
 import type { SavedServer, DbRoom } from '../lib/supabase';
 import { useAppStore } from '../stores/useAppStore';
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || (import.meta.env.PROD ? 'https://concord-repo-production.up.railway.app' : 'http://localhost:3001');
+import { SERVER_URL } from '../config';
 
 type Tab = 'home' | 'rooms-menu' | 'servers-menu' | 'create-room' | 'join-room' | 'create-server' | 'join-server' | 'my-servers';
 
 export const LobbyPage: React.FC = () => {
   const navigate = useNavigate();
-  const { resetRoomState, setIsServer, setServerName } = useAppStore();
+  const { resetRoomState, setIsServer, setServerName, recordRecentServer, refreshServers } = useAppStore();
 
   const [tab, setTab] = useState<Tab>('home');
   const [code, setCode] = useState('');
@@ -277,6 +276,16 @@ export const LobbyPage: React.FC = () => {
         console.warn('Clipboard write failed:', err);
       }
 
+      const srvObj = {
+        id: createdServer?.id || serverId,
+        code: generatedCode,
+        name: trimmedName,
+        icon_url: createdServer?.icon_url || null,
+        role: 'owner' as const,
+      };
+      recordRecentServer(srvObj);
+      await refreshServers();
+
       setIsServer(true);
       setServerName(trimmedName);
       navigate(`/room/${createdServer?.id || serverId}?code=${generatedCode}&server=1`);
@@ -288,6 +297,7 @@ export const LobbyPage: React.FC = () => {
   };
 
   const handleSelectSavedServer = (server: SavedServer) => {
+    recordRecentServer(server);
     setIsServer(true);
     setServerName(server.name);
     navigate(`/room/${server.id}?code=${server.code}&server=1`);

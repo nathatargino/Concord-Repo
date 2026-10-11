@@ -1,16 +1,91 @@
 import { create } from 'zustand';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, ServerMember, UserInfo, WatchSession } from '../types';
+import { 
+  getRecentRooms, 
+  getSavedUserTag, 
+  getRecentServers, 
+  getRecentCallServers,
+  recordRecentCallServer as recordRecentCallServerSupabase,
+  getMyServers, 
+  getSavedServersSync,
+  recordRecentServerAccess, 
+  type Friend, 
+  type DirectChat, 
+  type SavedRoom, 
+  type SavedServer 
+} from '../lib/supabase';
 
 export interface UserProfileData {
   id: string;
   name: string;
   avatarUrl?: string | null;
   role?: 'owner' | 'sub_owner' | 'member';
+  customRole?: { name: string; emoji: string; color?: string } | null;
   isMe?: boolean;
   createdAt?: string;
+  tag?: string;
+}
+
+export interface ActiveCallState {
+  roomId: string;
+  roomName: string;
+  code: string;
+  isServer: boolean;
+  channelName?: string;
 }
 
 interface AppState {
+  // Navigation & Rail Context
+  activeRailContext: string; // 'home' or serverId / roomId
+  setActiveRailContext: (ctx: string) => void;
+  recentRooms: SavedRoom[];
+  setRecentRooms: (rooms: SavedRoom[]) => void;
+  refreshRecentRooms: () => void;
+
+  // Servidores do Usuário (Sincronizados & Reativos)
+  servers: SavedServer[];
+  setServers: (servers: SavedServer[] | ((prev: SavedServer[]) => SavedServer[])) => void;
+  refreshServers: () => Promise<SavedServer[]>;
+
+  // Servidores Recentes (Últimos 3 acessados)
+  recentServers: SavedServer[];
+  setRecentServers: (servers: SavedServer[]) => void;
+  recordRecentServer: (server: SavedServer) => void;
+
+  // Servidores Recentes de Chamada (Últimos 2 que esteve em call)
+  recentCallServers: SavedServer[];
+  setRecentCallServers: (servers: SavedServer[]) => void;
+  recordRecentCallServer: (server: SavedServer) => void;
+  refreshRecentCallServers: () => void;
+
+  // Chamada de Voz/Vídeo Ativa e Persistente
+  activeCall: ActiveCallState | null;
+  setActiveCall: (call: ActiveCallState | null) => void;
+
+  // Unified Action Modal (Create Server, Join Server, Create 14h Room)
+  isActionModalOpen: boolean;
+  actionModalTab: 'create-server' | 'join-server' | 'create-room';
+  openActionModal: (tab?: 'create-server' | 'join-server' | 'create-room') => void;
+  closeActionModal: () => void;
+
+  // Quick 14h Room Prompt Modal
+  createRoomPromptOpen: boolean;
+  setCreateRoomPromptOpen: (v: boolean) => void;
+
+  // Social System (Friends & DMs)
+  myTag: string;
+  setMyTag: (t: string) => void;
+  friends: Friend[];
+  setFriends: (f: Friend[]) => void;
+  directChats: DirectChat[];
+  setDirectChats: (d: DirectChat[]) => void;
+  activeDmChat: DirectChat | null;
+  setActiveDmChat: (c: DirectChat | null) => void;
+  homeTab: 'hub' | 'friends' | 'dm';
+  setHomeTab: (t: 'hub' | 'friends' | 'dm') => void;
+  friendsFilter: 'online' | 'all' | 'pending' | 'blocked' | 'add';
+  setFriendsFilter: (f: 'online' | 'all' | 'pending' | 'blocked' | 'add') => void;
+
   // Connection
   connected: boolean;
   setConnected: (v: boolean) => void;
@@ -63,10 +138,20 @@ interface AppState {
   addMessage: (msg: ChatMessage) => void;
   addSystemMessage: (message: string, channelId?: string) => void;
   clearMessages: () => void;
+  toggleMessageReaction: (messageId: string, emoji: string, userName: string) => void;
+  systemNotificationsEnabled: boolean;
+  setSystemNotificationsEnabled: (enabled: boolean) => void;
 
   // Voice
   inVoice: boolean;
   setInVoice: (v: boolean) => void;
+  activeCallInfo: {
+    roomId: string;
+    roomName: string;
+    code: string;
+    isServer: boolean;
+  } | null;
+  setActiveCallInfo: (info: { roomId: string; roomName: string; code: string; isServer: boolean; } | null) => void;
 
   // Music
   musicQueue: MusicItem[];
@@ -118,6 +203,82 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set) => ({
+  // Navigation & Rail Context
+  activeRailContext: 'home',
+  setActiveRailContext: (activeRailContext) => set({ activeRailContext }),
+  recentRooms: getRecentRooms(),
+  setRecentRooms: (recentRooms) => set({ recentRooms }),
+  refreshRecentRooms: () => set({ recentRooms: getRecentRooms() }),
+
+  // Servidores do Usuário
+  servers: getSavedServersSync(),
+  setServers: (servers) => set((s) => ({ servers: typeof servers === 'function' ? servers(s.servers) : servers })),
+  refreshServers: async () => {
+    try {
+      const list = await getMyServers();
+      if (list && list.length > 0) {
+        set({ servers: list });
+      } else {
+        const fallback = getSavedServersSync();
+        if (fallback.length > 0) {
+          set({ servers: fallback });
+        }
+      }
+      return list;
+    } catch {
+      const fallback = getSavedServersSync();
+      set({ servers: fallback });
+      return fallback;
+    }
+  },
+
+  // Servidores Recentes (Últimos 3 acessados)
+  recentServers: getRecentServers(),
+  setRecentServers: (recentServers) => set({ recentServers }),
+  recordRecentServer: (server) => {
+    const updated = recordRecentServerAccess(server);
+    set({ recentServers: updated });
+  },
+
+  // Servidores Recentes de Chamada (Últimos 2 que esteve em call)
+  recentCallServers: getRecentCallServers(),
+  setRecentCallServers: (recentCallServers) => set({ recentCallServers }),
+  recordRecentCallServer: (server) => {
+    const updated = recordRecentCallServerSupabase(server);
+    set({ recentCallServers: updated });
+  },
+  refreshRecentCallServers: () => {
+    set({ recentCallServers: getRecentCallServers() });
+  },
+
+  // Chamada de Voz/Vídeo Ativa
+  activeCall: null,
+  setActiveCall: (activeCall) => set({ activeCall }),
+
+  // Unified Action Modal
+  isActionModalOpen: false,
+  actionModalTab: 'create-server',
+  openActionModal: (tab = 'create-server') => set({ isActionModalOpen: true, actionModalTab: tab }),
+  closeActionModal: () => set({ isActionModalOpen: false }),
+
+  // Quick 14h Room Prompt Modal
+  createRoomPromptOpen: false,
+  setCreateRoomPromptOpen: (createRoomPromptOpen) => set({ createRoomPromptOpen }),
+
+  // Social System (Friends & DMs)
+  myTag: getSavedUserTag(),
+  setMyTag: (myTag) => set({ myTag }),
+  friends: [],
+  setFriends: (friends) => set({ friends }),
+  directChats: [],
+  setDirectChats: (directChats) => set({ directChats }),
+  activeDmChat: null,
+  setActiveDmChat: (activeDmChat) => set({ activeDmChat }),
+  homeTab: 'hub',
+  setHomeTab: (homeTab) => set({ homeTab }),
+  friendsFilter: 'online',
+  setFriendsFilter: (friendsFilter) => set({ friendsFilter }),
+
   // Connection
   connected: false,
   setConnected: (v) => set({ connected: v }),
@@ -125,13 +286,17 @@ export const useAppStore = create<AppState>((set) => ({
   // Room / Server
   room: null,
   setRoom: (room) =>
-    set({
-      room,
-      isServer: Boolean(room?.isServer),
-      serverName: room?.name || '',
-      serverIconUrl: room?.iconUrl || null,
-      channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'Geral' }],
-      activeChannelId: room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral',
+    set((state) => {
+      const roomChanged = !state.room || !room || state.room.id !== room.id;
+      return {
+        room,
+        isServer: Boolean(room?.isServer),
+        serverName: room?.name || '',
+        serverIconUrl: room?.iconUrl || null,
+        channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'Geral' }],
+        activeChannelId: room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral',
+        messages: roomChanged ? [] : state.messages,
+      };
     }),
   isServer: false,
   setIsServer: (isServer) => set({ isServer }),
@@ -192,14 +357,28 @@ export const useAppStore = create<AppState>((set) => ({
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) =>
     set((s) => {
+      // 1. Reconciliação otimista: se a mensagem vinda do socket coincidir com uma mensagem otimista pendente
+      const optIndex = s.messages.findIndex(
+        (m) =>
+          m.id &&
+          m.id.startsWith('opt-') &&
+          m.userName === msg.userName &&
+          m.message === msg.message &&
+          m.channelId === msg.channelId &&
+          (m.url || '') === (msg.url || '')
+      );
+      if (optIndex !== -1) {
+        const updated = [...s.messages];
+        updated[optIndex] = { ...msg, id: msg.id || updated[optIndex].id };
+        return { messages: updated };
+      }
+
       const last = s.messages[s.messages.length - 1];
-      // Só bloqueia duplicatas verdadeiras (retransmissões do socket) que chegam
-      // dentro de uma janela de 800ms. Mensagens iguais enviadas após esse intervalo
-      // são legítimas (usuário enviou a mesma coisa intencionalmente).
+      // Só bloqueia duplicatas verdadeiras que chegam dentro da janela de retransmissão
       if (last) {
         const lastTs = last.id ? parseInt(last.id.split('-')[1] || '0', 10) : 0;
         const msgTs = msg.id ? parseInt(msg.id.split('-')[1] || '0', 10) : 0;
-        const withinWindow = lastTs > 0 && msgTs > 0 && (msgTs - lastTs) < 800;
+        const withinWindow = lastTs > 0 && msgTs > 0 && Math.abs(msgTs - lastTs) < 2500;
         if (
           withinWindow &&
           last.userName === msg.userName &&
@@ -213,8 +392,18 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { messages: [...s.messages.slice(-500), msg] };
     }),
+  systemNotificationsEnabled: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications') !== 'false' : true,
+  setSystemNotificationsEnabled: (enabled) => {
+    try {
+      localStorage.setItem('concord_system_notifications', String(enabled));
+    } catch {}
+    set({ systemNotificationsEnabled: enabled });
+  },
   addSystemMessage: (message, channelId) =>
     set((s) => {
+      if (!s.systemNotificationsEnabled) {
+        return s;
+      }
       const currentChannel = channelId || s.activeChannelId || 'ch-geral';
       const last = s.messages[s.messages.length - 1];
       if (last && last.isSystem && last.message === message && last.channelId === currentChannel) {
@@ -238,10 +427,32 @@ export const useAppStore = create<AppState>((set) => ({
       return { messages: [...s.messages.slice(-500), newMsg] };
     }),
   clearMessages: () => set({ messages: [] }),
+  toggleMessageReaction: (messageId, emoji, userName) =>
+    set((s) => ({
+      messages: s.messages.map((m) => {
+        if (m.id !== messageId) return m;
+        const reactions = { ...(m.reactions || {}) };
+        const currentUsers = reactions[emoji] || [];
+        const alreadyReacted = currentUsers.includes(userName);
+        if (alreadyReacted) {
+          const nextUsers = currentUsers.filter((u) => u !== userName);
+          if (nextUsers.length === 0) {
+            delete reactions[emoji];
+          } else {
+            reactions[emoji] = nextUsers;
+          }
+        } else {
+          reactions[emoji] = [...currentUsers, userName];
+        }
+        return { ...m, reactions };
+      }),
+    })),
 
   // Voice
   inVoice: false,
   setInVoice: (inVoice) => set({ inVoice }),
+  activeCallInfo: null,
+  setActiveCallInfo: (activeCallInfo) => set({ activeCallInfo }),
 
   // Music
   musicQueue: [],

@@ -1,6 +1,6 @@
 /* ── Modern Gaming UI MusicPanel (Mídia em Grupo) ── */
 .panel {
-  background: rgba(24, 27, 36, 0.75);
+  background: rgba(14, 15, 24, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -600,3 +600,128 @@
 .musicWatchPartyBtn:active {
   transform: translateY(0);
 }
+
+/* ==========================================================================
+   CONCORD MODERN LIGHT THEME - MUSIC PANEL (MÍDIA EM GRUPO)
+   ========================================================================== */
+:global(html[data-theme="light"]) .panel {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+}
+
+:global(html[data-theme="light"]) .headerLeft {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .platformTabs {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+:global(html[data-theme="light"]) .platformTab {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .platformTab:hover {
+  color: #0f172a;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+:global(html[data-theme="light"]) .mediaInput {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .mediaInput::placeholder {
+  color: #94a3b8;
+}
+
+:global(html[data-theme="light"]) .mediaInput:focus {
+  border-color: #6366f1;
+  background: #ffffff;
+}
+
+:global(html[data-theme="light"]) .searchModalBtn {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(220, 38, 38, 0.18));
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #b91c1c;
+}
+
+:global(html[data-theme="light"]) .searchModalBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(220, 38, 38, 0.28));
+  color: #991b1b;
+}
+
+:global(html[data-theme="light"]) .searchModalBtn i,
+:global(html[data-theme="light"]) .searchModalBtn svg {
+  color: #dc2626;
+}
+
+:global(html[data-theme="light"]) .infoNotice {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .queueHeader {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .queueItem {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+:global(html[data-theme="light"]) .queueItem:hover {
+  background: #f1f5f9;
+}
+
+:global(html[data-theme="light"]) .queueTitle {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .queueBy {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .currentTrack {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+:global(html[data-theme="light"]) .trackName {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .trackLabel {
+  color: #4f46e5;
+}
+
+:global(html[data-theme="light"]) .closeStreamingBtn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+}
+
+:global(html[data-theme="light"]) .musicWatchPartyCard {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(2, 132, 199, 0.08) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+:global(html[data-theme="light"]) .musicWatchPartyTitle {
+  color: #4f46e5;
+}
+
+:global(html[data-theme="light"]) .musicWatchPartyText {
+  color: #475569;
+}
+
+:global(html[data-theme="light"]) .musicWatchPartyText strong {
+  color: #0f172a;
+}
+
