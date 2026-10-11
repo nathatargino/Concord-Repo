@@ -61,7 +61,7 @@ export interface RoomInfo {
 
 // Client → Server events
 export interface ClientToServerEvents {
-  set_username: (name: string, avatarUrl?: string | null, tag?: string) => void;
+  set_username: (name: string, avatarUrl?: string | null, tag?: string, persistentId?: string, userId?: string) => void;
   update_avatar: (avatarUrl: string | null) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
@@ -143,6 +143,19 @@ export interface ClientToServerEvents {
     senderId: string;
     senderName: string;
   }) => void;
+  send_direct_message: (data: {
+    chatId: string;
+    targetUserId?: string;
+    targetName?: string;
+    senderId: string;
+    senderName: string;
+    senderAvatarUrl?: string | null;
+    content: string;
+    msgType?: 'text' | 'image' | 'file';
+    fileUrl?: string;
+    fileName?: string;
+    createdAt?: string;
+  }) => void;
 }
 
 // Server → Client events
@@ -167,6 +180,18 @@ export interface ServerToClientEvents {
   friend_request_cancelled: (data: {
     senderId: string;
     senderName: string;
+  }) => void;
+  receive_direct_message: (data: {
+    id: string;
+    chatId: string;
+    senderId: string;
+    senderName: string;
+    senderAvatarUrl?: string | null;
+    content: string;
+    msgType: 'text' | 'image' | 'file';
+    fileUrl?: string;
+    fileName?: string;
+    createdAt: string;
   }) => void;
   message_reaction: (messageId: string, emoji: string, userName: string) => void;
   receive_message: (
@@ -233,4 +258,5 @@ export interface SocketData {
   roomId?: string;
   voiceRoomId?: string;
   persistentId?: string;
+  userId?: string;
 }

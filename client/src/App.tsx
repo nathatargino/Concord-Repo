@@ -177,7 +177,9 @@ export default function App() {
             const handleAuthenticatedUser = async (user: any) => {
               const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
               await syncCloudUserData(user.id);
-              socket.emit('set_username', finalName, finalAvatar || null);
+              const pid = getOrCreatePersistentId();
+              const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
+              socket.emit('set_username', finalName, finalAvatar || null, tag, pid, user.id);
               setShowLogin(false);
               setLoginError('');
               toast.success(`Autenticado com sucesso como ${finalName}!`, { id: 'auth-success' });
@@ -523,7 +525,9 @@ export default function App() {
           await store.refreshServers();
           if (finalName && finalName.trim()) {
             store.setMyName(finalName.trim());
-            socket.emit('set_username', finalName.trim(), finalAvatar || store.myAvatarUrl || null);
+            const pid = getOrCreatePersistentId();
+            const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
+            socket.emit('set_username', finalName.trim(), finalAvatar || store.myAvatarUrl || null, tag, pid, user.id);
             setShowLogin(false);
             setLoginError('');
             setIsAppLoaded(true);
@@ -554,9 +558,11 @@ export default function App() {
 
   useEffect(() => {
     if (store.myName) {
-      socket.emit('set_username', store.myName, store.myAvatarUrl || null);
+      const pid = getOrCreatePersistentId();
+      const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
+      socket.emit('set_username', store.myName, store.myAvatarUrl || null, tag, pid);
     }
-  }, [store.myName, store.myAvatarUrl]);
+  }, [store.myName, store.myAvatarUrl, store.myTag]);
 
   // ─── VALIDAÇÃO DE NOME DUPLICADO NA SALA/SERVIDOR ─────────────────
   useEffect(() => {
@@ -583,7 +589,9 @@ export default function App() {
   const handleLogin = (name: string) => {
     store.setMyName(name);
     saveUsername(name);
-    socket.emit('set_username', name);
+    const pid = getOrCreatePersistentId();
+    const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
+    socket.emit('set_username', name, store.myAvatarUrl || null, tag, pid);
     setLoginError('');
     setShowLogin(false);
   };
@@ -733,7 +741,9 @@ export default function App() {
           onSetUserRole={(targetId, role) => socket.emit('set_user_role', targetId, role)}
           onSetCustomRole={(payload) => socket.emit('set_member_custom_role', payload)}
           onUpdateProfile={(name, avatarUrl) => {
-            socket.emit('set_username', name, avatarUrl);
+            const pid = getOrCreatePersistentId();
+            const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
+            socket.emit('set_username', name, avatarUrl, tag, pid);
             socket.emit('update_avatar', avatarUrl);
           }}
           onAdminAction={(action, targetId) => {

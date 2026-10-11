@@ -1369,12 +1369,27 @@ export async function fetchFriendsFromSupabase(): Promise<Friend[]> {
       if (raw) {
         const localList: Friend[] = JSON.parse(raw);
         for (const lf of localList) {
-          if (!result.some(r => r.id === lf.id || (lf.friendId && r.friendId === lf.friendId) || (lf.friendName && r.friendName?.trim().toLowerCase() === lf.friendName?.trim().toLowerCase()))) {
+          const matchIndex = result.findIndex(r => r.id === lf.id || (lf.friendId && r.friendId === lf.friendId) || (lf.friendName && r.friendName?.trim().toLowerCase() === lf.friendName?.trim().toLowerCase()));
+          if (matchIndex === -1) {
             result.push(lf);
+          } else if (lf.status === 'pending' && lf.isIncomingRequest && result[matchIndex].status !== 'accepted') {
+            result[matchIndex].isIncomingRequest = true;
+            result[matchIndex].status = 'pending';
           }
         }
       }
     } catch {}
+
+    // Preservar também solicitações pendentes da store Zustand
+    const storeFriends = useAppStore.getState().friends || [];
+    for (const sf of storeFriends) {
+      if (sf.status === 'pending') {
+        const matchIndex = result.findIndex(r => r.id === sf.id || (sf.friendId && r.friendId === sf.friendId) || (sf.friendName && r.friendName?.trim().toLowerCase() === sf.friendName?.trim().toLowerCase()));
+        if (matchIndex === -1) {
+          result.push(sf);
+        }
+      }
+    }
 
     localStorage.setItem('concord_mock_friends', JSON.stringify(result));
     return result;
@@ -1440,7 +1455,44 @@ export async function sendFriendRequestToSupabase(identifier: string, targetUser
 
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, message: 'Você precisa estar conectado em uma conta para adicionar amigos online.' };
+    if (!user) {
+      if (searchName || targetUserId) {
+        const fallbackFriend: Friend = {
+          id: `local-friend-${Date.now()}`,
+          userId: 'guest-me',
+          friendId: targetUserId || `guest-${Date.now()}`,
+          friendName: searchName || 'Usuário',
+          friendAvatarUrl: null,
+          friendTag: searchTag || '0000',
+          status: 'pending',
+          isIncomingRequest: false,
+          onlineStatus: 'offline',
+        };
+        const currentFriends = useAppStore.getState().friends || [];
+        const updated = [fallbackFriend, ...currentFriends.filter(f => f.friendName?.trim().toLowerCase() !== searchName.trim().toLowerCase())];
+        useAppStore.getState().setFriends(updated);
+        try {
+          localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
+        } catch {}
+        window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+
+        const sock = (window as any).__concord_socket;
+        if (sock) {
+          sock.emit('send_friend_request', {
+            targetUserId,
+            targetName: searchName,
+            targetTag: searchTag,
+            senderId: sock.id,
+            senderName: useAppStore.getState().myName,
+            senderTag: useAppStore.getState().myTag,
+            senderAvatarUrl: useAppStore.getState().myAvatarUrl || null,
+          });
+        }
+
+        return { success: true, message: `Solicitação de amizade enviada para ${searchName}!` };
+      }
+      return { success: false, message: 'Digite o identificador do amigo.' };
+    }
 
     // 1. Garante que o perfil do usuário atual existe em public.profiles para não quebrar chave estrangeira
     const myName = useAppStore.getState().myName || resolveAuthDisplayName(user);
@@ -1698,6 +1750,16 @@ export async function cancelFriendRequestInSupabase(friendshipIdOrTargetId: stri
   }
 }
 
+export function cleanDisplayName(name?: string | null): string {
+  if (!name) return 'Usuário';
+  let clean = String(name).trim();
+  if (clean.startsWith('@')) clean = clean.substring(1).trim();
+  if (clean.includes('#')) {
+    clean = clean.split('#')[0].trim();
+  }
+  return clean || 'Usuário';
+}
+
 export async function respondFriendRequestInSupabase(friendshipId: string, accept: boolean): Promise<boolean> {
   const currentFriends = useAppStore.getState().friends || [];
   const targetFriend = currentFriends.find(f => f.id === friendshipId);
@@ -1714,14 +1776,21 @@ export async function respondFriendRequestInSupabase(friendshipId: string, accep
       responderAvatarUrl: useAppStore.getState().myAvatarUrl || null,
     });
   }
-  if (!supabaseUrl || !supabaseAnonKey) {
-    let list = await fetchFriendsFromSupabase();
-    if (accept) {
-      list = list.map(f => f.id === friendshipId ? { ...f, status: 'accepted' } : f);
-    } else {
-      list = list.filter(f => f.id !== friendshipId);
-    }
+
+  // 1. Atualizar estado local e store imediatamente
+  let list: Friend[];
+  if (accept) {
+    list = currentFriends.map(f => f.id === friendshipId ? { ...f, status: 'accepted' as const, onlineStatus: 'online' as const } : f);
+  } else {
+    list = currentFriends.filter(f => f.id !== friendshipId);
+  }
+  useAppStore.getState().setFriends(list);
+  try {
     localStorage.setItem('concord_mock_friends', JSON.stringify(list));
+  } catch {}
+  window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+
+  if (!supabaseUrl || !supabaseAnonKey || !isUuid(friendshipId)) {
     return true;
   }
 
@@ -1740,15 +1809,20 @@ export async function respondFriendRequestInSupabase(friendshipId: string, accep
       return !error;
     }
   } catch {
-    return false;
+    return true;
   }
 }
 
 export async function removeFriendFromSupabase(friendshipId: string): Promise<boolean> {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    let list = await fetchFriendsFromSupabase();
-    list = list.filter(f => f.id !== friendshipId);
+  const currentFriends = useAppStore.getState().friends || [];
+  const list = currentFriends.filter(f => f.id !== friendshipId);
+  useAppStore.getState().setFriends(list);
+  try {
     localStorage.setItem('concord_mock_friends', JSON.stringify(list));
+  } catch {}
+  window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+
+  if (!supabaseUrl || !supabaseAnonKey || !isUuid(friendshipId)) {
     return true;
   }
 
@@ -1759,7 +1833,7 @@ export async function removeFriendFromSupabase(friendshipId: string): Promise<bo
       .eq('id', friendshipId);
     return !error;
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -1990,13 +2064,14 @@ export async function getOrCreateDirectChatInSupabase(
 }
 
 export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<DirectMessage[]> {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    try {
-      const raw = localStorage.getItem(`concord_dm_${chatId}`);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+  let localList: DirectMessage[] = [];
+  try {
+    const raw = localStorage.getItem(`concord_dm_${chatId}`);
+    if (raw) localList = JSON.parse(raw);
+  } catch {}
+
+  if (!supabaseUrl || !supabaseAnonKey || !isUuid(chatId)) {
+    return localList;
   }
 
   try {
@@ -2007,8 +2082,9 @@ export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<D
       .order('created_at', { ascending: true })
       .limit(100);
 
-    if (error || !data) return [];
-    return data.map((m: any) => ({
+    if (error || !data) return localList;
+
+    const cloudList: DirectMessage[] = data.map((m: any) => ({
       id: m.id,
       chatId: m.chat_id,
       senderId: m.sender_id,
@@ -2020,8 +2096,26 @@ export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<D
       fileName: m.file_name,
       createdAt: m.created_at,
     }));
+
+    // Mesclar localList com cloudList sem duplicar mensagens
+    const merged = [...cloudList];
+    for (const lm of localList) {
+      const exists = merged.some(cm => 
+        cm.id === lm.id || 
+        (cm.content === lm.content && cm.senderName === lm.senderName && Math.abs(new Date(cm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 3000)
+      );
+      if (!exists) {
+        merged.push(lm);
+      }
+    }
+
+    try {
+      localStorage.setItem(`concord_dm_${chatId}`, JSON.stringify(merged));
+    } catch {}
+
+    return merged;
   } catch {
-    return [];
+    return localList;
   }
 }
 
@@ -2034,72 +2128,95 @@ export async function sendDirectMessageToSupabase(
 ): Promise<DirectMessage | null> {
   const currentName = useAppStore.getState().myName || 'Eu';
   const currentAvatar = useAppStore.getState().myAvatarUrl || null;
+  const activeChat = useAppStore.getState().activeDmChat;
+  const partnerId = activeChat?.partnerId;
+  const partnerName = activeChat?.partnerName;
 
-  if (!supabaseUrl || !supabaseAnonKey) {
-    const mockMsg: DirectMessage = {
-      id: `local-msg-${Date.now()}`,
+  const localMsg: DirectMessage = {
+    id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    chatId,
+    senderId: 'me',
+    senderName: currentName,
+    avatarUrl: currentAvatar,
+    content,
+    msgType,
+    fileUrl,
+    fileName,
+    createdAt: new Date().toISOString(),
+  };
+
+  // 1. Salvar IMEDIATAMENTE no localStorage para garantir que a mensagem nunca suma da tela
+  try {
+    const raw = localStorage.getItem(`concord_dm_${chatId}`);
+    const list: DirectMessage[] = raw ? JSON.parse(raw) : [];
+    list.push(localMsg);
+    localStorage.setItem(`concord_dm_${chatId}`, JSON.stringify(list));
+  } catch {}
+
+  // 2. Emitir via Socket.IO para entrega em tempo real para o destinatário
+  const sock = (window as any).__concord_socket;
+  if (sock) {
+    sock.emit('send_direct_message', {
       chatId,
-      senderId: 'me',
+      targetUserId: partnerId,
+      targetName: partnerName,
+      senderId: sock.id,
       senderName: currentName,
-      avatarUrl: currentAvatar,
+      senderAvatarUrl: currentAvatar,
       content,
-      msgType,
+      msgType: msgType as any,
       fileUrl,
       fileName,
-      createdAt: new Date().toISOString(),
-    };
+      createdAt: localMsg.createdAt,
+    });
+  }
+
+  // 3. Persistir no Supabase se estiver conectado e o chatId for UUID válido
+  if (supabaseUrl && supabaseAnonKey && isUuid(chatId)) {
     try {
-      const raw = localStorage.getItem(`concord_dm_${chatId}`);
-      const list = raw ? JSON.parse(raw) : [];
-      list.push(mockMsg);
-      localStorage.setItem(`concord_dm_${chatId}`, JSON.stringify(list));
-    } catch {}
-    return mockMsg;
-  }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data, error } = await supabase
+          .from('direct_messages')
+          .insert({
+            chat_id: chatId,
+            sender_id: user.id,
+            sender_name: currentName,
+            avatar_url: currentAvatar,
+            content,
+            msg_type: msgType,
+            file_url: fileUrl || null,
+            file_name: fileName || null,
+          })
+          .select()
+          .single();
 
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return null;
+        if (!error && data) {
+          await supabase
+            .from('direct_chats')
+            .update({ updated_at: new Date().toISOString() })
+            .eq('id', chatId);
 
-    const { data, error } = await supabase
-      .from('direct_messages')
-      .insert({
-        chat_id: chatId,
-        sender_id: user.id,
-        sender_name: currentName,
-        avatar_url: currentAvatar,
-        content,
-        msg_type: msgType,
-        file_url: fileUrl || null,
-        file_name: fileName || null,
-      })
-      .select()
-      .single();
-
-    if (!error && data) {
-      await supabase
-        .from('direct_chats')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', chatId);
-
-      return {
-        id: data.id,
-        chatId: data.chat_id,
-        senderId: data.sender_id,
-        senderName: data.sender_name,
-        avatarUrl: data.avatar_url,
-        content: data.content,
-        msgType: data.msg_type,
-        fileUrl: data.file_url,
-        fileName: data.file_name,
-        createdAt: data.created_at,
-      };
+          return {
+            id: data.id,
+            chatId: data.chat_id,
+            senderId: data.sender_id,
+            senderName: data.sender_name,
+            avatarUrl: data.avatar_url,
+            content: data.content,
+            msgType: data.msg_type,
+            fileUrl: data.file_url,
+            fileName: data.file_name,
+            createdAt: data.created_at,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[Supabase] Erro ao persistir mensagem direta na nuvem:', err);
     }
-    return null;
-  } catch (err) {
-    console.warn('[Supabase] Erro ao enviar mensagem direta:', err);
-    return null;
   }
+
+  return localMsg;
 }
 
 export function getSavedServersSync(): SavedServer[] {

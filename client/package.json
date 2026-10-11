@@ -7,7 +7,7 @@
     "email": "nathatargino@users.noreply.github.com"
   },
   "private": true,
-  "version": "1.0.105",
+  "version": "1.0.106",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",

@@ -8,7 +8,7 @@ import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
-import { fetchChannelMessages, saveMessageToSupabase, fetchDirectMessagesFromSupabase, sendDirectMessageToSupabase, type DirectMessage, supabase } from '../lib/supabase';
+import { fetchChannelMessages, saveMessageToSupabase, fetchDirectMessagesFromSupabase, sendDirectMessageToSupabase, cleanDisplayName, type DirectMessage, supabase } from '../lib/supabase';
 import { playChimeSound } from '../hooks/useAudio';
 import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 import { StreamingComingSoon } from './StreamingComingSoon';
@@ -633,11 +633,35 @@ export function ChatPanel({
     const loadDms = async () => {
       try {
         const list = await fetchDirectMessagesFromSupabase(activeDmChat.id);
-        if (isMounted) setDmMessages(list);
+        if (isMounted) {
+          setDmMessages((prev) => {
+            const merged = [...list];
+            for (const pm of prev) {
+              const exists = merged.some(m => m.id === pm.id || (m.content === pm.content && m.senderName === pm.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(pm.createdAt).getTime()) < 3000));
+              if (!exists) merged.push(pm);
+            }
+            return merged;
+          });
+        }
       } catch {}
     };
     loadDms();
     const timer = setInterval(loadDms, 3000);
+
+    // Escutar novas mensagens de DM recebidas via Socket.IO em tempo real
+    const handleNewDmMessage = (e: any) => {
+      const newMsg = e.detail;
+      if (!newMsg || !isMounted) return;
+      if (newMsg.chatId === activeDmChat.id || newMsg.senderId === activeDmChat.partnerId || newMsg.senderName?.toLowerCase() === activeDmChat.partnerName?.toLowerCase()) {
+        setDmMessages((prev) => {
+          if (prev.some(m => m.id === newMsg.id || (m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 2000))) {
+            return prev;
+          }
+          return [...prev, newMsg];
+        });
+      }
+    };
+    window.addEventListener('concord:new-dm-message', handleNewDmMessage);
 
     // Supabase Realtime subscription para mensagens diretas instantâneas
     let dmChannel: any = null;
@@ -682,6 +706,7 @@ export function ChatPanel({
     return () => {
       isMounted = false;
       clearInterval(timer);
+      window.removeEventListener('concord:new-dm-message', handleNewDmMessage);
       if (dmChannel) {
         supabase.removeChannel(dmChannel);
       }
@@ -1636,12 +1661,7 @@ export function ChatPanel({
                 )}
               </div>
               <div className={styles.headerTitle}>
-                <span className={styles.headerChannelName}>@{activeDmChat.partnerName || (activeDmChat as any).other_user_name}</span>
-                {(activeDmChat.partnerTag || (activeDmChat as any).other_user_tag) && (
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted, #94a3b8)', marginLeft: '4px' }}>
-                    #{activeDmChat.partnerTag || (activeDmChat as any).other_user_tag}
-                  </span>
-                )}
+                <span className={styles.headerChannelName}>{cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name)}</span>
               </div>
               <span className={styles.headerDivider}></span>
               <span className={styles.headerTopic}>Mensagem Direta Privada</span>
@@ -2223,7 +2243,7 @@ export function ChatPanel({
                     isPartnerBlocked
                       ? 'Você não pode enviar mensagens diretas para este usuário (bloqueado).'
                       : isDmMode
-                      ? `Conversar com @${activeDmChat?.partnerName || (activeDmChat as any)?.other_user_name || 'amigo'}...`
+                      ? `Conversar com ${cleanDisplayName(activeDmChat?.partnerName || (activeDmChat as any)?.other_user_name || 'amigo')}...`
                       : isServer
                       ? `Conversar em #${activeChannel.name}... (digite @ para mencionar, / para comandos)`
                       : 'Conversar na sala... (digite @ para mencionar, / para comandos)'

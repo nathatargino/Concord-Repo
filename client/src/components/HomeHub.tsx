@@ -20,6 +20,7 @@ import {
   unblockUserInSupabase,
   getOrCreateDirectChatInSupabase,
   fetchDirectChatsFromSupabase,
+  cleanDisplayName,
   type Friend
 } from '../lib/supabase';
 import toast from 'react-hot-toast';
@@ -418,6 +419,8 @@ export const HomeHub: React.FC = () => {
   const onlineFriends = friends.filter(f => f.status === 'accepted' && (f.onlineStatus === 'online' || (f as any).online));
   const allFriends = friends.filter(f => f.status === 'accepted');
   const pendingFriends = friends.filter(f => f.status === 'pending');
+  const incomingPending = pendingFriends.filter(f => Boolean(f.isIncomingRequest ?? (f as any).is_incoming));
+  const outgoingPending = pendingFriends.filter(f => !f.isIncomingRequest && !(f as any).is_incoming);
   const blockedFriends = friends.filter(f => f.status === 'blocked');
 
   return (
@@ -451,7 +454,11 @@ export const HomeHub: React.FC = () => {
                 onClick={() => setFriendsFilter('pending')}
               >
                 Pendentes
-                {pendingFriends.length > 0 && <span className={styles.tabBadge}>{pendingFriends.length}</span>}
+                {pendingFriends.length > 0 && (
+                  <span className={`${styles.tabBadge} ${incomingPending.length > 0 ? styles.tabBadgeIncoming : ''}`}>
+                    {incomingPending.length > 0 ? incomingPending.length : pendingFriends.length}
+                  </span>
+                )}
               </button>
               <button
                 className={`${styles.tabBtn} ${friendsFilter === 'blocked' ? styles.tabBtnActive : ''}`}
@@ -496,8 +503,148 @@ export const HomeHub: React.FC = () => {
             </div>
           )}
 
-          {/* Sub-view: Lista de Amigos Filtrada */}
-          {friendsFilter !== 'add' && (
+          {/* Sub-view: ABA PENDENTES (SEPARANDO RECEBIDOS E ENVIADOS) */}
+          {friendsFilter === 'pending' && (
+            <div className={styles.friendsList}>
+              {pendingFriends.length === 0 ? (
+                <div className={styles.emptyFriends}>
+                  <i className={`fa-regular fa-clock ${styles.emptyFriendsIcon}`} />
+                  <p>Nenhuma solicitação de amizade pendente.</p>
+                </div>
+              ) : (
+                <div className={styles.pendingSectionsWrapper}>
+                  {/* 1. SEÇÃO DE PEDIDOS RECEBIDOS */}
+                  {incomingPending.length > 0 && (
+                    <div className={styles.pendingSectionBlock}>
+                      <div className={styles.pendingSectionHeader}>
+                        <i className="fa-solid fa-inbox" style={{ color: '#10b981' }} />
+                        <span>SOLICITAÇÕES RECEBIDAS — {incomingPending.length}</span>
+                      </div>
+                      <div className={styles.pendingList}>
+                        {incomingPending.map((friend) => {
+                          const rawName = friend.friendName || (friend as any).name || 'Amigo';
+                          const fName = cleanDisplayName(rawName);
+                          const fAvatar = friend.friendAvatarUrl || (friend as any).avatar_url;
+                          const fTag = String(friend.friendTag || (friend as any).tag || '0000').replace('#', '');
+
+                          return (
+                            <div key={friend.id} className={`${styles.friendRow} ${styles.incomingFriendRow}`}>
+                              <div className={styles.friendInfoLeft}>
+                                <div className={styles.friendAvatarWrapper}>
+                                  {fAvatar ? (
+                                    <img src={fAvatar} alt={fName} className={styles.friendAvatarImg} />
+                                  ) : (
+                                    <div className={styles.friendAvatarFallback}>
+                                      {fName.slice(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className={`${styles.friendStatusDot} ${styles.dotOnline}`} />
+                                </div>
+                                <div className={styles.friendNameTag}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span className={styles.friendName}>{fName}</span>
+                                    <span className={styles.incomingBadgeTag}>#{fTag}</span>
+                                  </div>
+                                  <span className={styles.incomingHintText}>
+                                    Quer ser seu amigo no Concord
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={styles.friendActions}>
+                                <button
+                                  className={styles.acceptButtonFull}
+                                  onClick={() => handleRespondFriend(friend.id, 'accepted')}
+                                  title="Aceitar Pedido de Amizade"
+                                >
+                                  <i className="fa-solid fa-check" />
+                                  <span>Aceitar</span>
+                                </button>
+                                <button
+                                  className={styles.declineButtonFull}
+                                  onClick={() => handleRespondFriend(friend.id, 'declined')}
+                                  title="Recusar Pedido de Amizade"
+                                >
+                                  <i className="fa-solid fa-xmark" />
+                                  <span>Recusar</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. SEÇÃO DE PEDIDOS ENVIADOS */}
+                  {outgoingPending.length > 0 && (
+                    <div className={styles.pendingSectionBlock}>
+                      <div className={styles.pendingSectionHeader}>
+                        <i className="fa-regular fa-paper-plane" style={{ color: '#94a3b8' }} />
+                        <span>SOLICITAÇÕES ENVIADAS — {outgoingPending.length}</span>
+                      </div>
+                      <div className={styles.pendingList}>
+                        {outgoingPending.map((friend) => {
+                          const rawName = friend.friendName || (friend as any).name || 'Amigo';
+                          const fName = cleanDisplayName(rawName);
+                          const fAvatar = friend.friendAvatarUrl || (friend as any).avatar_url;
+                          const fTag = String(friend.friendTag || (friend as any).tag || '0000').replace('#', '');
+
+                          return (
+                            <div key={friend.id} className={styles.friendRow}>
+                              <div className={styles.friendInfoLeft}>
+                                <div className={styles.friendAvatarWrapper}>
+                                  {fAvatar ? (
+                                    <img src={fAvatar} alt={fName} className={styles.friendAvatarImg} />
+                                  ) : (
+                                    <div className={styles.friendAvatarFallback}>
+                                      {fName.slice(0, 2).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <span className={`${styles.friendStatusDot} ${styles.dotOffline}`} />
+                                </div>
+                                <div className={styles.friendNameTag}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span className={styles.friendName}>{fName}</span>
+                                    <span className={styles.friendTag}>#{fTag}</span>
+                                  </div>
+                                  <span className={styles.friendTag}>
+                                    Solicitação enviada • Aguardando resposta
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className={styles.friendActions}>
+                                <button
+                                  className={styles.cancelButtonFull}
+                                  onClick={async () => {
+                                    const ok = await cancelFriendRequestInSupabase(friend.id);
+                                    if (ok) {
+                                      toast.success('Solicitação de amizade cancelada.');
+                                      loadSocialData();
+                                    } else {
+                                      toast.error('Erro ao cancelar solicitação.');
+                                    }
+                                  }}
+                                  title="Cancelar Pedido de Amizade"
+                                >
+                                  <i className="fa-solid fa-xmark" />
+                                  <span>Cancelar Pedido</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sub-view: Outras Listas (Online, Todos, Bloqueados) */}
+          {friendsFilter !== 'add' && friendsFilter !== 'pending' && (
             <div className={styles.friendsList}>
               {friendsFilter === 'online' && onlineFriends.length === 0 && (
                 <div className={styles.emptyFriends}>
@@ -514,12 +661,6 @@ export const HomeHub: React.FC = () => {
                   </button>
                 </div>
               )}
-              {friendsFilter === 'pending' && pendingFriends.length === 0 && (
-                <div className={styles.emptyFriends}>
-                  <i className={`fa-regular fa-clock ${styles.emptyFriendsIcon}`} />
-                  <p>Nenhuma solicitação de amizade pendente.</p>
-                </div>
-              )}
               {friendsFilter === 'blocked' && blockedFriends.length === 0 && (
                 <div className={styles.emptyFriends}>
                   <i className={`fa-solid fa-shield-halved ${styles.emptyFriendsIcon}`} />
@@ -530,14 +671,13 @@ export const HomeHub: React.FC = () => {
               {/* Render rows */}
               {(friendsFilter === 'online' ? onlineFriends :
                 friendsFilter === 'all' ? allFriends :
-                friendsFilter === 'pending' ? pendingFriends :
                 blockedFriends).map((friend) => {
-                const fName = friend.friendName || (friend as any).name || 'Amigo';
+                const rawName = friend.friendName || (friend as any).name || 'Amigo';
+                const fName = cleanDisplayName(rawName);
                 const fAvatar = friend.friendAvatarUrl || (friend as any).avatar_url;
-                const fTag = friend.friendTag || (friend as any).tag || '0000';
+                const fTag = String(friend.friendTag || (friend as any).tag || '0000').replace('#', '');
                 const fOnline = friend.onlineStatus === 'online' || (friend as any).online;
                 const fTargetId = friend.friendId || friend.userId || (friend as any).user_id;
-                const fIsIncoming = friend.isIncomingRequest ?? (friend as any).is_incoming;
 
                 return (
                   <div key={friend.id} className={styles.friendRow}>
@@ -555,9 +695,7 @@ export const HomeHub: React.FC = () => {
                       <div className={styles.friendNameTag}>
                         <span className={styles.friendName}>{fName}</span>
                         <span className={styles.friendTag}>
-                          {friend.status === 'pending'
-                            ? (fIsIncoming ? 'Solicitação recebida • Pendente' : 'Solicitação enviada • Pendente')
-                            : `#${fTag} • ${fOnline ? 'Online' : 'Offline'}`}
+                          #{fTag} • {fOnline ? 'Online' : 'Offline'}
                         </span>
                       </div>
                     </div>
@@ -586,45 +724,6 @@ export const HomeHub: React.FC = () => {
                           >
                             <i className="fa-solid fa-ban" />
                           </button>
-                        </>
-                      )}
-
-                      {friend.status === 'pending' && (
-                        <>
-                          {fIsIncoming ? (
-                            <>
-                              <button
-                                className={`${styles.actionIconBtn} ${styles.actionIconBtnSuccess}`}
-                                onClick={() => handleRespondFriend(friend.id, 'accepted')}
-                                title="Aceitar Solicitação"
-                              >
-                                <i className="fa-solid fa-check" />
-                              </button>
-                              <button
-                                className={`${styles.actionIconBtn} ${styles.actionIconBtnDanger}`}
-                                onClick={() => handleRespondFriend(friend.id, 'declined')}
-                                title="Recusar Solicitação"
-                              >
-                                <i className="fa-solid fa-xmark" />
-                              </button>
-                            </>
-                          ) : (
-                            <button
-                              className={`${styles.actionIconBtn} ${styles.actionIconBtnDanger}`}
-                              onClick={async () => {
-                                const ok = await cancelFriendRequestInSupabase(friend.id);
-                                if (ok) {
-                                  toast.success('Solicitação de amizade cancelada.');
-                                  loadSocialData();
-                                } else {
-                                  toast.error('Erro ao cancelar solicitação.');
-                                }
-                              }}
-                              title="Cancelar Pedido de Amizade"
-                            >
-                              <i className="fa-solid fa-xmark" />
-                            </button>
-                          )}
                         </>
                       )}
 

@@ -59,6 +59,7 @@ export interface RoomState {
 const rooms = new Map<string, RoomState>();
 const codeToRoomId = new Map<string, string>(); // reverse lookup
 const screenViewersMap = new Map<string, Map<string, string>>(); // broadcasterId -> (viewerSocketId -> viewerName)
+const pendingFriendRequests = new Map<string, any[]>(); // targetIdentifier -> list of pending request payloads
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -634,7 +635,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── SET USERNAME & AVATAR ─────────────────────────────────────
-    socket.on('set_username', (name: string, avatarUrl?: string | null, tag?: string) => {
+    socket.on('set_username', (name: string, avatarUrl?: string | null, tag?: string, persistentId?: string, userId?: string) => {
       const room = getCurrentRoom();
       const trimmed = name.trim().slice(0, 32) || `User_${socket.id.slice(0, 4)}`;
       const oldName = user.name;
@@ -645,7 +646,35 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (tag) {
         user.tag = tag;
       }
+      if (persistentId) {
+        user.persistentId = persistentId;
+        socket.data.persistentId = persistentId;
+      }
+      if (userId) {
+        socket.data.userId = userId;
+      }
       socket.data.user = user;
+
+      // Entregar solicitações de amizade pendentes que chegaram para este usuário
+      const baseClean = trimmed.toLowerCase();
+      const userKeys = [baseClean, socket.id, `${baseClean}#0000`];
+      if (tag) {
+        const cleanTag = tag.replace('#', '').trim().toLowerCase();
+        userKeys.push(`${baseClean}#${cleanTag}`);
+      }
+      if (persistentId) userKeys.push(persistentId);
+      if (userId) userKeys.push(userId);
+
+      for (const k of userKeys) {
+        const pendings = pendingFriendRequests.get(k);
+        if (pendings && pendings.length > 0) {
+          for (const req of pendings) {
+            socket.emit('receive_friend_request', req);
+            console.log(`[FriendRequest] Entregue pedido pendente acumulado para ${trimmed} (chave ${k})`);
+          }
+          pendingFriendRequests.delete(k);
+        }
+      }
 
       if (room) {
         if (room.isServer) {
@@ -694,8 +723,34 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       };
 
       const targetIdClean = (data.targetUserId || '').trim();
-      const targetNameClean = (data.targetName || '').trim().toLowerCase();
-      const targetTagClean = (data.targetTag || '').replace('#', '').trim().toLowerCase();
+      let targetNameClean = (data.targetName || '').trim().toLowerCase();
+      if (targetNameClean.startsWith('@')) {
+        targetNameClean = targetNameClean.substring(1).trim();
+      }
+      let targetTagClean = (data.targetTag || '').replace('#', '').trim().toLowerCase();
+      if (targetNameClean.includes('#')) {
+        const parts = targetNameClean.split('#');
+        targetNameClean = parts[0].trim();
+        if (!targetTagClean) {
+          targetTagClean = parts[1].trim();
+        }
+      }
+
+      // Guardar pedido pendente em memória para caso o destinatário conecte em instantes
+      const storeKeys = [targetNameClean, `${targetNameClean}#0000`];
+      if (targetTagClean && targetTagClean !== '0000') {
+        storeKeys.push(`${targetNameClean}#${targetTagClean}`);
+      }
+      if (targetIdClean) storeKeys.push(targetIdClean);
+
+      for (const k of storeKeys) {
+        if (!k) continue;
+        const existing = pendingFriendRequests.get(k) || [];
+        if (!existing.some(r => r.id === payload.id || r.senderName === payload.senderName)) {
+          existing.push(payload);
+          pendingFriendRequests.set(k, existing);
+        }
+      }
 
       let delivered = false;
 
@@ -704,19 +759,24 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         const sUser = s.data.user;
         const sName = (sUser?.name || '').trim().toLowerCase();
         const sPersistentId = s.data.persistentId;
+        const sUserId = s.data.userId;
         const sTag = (sUser?.tag || '').replace('#', '').trim().toLowerCase();
 
         const matchId = Boolean(
           targetIdClean && (
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
-            sPersistentId === targetIdClean
+            sPersistentId === targetIdClean ||
+            sUserId === targetIdClean
           )
         );
         const matchName = Boolean(
           targetNameClean && sName && (
             sName === targetNameClean || 
-            (targetTagClean && sTag && sName === targetNameClean && sTag === targetTagClean)
+            (targetTagClean && sTag && sName === targetNameClean && sTag === targetTagClean) ||
+            (!targetTagClean && sName === targetNameClean) ||
+            (targetTagClean === '0000' && sName === targetNameClean) ||
+            (sTag === '0000' && sName === targetNameClean)
           )
         );
 
@@ -754,19 +814,30 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('respond_friend_request', (data) => {
       console.log(`[FriendRequest] Resposta de ${data.responderName}: ${data.action} para ${data.targetName || data.targetUserId}`);
       const targetIdClean = (data.targetUserId || '').trim();
-      const targetNameClean = (data.targetName || '').trim().toLowerCase();
+      let targetNameClean = (data.targetName || '').trim().toLowerCase();
+      if (targetNameClean.startsWith('@')) targetNameClean = targetNameClean.substring(1).trim();
+      if (targetNameClean.includes('#')) targetNameClean = targetNameClean.split('#')[0].trim();
+
+      // Limpar das pendências em memória
+      for (const [k, list] of pendingFriendRequests.entries()) {
+        const filtered = list.filter(r => r.senderName?.toLowerCase() !== targetNameClean && r.senderId !== targetIdClean);
+        if (filtered.length === 0) pendingFriendRequests.delete(k);
+        else pendingFriendRequests.set(k, filtered);
+      }
 
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
         const sName = (sUser?.name || '').trim().toLowerCase();
         const sPersistentId = s.data.persistentId;
+        const sUserId = s.data.userId;
 
         const matchId = Boolean(
           targetIdClean && (
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
-            sPersistentId === targetIdClean
+            sPersistentId === targetIdClean ||
+            sUserId === targetIdClean
           )
         );
         const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
@@ -787,19 +858,30 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('cancel_friend_request', (data) => {
       console.log(`[FriendRequest] Cancelamento de ${data.senderName} para ${data.targetName || data.targetUserId}`);
       const targetIdClean = (data.targetUserId || '').trim();
-      const targetNameClean = (data.targetName || '').trim().toLowerCase();
+      let targetNameClean = (data.targetName || '').trim().toLowerCase();
+      if (targetNameClean.startsWith('@')) targetNameClean = targetNameClean.substring(1).trim();
+      if (targetNameClean.includes('#')) targetNameClean = targetNameClean.split('#')[0].trim();
+
+      // Limpar das pendências em memória
+      for (const [k, list] of pendingFriendRequests.entries()) {
+        const filtered = list.filter(r => r.senderName?.toLowerCase() !== (data.senderName || '').toLowerCase());
+        if (filtered.length === 0) pendingFriendRequests.delete(k);
+        else pendingFriendRequests.set(k, filtered);
+      }
 
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
         const sName = (sUser?.name || '').trim().toLowerCase();
         const sPersistentId = s.data.persistentId;
+        const sUserId = s.data.userId;
 
         const matchId = Boolean(
           targetIdClean && (
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
-            sPersistentId === targetIdClean
+            sPersistentId === targetIdClean ||
+            sUserId === targetIdClean
           )
         );
         const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
@@ -812,6 +894,55 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           console.log(`[FriendRequest] Cancelamento enviado para socket ${targetSocketId}`);
         }
       }
+    });
+
+    // ─── REALTIME DIRECT MESSAGES (DMs) ────────────────────────────
+    socket.on('send_direct_message', (data) => {
+      console.log(`[DM] Mensagem direta de ${data.senderName} para ${data.targetName || data.targetUserId}`);
+      const msgId = `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const payload = {
+        id: msgId,
+        chatId: data.chatId,
+        senderId: data.senderId || socket.id,
+        senderName: data.senderName,
+        senderAvatarUrl: data.senderAvatarUrl || null,
+        content: data.content,
+        msgType: data.msgType || 'text',
+        fileUrl: data.fileUrl,
+        fileName: data.fileName,
+        createdAt: data.createdAt || new Date().toISOString(),
+      };
+
+      const targetIdClean = (data.targetUserId || '').trim();
+      let targetNameClean = (data.targetName || '').trim().toLowerCase();
+      if (targetNameClean.startsWith('@')) targetNameClean = targetNameClean.substring(1).trim();
+      if (targetNameClean.includes('#')) targetNameClean = targetNameClean.split('#')[0].trim();
+
+      for (const [targetSocketId, s] of io.sockets.sockets) {
+        if (targetSocketId === socket.id) continue;
+        const sUser = s.data.user;
+        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sPersistentId = s.data.persistentId;
+        const sUserId = s.data.userId;
+
+        const matchId = Boolean(
+          targetIdClean && (
+            targetSocketId === targetIdClean || 
+            sUser?.id === targetIdClean || 
+            sPersistentId === targetIdClean ||
+            sUserId === targetIdClean
+          )
+        );
+        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+
+        if (matchId || matchName) {
+          s.emit('receive_direct_message', payload);
+          console.log(`[DM] Entregue para socket destinatario ${targetSocketId} (${sUser?.name})`);
+        }
+      }
+
+      // Echo imediato de confirmacao para o proprio remetente
+      socket.emit('receive_direct_message', payload);
     });
 
     // ─── CREATE CHANNEL ────────────────────────────────────────────

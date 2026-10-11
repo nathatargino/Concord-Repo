@@ -28,6 +28,7 @@ import {
   unblockUserInSupabase,
   getOrCreatePersistentId,
   getOrCreateDirectChatInSupabase,
+  cleanDisplayName,
 } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -888,7 +889,7 @@ export const Sidebar: React.FC<Props> = ({
                 ) : (
                   directChats.map((chat) => {
                     const isDmActive = homeTab === 'dm' && activeDmChat?.id === chat.id;
-                    const partnerName = chat.partnerName || (chat as any).other_user_name || 'Usuário';
+                    const partnerName = cleanDisplayName(chat.partnerName || (chat as any).other_user_name || 'Usuário');
                     const partnerAvatar = chat.partnerAvatarUrl || (chat as any).other_user_avatar;
                     return (
                       <div key={chat.id} className={styles.channelRow}>

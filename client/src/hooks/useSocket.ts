@@ -5,6 +5,7 @@ import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification, showNativeFriendRequestNotification } from '../utils/nativeNotification';
+import { playChimeSound } from './useAudio';
 import { notifyInChat } from '../utils/systemMessage';
 import { getOrCreatePersistentId, getSavedUsername, type Friend } from '../lib/supabase';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo, WatchSession } from '../types';
@@ -59,10 +60,22 @@ interface ServerToClientEvents {
   member_custom_role_updated: (data: any) => void;
   screen_viewer_joined: (viewer: { id: string; name: string }) => void;
   screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
+  receive_direct_message: (data: {
+    id: string;
+    chatId: string;
+    senderId: string;
+    senderName: string;
+    senderAvatarUrl?: string | null;
+    content: string;
+    msgType: 'text' | 'image' | 'file';
+    fileUrl?: string;
+    fileName?: string;
+    createdAt: string;
+  }) => void;
 }
 
 interface ClientToServerEvents {
-  set_username: (name: string, avatarUrl?: string | null, tag?: string) => void;
+  set_username: (name: string, avatarUrl?: string | null, tag?: string, persistentId?: string, userId?: string) => void;
   update_avatar: (avatarUrl: string | null) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
@@ -114,6 +127,19 @@ interface ClientToServerEvents {
   watch_session_query: () => void;
   watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   set_member_custom_role: (data: any) => void;
+  send_direct_message: (data: {
+    chatId: string;
+    targetUserId?: string;
+    targetName?: string;
+    senderId: string;
+    senderName: string;
+    senderAvatarUrl?: string | null;
+    content: string;
+    msgType?: 'text' | 'image' | 'file';
+    fileUrl?: string;
+    fileName?: string;
+    createdAt?: string;
+  }) => void;
 }
 
 export type ConcordSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -183,6 +209,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       const savedName = getSavedUsername();
       const savedAvatar = localStorage.getItem('concord_avatar_url');
       const savedTag = localStorage.getItem('concord_user_tag');
+      const savedUserId = localStorage.getItem('concord_user_id') || undefined;
       if (savedName) {
         store.setMyName(savedName);
         if (savedAvatar) {
@@ -191,7 +218,7 @@ export function useSocket(callbacks: SocketCallbacks) {
         if (savedTag) {
           store.setMyTag(savedTag);
         }
-        socket.emit('set_username', savedName, savedAvatar || null, savedTag || undefined);
+        socket.emit('set_username', savedName, savedAvatar || null, savedTag || undefined, persistentId, savedUserId);
       }
 
       // If there's already a room in the store, re-join it after reconnect with full params
@@ -271,20 +298,32 @@ export function useSocket(callbacks: SocketCallbacks) {
       };
 
       const currentFriends = useAppStore.getState().friends || [];
-      const alreadyHas = currentFriends.some(f => 
+      const matchIndex = currentFriends.findIndex(f => 
         f.id === newFriend.id || 
         (f.friendId && f.friendId === newFriend.friendId) ||
         (f.friendName && f.friendName.trim().toLowerCase() === newFriend.friendName.trim().toLowerCase())
       );
 
-      if (!alreadyHas) {
-        const updated = [newFriend, ...currentFriends];
-        useAppStore.getState().setFriends(updated);
-        try {
-          localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
-        } catch {}
+      let updated: Friend[];
+      if (matchIndex >= 0) {
+        updated = [...currentFriends];
+        updated[matchIndex] = {
+          ...updated[matchIndex],
+          ...newFriend,
+          isIncomingRequest: true,
+          status: 'pending',
+          onlineStatus: 'online',
+        };
+      } else {
+        updated = [newFriend, ...currentFriends];
       }
 
+      useAppStore.getState().setFriends(updated);
+      try {
+        localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
+      } catch {}
+
+      playChimeSound();
       toast(`Nova solicitação de amizade de ${data.senderName}!`, {
         icon: '👋',
         duration: 6000,
@@ -363,6 +402,55 @@ export function useSocket(callbacks: SocketCallbacks) {
         localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
       } catch {}
       window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+    });
+
+    socket.on('receive_direct_message' as any, (data: any) => {
+      console.log('[Socket] receive_direct_message:', data);
+      const isFromMe = data.senderId === socket.id || data.senderName === useAppStore.getState().myName;
+
+      try {
+        const raw = localStorage.getItem(`concord_dm_${data.chatId}`);
+        const list = raw ? JSON.parse(raw) : [];
+        if (!list.some((m: any) => m.id === data.id || (m.content === data.content && m.senderName === data.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(data.createdAt).getTime()) < 2000))) {
+          list.push(data);
+          localStorage.setItem(`concord_dm_${data.chatId}`, JSON.stringify(list));
+        }
+      } catch {}
+
+      // Assegurar que o chat exista na lista de conversas diretas
+      try {
+        const rawChats = localStorage.getItem('concord_direct_chats');
+        const chatList = rawChats ? JSON.parse(rawChats) : [];
+        const partnerNameClean = isFromMe ? undefined : data.senderName;
+        const exists = chatList.some((c: any) => c.id === data.chatId || (partnerNameClean && c.partnerName?.toLowerCase() === partnerNameClean.toLowerCase()));
+        if (!exists && partnerNameClean) {
+          const newChat = {
+            id: data.chatId,
+            partnerId: data.senderId,
+            partnerName: partnerNameClean,
+            partnerAvatarUrl: data.senderAvatarUrl || null,
+            partnerTag: '0000',
+            updatedAt: data.createdAt || new Date().toISOString(),
+          };
+          chatList.unshift(newChat);
+          localStorage.setItem('concord_direct_chats', JSON.stringify(chatList));
+          useAppStore.getState().setDirectChats(chatList);
+          window.dispatchEvent(new CustomEvent('concord:direct-chats-updated'));
+        }
+      } catch {}
+
+      window.dispatchEvent(new CustomEvent('concord:new-dm-message', { detail: data }));
+
+      if (!isFromMe) {
+        showNativeChatNotification({
+          userName: data.senderName,
+          message: data.content,
+          roomName: 'Mensagem Direta',
+          avatarUrl: data.senderAvatarUrl,
+          sentAt: Date.now(),
+        });
+        playChimeSound();
+      }
     });
 
     socket.on('member_custom_role_updated' as any, (data: any) => {
