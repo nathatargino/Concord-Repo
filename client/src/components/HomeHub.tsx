@@ -53,6 +53,7 @@ export const HomeHub: React.FC = () => {
     recordRecentServer,
     recentCallServers,
     refreshRecentCallServers,
+    showConfirmModal,
   } = useAppStore();
 
   const [showAllServers, setShowAllServers] = useState(false);
@@ -303,30 +304,48 @@ export const HomeHub: React.FC = () => {
     }
   };
 
-  const handleRemoveFriend = async (friendshipId: string, name: string) => {
-    if (!window.confirm(`Tem certeza que deseja remover ${name} dos seus amigos?`)) return;
-    try {
-      const ok = await removeFriendFromSupabase(friendshipId);
-      if (ok) {
-        toast('Amigo removido.', { icon: '🗑️' });
-        loadSocialData();
-      }
-    } catch {
-      toast.error('Erro ao remover amigo.');
-    }
+  const handleRemoveFriend = (friendshipId: string, name: string) => {
+    showConfirmModal({
+      title: 'Remover Amigo',
+      message: `Tem certeza que deseja remover ${name} da sua lista de amigos?`,
+      subMessage: 'Vocês deixarão de ver o status mútuo online.',
+      confirmText: 'Remover',
+      cancelText: 'Cancelar',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const ok = await removeFriendFromSupabase(friendshipId);
+          if (ok) {
+            toast('Amigo removido.', { icon: '🗑️' });
+            loadSocialData();
+          }
+        } catch {
+          toast.error('Erro ao remover amigo.');
+        }
+      },
+    });
   };
 
-  const handleBlockUser = async (userId: string, name: string) => {
-    if (!window.confirm(`Tem certeza que deseja bloquear ${name}?`)) return;
-    try {
-      const ok = await blockUserInSupabase(userId);
-      if (ok) {
-        toast.success(`${name} foi bloqueado.`);
-        loadSocialData();
-      }
-    } catch {
-      toast.error('Erro ao bloquear usuário.');
-    }
+  const handleBlockUser = (userId: string, name: string) => {
+    showConfirmModal({
+      title: 'Bloquear Usuário',
+      message: `Tem certeza que deseja bloquear ${name}?`,
+      subMessage: 'Este usuário não poderá mais lhe enviar mensagens ou solicitações.',
+      confirmText: 'Bloquear',
+      cancelText: 'Cancelar',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          const ok = await blockUserInSupabase(userId);
+          if (ok) {
+            toast.success(`${name} foi bloqueado.`);
+            loadSocialData();
+          }
+        } catch {
+          toast.error('Erro ao bloquear usuário.');
+        }
+      },
+    });
   };
 
   const handleUnblockUser = async (friendshipId: string) => {

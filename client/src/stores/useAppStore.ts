@@ -128,6 +128,30 @@ interface AppState {
   openUserProfile: (user: UserProfileData) => void;
   closeUserProfile: () => void;
 
+  // Custom Confirmation Dialog Modal
+  confirmModal: {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    subMessage?: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  } | null;
+  showConfirmModal: (options: {
+    title: string;
+    message: string;
+    subMessage?: string;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }) => void;
+  closeConfirmModal: () => void;
+
   // Users currently in the room
   users: UserInfo[];
   setUsers: (users: UserInfo[]) => void;
@@ -347,6 +371,11 @@ export const useAppStore = create<AppState>((set) => ({
   viewingProfileUser: null,
   openUserProfile: (user) => set({ viewingProfileUser: user }),
   closeUserProfile: () => set({ viewingProfileUser: null }),
+
+  // Custom Confirmation Dialog Modal
+  confirmModal: null,
+  showConfirmModal: (options) => set({ confirmModal: { ...options, isOpen: true } }),
+  closeConfirmModal: () => set({ confirmModal: null }),
 
   // Users
   users: [],

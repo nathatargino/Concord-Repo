@@ -16,6 +16,7 @@ export interface UserInfo {
   callMuted: boolean;
   role?: 'owner' | 'sub_owner' | 'member';
   customRole?: CustomRole | null;
+  tag?: string;
   hasAnnouncedJoin?: boolean;
 }
 
@@ -60,7 +61,7 @@ export interface RoomInfo {
 
 // Client → Server events
 export interface ClientToServerEvents {
-  set_username: (name: string, avatarUrl?: string | null) => void;
+  set_username: (name: string, avatarUrl?: string | null, tag?: string) => void;
   update_avatar: (avatarUrl: string | null) => void;
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
@@ -117,12 +118,56 @@ export interface ClientToServerEvents {
   watch_session_query: () => void;
   watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   message_reaction: (messageId: string, emoji: string) => void;
+  send_friend_request: (data: {
+    id?: string;
+    targetUserId?: string;
+    targetName?: string;
+    targetTag?: string;
+    senderId: string;
+    senderName: string;
+    senderTag: string;
+    senderAvatarUrl?: string | null;
+  }) => void;
+  respond_friend_request: (data: {
+    targetUserId?: string;
+    targetName?: string;
+    action: 'accept' | 'decline';
+    responderId: string;
+    responderName: string;
+    responderTag: string;
+    responderAvatarUrl?: string | null;
+  }) => void;
+  cancel_friend_request: (data: {
+    targetUserId?: string;
+    targetName?: string;
+    senderId: string;
+    senderName: string;
+  }) => void;
 }
 
 // Server → Client events
 export interface ServerToClientEvents {
   user_list: (users: UserInfo[]) => void;
   server_members: (members: any[]) => void;
+  receive_friend_request: (data: {
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderTag: string;
+    senderAvatarUrl?: string | null;
+    timestamp: number;
+  }) => void;
+  friend_request_response: (data: {
+    action: 'accept' | 'decline';
+    responderId: string;
+    responderName: string;
+    responderTag: string;
+    responderAvatarUrl?: string | null;
+  }) => void;
+  friend_request_cancelled: (data: {
+    senderId: string;
+    senderName: string;
+  }) => void;
   message_reaction: (messageId: string, emoji: string, userName: string) => void;
   receive_message: (
     userName: string,

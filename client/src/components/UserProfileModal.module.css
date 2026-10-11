@@ -579,3 +579,33 @@
   background: rgba(255, 255, 255, 0.25);
   transform: scale(1.08);
 }
+
+.directMessageBtn {
+  background: #7c5cff;
+  border: none;
+  border-radius: 12px;
+  height: 40px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  box-shadow: 0 4px 14px rgba(124, 92, 255, 0.3);
+}
+
+.directMessageBtn:hover {
+  background: #6d46f7;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 20px rgba(124, 92, 255, 0.45);
+}
+
+.directMessageBtn:active {
+  transform: scale(0.98);
+}

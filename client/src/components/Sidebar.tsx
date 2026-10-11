@@ -27,6 +27,7 @@ import {
   blockUserInSupabase,
   unblockUserInSupabase,
   getOrCreatePersistentId,
+  getOrCreateDirectChatInSupabase,
 } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -108,6 +109,7 @@ export const Sidebar: React.FC<Props> = ({
     setActiveDmChat,
     setCreateRoomPromptOpen,
     activeCallInfo,
+    showConfirmModal,
   } = useAppStore();
 
   const [copiedFooterUser, setCopiedFooterUser] = useState(false);
@@ -986,9 +988,15 @@ export const Sidebar: React.FC<Props> = ({
                           className={`${styles.channelActionBtn} ${styles.channelActionBtnDanger}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm(`Tem certeza que deseja excluir o canal #${channel.name}?`)) {
-                              handleDeleteChannel(channel.id);
-                            }
+                            showConfirmModal({
+                              title: 'Excluir Canal',
+                              message: `Tem certeza que deseja excluir o canal #${channel.name}?`,
+                              subMessage: 'Esta ação removerá o canal e seu histórico de mensagens.',
+                              confirmText: 'Excluir',
+                              cancelText: 'Cancelar',
+                              isDanger: true,
+                              onConfirm: () => handleDeleteChannel(channel.id),
+                            });
                           }}
                           title={`Excluir canal #${channel.name}`}
                         >
@@ -1610,6 +1618,47 @@ export const Sidebar: React.FC<Props> = ({
             Ver Perfil
           </button>
 
+          {/* Opção: Mensagem Direta */}
+          {(() => {
+            const isCurrentUser = contextMenu.targetId === myId || (Boolean(targetDisplayName) && Boolean(myName) && targetDisplayName.trim().toLowerCase() === myName.trim().toLowerCase());
+            if (isCurrentUser) return null;
+
+            return (
+              <button
+                className={styles.contextMenuItem}
+                onClick={async () => {
+                  const targetUserObj = users.find(u => u.id === contextMenu.targetId);
+                  const targetMember = serverMembers.find(m => m.username.toLowerCase() === (targetDisplayName || '').toLowerCase());
+                  const resolvedAvatar = targetUserObj?.avatarUrl || targetMember?.avatarUrl || null;
+                  const targetUid = targetMember?.user_id || contextMenu.targetId;
+                  const targetName = targetDisplayName || targetMember?.username || 'Usuário';
+
+                  setContextMenu(null);
+                  try {
+                    const chat = await getOrCreateDirectChatInSupabase(
+                      targetUid,
+                      targetName,
+                      resolvedAvatar
+                    );
+                    if (chat) {
+                      setActiveDmChat(chat);
+                      setHomeTab('dm');
+                      setActiveRailContext('home');
+                      navigate('/home');
+                    } else {
+                      toast.error('Não foi possível abrir a mensagem direta.');
+                    }
+                  } catch {
+                    toast.error('Erro ao abrir mensagem direta.');
+                  }
+                }}
+              >
+                <i className="fa-solid fa-message" style={{ width: 14, color: '#38bdf8' }} />
+                Mensagem Direta
+              </button>
+            );
+          })()}
+
           {/* Opção: Adicionar Amigo ou Pedido Pendente */}
           {(() => {
             const isCurrentUser = contextMenu.targetId === myId || (Boolean(targetDisplayName) && Boolean(myName) && targetDisplayName.trim().toLowerCase() === myName.trim().toLowerCase());
@@ -1715,12 +1764,24 @@ export const Sidebar: React.FC<Props> = ({
                       setFriends(updated);
                     }
                   } else {
-                    if (window.confirm(`Deseja bloquear ${targetName}?`)) {
-                      await blockUserInSupabase(targetUid, targetName);
-                      toast.success(`${targetName} foi bloqueado.`);
-                      const updated = await fetchFriendsFromSupabase();
-                      setFriends(updated);
-                    }
+                    showConfirmModal({
+                      title: 'Bloquear Usuário',
+                      message: `Deseja realmente bloquear ${targetName}?`,
+                      subMessage: 'Você deixará de receber chamadas, convites e mensagens diretas deste usuário.',
+                      confirmText: 'Bloquear',
+                      cancelText: 'Cancelar',
+                      isDanger: true,
+                      onConfirm: async () => {
+                        try {
+                          await blockUserInSupabase(targetUid, targetName);
+                          toast.success(`${targetName} foi bloqueado.`);
+                          const updated = await fetchFriendsFromSupabase();
+                          setFriends(updated);
+                        } catch {
+                          toast.error('Erro ao processar bloqueio.');
+                        }
+                      },
+                    });
                   }
                 }}
               >

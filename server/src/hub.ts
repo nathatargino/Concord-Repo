@@ -271,6 +271,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     console.log(`[+] Connected: ${socket.id}`);
 
     let user: UserInfo = { id: socket.id, name: '', avatarUrl: null, inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
+    socket.data.user = user;
 
     // Helper: get current room (returns null if socket not in a room)
     function getCurrentRoom(): RoomState | null {
@@ -633,7 +634,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── SET USERNAME & AVATAR ─────────────────────────────────────
-    socket.on('set_username', (name: string, avatarUrl?: string | null) => {
+    socket.on('set_username', (name: string, avatarUrl?: string | null, tag?: string) => {
       const room = getCurrentRoom();
       const trimmed = name.trim().slice(0, 32) || `User_${socket.id.slice(0, 4)}`;
       const oldName = user.name;
@@ -641,6 +642,10 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (avatarUrl !== undefined) {
         user.avatarUrl = avatarUrl;
       }
+      if (tag) {
+        user.tag = tag;
+      }
+      socket.data.user = user;
 
       if (room) {
         if (room.isServer) {
@@ -668,9 +673,144 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('update_avatar', (avatarUrl: string | null) => {
       const room = getCurrentRoom();
       user.avatarUrl = avatarUrl;
+      socket.data.user = user;
 
       if (room) {
         broadcastUserList(io, room);
+      }
+    });
+
+    // ─── REALTIME FRIEND REQUESTS ──────────────────────────────────
+    socket.on('send_friend_request', (data) => {
+      console.log(`[FriendRequest] Envio de ${data.senderName} para ${data.targetName || data.targetUserId}`);
+      const requestId = data.id || `fr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const payload = {
+        id: requestId,
+        senderId: data.senderId || socket.id,
+        senderName: data.senderName,
+        senderTag: data.senderTag || '0000',
+        senderAvatarUrl: data.senderAvatarUrl || null,
+        timestamp: Date.now(),
+      };
+
+      const targetIdClean = (data.targetUserId || '').trim();
+      const targetNameClean = (data.targetName || '').trim().toLowerCase();
+      const targetTagClean = (data.targetTag || '').replace('#', '').trim().toLowerCase();
+
+      let delivered = false;
+
+      for (const [targetSocketId, s] of io.sockets.sockets) {
+        if (targetSocketId === socket.id) continue;
+        const sUser = s.data.user;
+        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sPersistentId = s.data.persistentId;
+        const sTag = (sUser?.tag || '').replace('#', '').trim().toLowerCase();
+
+        const matchId = Boolean(
+          targetIdClean && (
+            targetSocketId === targetIdClean || 
+            sUser?.id === targetIdClean || 
+            sPersistentId === targetIdClean
+          )
+        );
+        const matchName = Boolean(
+          targetNameClean && sName && (
+            sName === targetNameClean || 
+            (targetTagClean && sTag && sName === targetNameClean && sTag === targetTagClean)
+          )
+        );
+
+        if (matchId || matchName) {
+          s.emit('receive_friend_request', payload);
+          delivered = true;
+          console.log(`[FriendRequest] Entregue para socket global ${targetSocketId} (${sUser?.name})`);
+        }
+      }
+
+      // Se não entregou ou se está na mesma sala, garantir entrega para membros da sala
+      const room = getCurrentRoom();
+      if (room && !delivered) {
+        for (const [memberSocketId, memberUser] of room.users) {
+          if (memberSocketId === socket.id) continue;
+          const mName = (memberUser.name || '').trim().toLowerCase();
+          const matchId = Boolean(
+            targetIdClean && (
+              memberSocketId === targetIdClean || 
+              memberUser.id === targetIdClean || 
+              memberUser.persistentId === targetIdClean
+            )
+          );
+          const matchName = Boolean(targetNameClean && mName && mName === targetNameClean);
+
+          if (matchId || matchName) {
+            io.to(memberSocketId).emit('receive_friend_request', payload);
+            delivered = true;
+            console.log(`[FriendRequest] Entregue para membro da sala ${memberSocketId} (${memberUser.name})`);
+          }
+        }
+      }
+    });
+
+    socket.on('respond_friend_request', (data) => {
+      console.log(`[FriendRequest] Resposta de ${data.responderName}: ${data.action} para ${data.targetName || data.targetUserId}`);
+      const targetIdClean = (data.targetUserId || '').trim();
+      const targetNameClean = (data.targetName || '').trim().toLowerCase();
+
+      for (const [targetSocketId, s] of io.sockets.sockets) {
+        if (targetSocketId === socket.id) continue;
+        const sUser = s.data.user;
+        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sPersistentId = s.data.persistentId;
+
+        const matchId = Boolean(
+          targetIdClean && (
+            targetSocketId === targetIdClean || 
+            sUser?.id === targetIdClean || 
+            sPersistentId === targetIdClean
+          )
+        );
+        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+
+        if (matchId || matchName) {
+          s.emit('friend_request_response', {
+            action: data.action,
+            responderId: data.responderId || socket.id,
+            responderName: data.responderName,
+            responderTag: data.responderTag,
+            responderAvatarUrl: data.responderAvatarUrl,
+          });
+          console.log(`[FriendRequest] Resposta enviada para socket ${targetSocketId}`);
+        }
+      }
+    });
+
+    socket.on('cancel_friend_request', (data) => {
+      console.log(`[FriendRequest] Cancelamento de ${data.senderName} para ${data.targetName || data.targetUserId}`);
+      const targetIdClean = (data.targetUserId || '').trim();
+      const targetNameClean = (data.targetName || '').trim().toLowerCase();
+
+      for (const [targetSocketId, s] of io.sockets.sockets) {
+        if (targetSocketId === socket.id) continue;
+        const sUser = s.data.user;
+        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sPersistentId = s.data.persistentId;
+
+        const matchId = Boolean(
+          targetIdClean && (
+            targetSocketId === targetIdClean || 
+            sUser?.id === targetIdClean || 
+            sPersistentId === targetIdClean
+          )
+        );
+        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+
+        if (matchId || matchName) {
+          s.emit('friend_request_cancelled', {
+            senderId: data.senderId || socket.id,
+            senderName: data.senderName,
+          });
+          console.log(`[FriendRequest] Cancelamento enviado para socket ${targetSocketId}`);
+        }
       }
     });
 

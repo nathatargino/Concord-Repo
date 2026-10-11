@@ -16,6 +16,7 @@ export interface UserInfo {
   callMuted: boolean;
   role?: 'owner' | 'sub_owner' | 'member';
   customRole?: CustomRole | null;
+  tag?: string;
 }
 
 export interface ServerChannel {

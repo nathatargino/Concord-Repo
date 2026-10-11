@@ -48,7 +48,7 @@ declare global {
             getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
             selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
             /** Native Windows Notifications */
-            showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) => void;
+            showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) => void;
             openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
             cancelGoogleAuth?: () => void;
             saveSecureToken?: (key: string, value: string) => Promise<boolean>;
@@ -135,7 +135,7 @@ contextBridge.exposeInMainWorld('electron', {
     navigateToTitle: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
-    showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null }) =>
+    showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) =>
         ipcRenderer.send('show-chat-notification', options),
     openGoogleAuth: (url: string) => ipcRenderer.invoke('open-google-auth', url),
     cancelGoogleAuth: () => ipcRenderer.send('cancel-google-auth'),

@@ -1,7 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import styles from './UserProfileModal.module.css';
-import { supabase, sendFriendRequestToSupabase, cancelFriendRequestInSupabase, fetchFriendsFromSupabase, blockUserInSupabase, unblockUserInSupabase } from '../lib/supabase';
+import { 
+  supabase, 
+  sendFriendRequestToSupabase, 
+  cancelFriendRequestInSupabase, 
+  fetchFriendsFromSupabase, 
+  blockUserInSupabase, 
+  unblockUserInSupabase,
+  getOrCreateDirectChatInSupabase
+} from '../lib/supabase';
 import { useAppStore, type UserProfileData } from '../stores/useAppStore';
 import toast from 'react-hot-toast';
 
@@ -11,7 +20,8 @@ interface Props {
 }
 
 export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
-  const { myAvatarUrl, myName, friends, setFriends } = useAppStore();
+  const navigate = useNavigate();
+  const { myAvatarUrl, myName, friends, setFriends, showConfirmModal, setActiveDmChat, setHomeTab, setActiveRailContext } = useAppStore();
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [memberSince, setMemberSince] = useState<string | null>(null);
   const [fetchedAvatar, setFetchedAvatar] = useState<string | null>(null);
@@ -215,21 +225,62 @@ export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
     }
   };
 
-  const handleToggleBlock = async () => {
+  const handleOpenDirectMessage = async () => {
     if (isMe) return;
     try {
-      if (isBlocked) {
-        await unblockUserInSupabase(friendRelation?.id || user.id);
-        toast.success(`${user.name || 'Usuário'} foi desbloqueado.`);
+      const tagClean = customTag || (user.tag ? user.tag.replace('#', '') : '');
+      const chat = await getOrCreateDirectChatInSupabase(
+        user.id,
+        user.name,
+        effectiveAvatar,
+        tagClean || undefined
+      );
+      if (chat) {
+        setActiveDmChat(chat);
+        setHomeTab('dm');
+        setActiveRailContext('home');
+        onClose();
+        navigate('/home');
       } else {
-        if (!window.confirm(`Tem certeza que deseja bloquear ${user.name || 'este usuário'}?`)) return;
-        await blockUserInSupabase(user.id, user.name);
-        toast.success(`${user.name || 'Usuário'} foi bloqueado.`);
+        toast.error('Não foi possível abrir a mensagem direta.');
       }
-      const updated = await fetchFriendsFromSupabase();
-      setFriends(updated);
     } catch {
-      toast.error('Erro ao processar bloqueio.');
+      toast.error('Erro ao abrir conversa direta.');
+    }
+  };
+
+  const handleToggleBlock = () => {
+    if (isMe) return;
+    if (isBlocked) {
+      (async () => {
+        try {
+          await unblockUserInSupabase(friendRelation?.id || user.id);
+          toast.success(`${user.name || 'Usuário'} foi desbloqueado.`);
+          const updated = await fetchFriendsFromSupabase();
+          setFriends(updated);
+        } catch {
+          toast.error('Erro ao processar desbloqueio.');
+        }
+      })();
+    } else {
+      showConfirmModal({
+        title: 'Bloquear Usuário',
+        message: `Deseja realmente bloquear ${user.name || 'este usuário'}?`,
+        subMessage: 'Você deixará de receber chamadas, convites e mensagens diretas deste usuário.',
+        confirmText: 'Bloquear',
+        cancelText: 'Cancelar',
+        isDanger: true,
+        onConfirm: async () => {
+          try {
+            await blockUserInSupabase(user.id, user.name);
+            toast.success(`${user.name || 'Usuário'} foi bloqueado.`);
+            const updated = await fetchFriendsFromSupabase();
+            setFriends(updated);
+          } catch {
+            toast.error('Erro ao processar bloqueio.');
+          }
+        },
+      });
     }
   };
 
@@ -358,6 +409,19 @@ export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
                 </span>
               </div>
             </div>
+
+            {/* Botão de Mensagem Direta */}
+            {!isMe && !isBlocked && (
+              <button
+                type="button"
+                className={styles.directMessageBtn}
+                onClick={handleOpenDirectMessage}
+                title={`Conversar em privado com ${user.name || 'usuário'}`}
+              >
+                <i className="fa-solid fa-message" />
+                <span>Mensagem Direta</span>
+              </button>
+            )}
 
             {/* Botão de Pedido de Amizade */}
             {!isMe && !isBlocked && (

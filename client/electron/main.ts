@@ -1077,18 +1077,21 @@ ipcMain.on('show-chat-notification', async (_event, data: {
     message: string;
     avatarUrl?: string | null;
     sentAt?: number;
+    forceShow?: boolean;
 }) => {
     try {
-        // Ignorar mensagens antigas que foram enviadas antes do Concord ser aberto
-        if (typeof data.sentAt === 'number' && data.sentAt > 0 && data.sentAt < appStartTime) {
-            return;
-        }
-
-        // Se a janela principal estiver visível, em foco e não minimizada, NÃO disparar notificação nativa
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            const isFocused = mainWindow.isFocused() && !mainWindow.isMinimized() && mainWindow.isVisible();
-            if (isFocused) {
+        if (!data.forceShow) {
+            // Ignorar mensagens antigas que foram enviadas antes do Concord ser aberto
+            if (typeof data.sentAt === 'number' && data.sentAt > 0 && data.sentAt < appStartTime) {
                 return;
+            }
+
+            // Se a janela principal estiver visível, em foco e não minimizada, NÃO disparar notificação nativa
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                const isFocused = mainWindow.isFocused() && !mainWindow.isMinimized() && mainWindow.isVisible();
+                if (isFocused) {
+                    return;
+                }
             }
         }
 
