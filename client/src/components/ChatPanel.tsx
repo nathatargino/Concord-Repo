@@ -303,6 +303,18 @@ export function ChatPanel({
     );
   }, [isDmMode, activeDmChat, friends]);
 
+  const isPartnerFriend = useMemo(() => {
+    if (!isDmMode || !activeDmChat) return true;
+    const pId = activeDmChat.partnerId;
+    const pName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').toLowerCase();
+    return friends.some(f => 
+      f.status === 'accepted' && (
+        (pId && (f.friendId === pId || f.userId === pId)) ||
+        (pName && cleanDisplayName(f.friendName || (f as any).userName || '').toLowerCase() === pName)
+      )
+    );
+  }, [isDmMode, activeDmChat, friends]);
+
   const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
     const authorName = myName || 'Eu';
     useAppStore.getState().toggleMessageReaction(messageId, emoji, authorName);
@@ -648,11 +660,22 @@ export function ChatPanel({
     loadDms();
     const timer = setInterval(loadDms, 3000);
 
-    // Escutar novas mensagens de DM recebidas via Socket.IO em tempo real
     const handleNewDmMessage = (e: any) => {
       const newMsg = e.detail;
       if (!newMsg || !isMounted) return;
-      if (newMsg.chatId === activeDmChat.id || newMsg.senderId === activeDmChat.partnerId || newMsg.senderName?.toLowerCase() === activeDmChat.partnerName?.toLowerCase()) {
+      const msgSenderClean = cleanDisplayName(newMsg.senderName || '').toLowerCase();
+      const chatPartnerClean = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').toLowerCase();
+      const myClean = cleanDisplayName(myName || '').toLowerCase();
+      const isTargetMe = newMsg.targetName ? cleanDisplayName(newMsg.targetName).toLowerCase() === myClean : true;
+      const isSenderPartner = msgSenderClean === chatPartnerClean;
+      const matchesChat = Boolean(
+        newMsg.chatId === activeDmChat.id ||
+        (newMsg.senderId && activeDmChat.partnerId && newMsg.senderId === activeDmChat.partnerId) ||
+        (isSenderPartner && isTargetMe) ||
+        (msgSenderClean === myClean && cleanDisplayName(newMsg.targetName || '').toLowerCase() === chatPartnerClean)
+      );
+
+      if (matchesChat) {
         setDmMessages((prev) => {
           if (prev.some(m => m.id === newMsg.id || (m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 2000))) {
             return prev;
@@ -1109,7 +1132,7 @@ export function ChatPanel({
         channelId: activeDmChat.id,
         avatarUrl: dm.avatarUrl || (dm as any).avatar_url || (dm as any).sender_avatar || undefined,
         reactions: (dm as any).reactions || {},
-        isSystem: false,
+        isSystem: dm.msgType === 'system_error' || dm.senderId === 'system',
       }));
     }
 
@@ -1225,6 +1248,36 @@ export function ChatPanel({
     if (isDmMode && activeDmChat) {
       if (isPartnerBlocked) {
         toast.error('Você não pode enviar mensagens diretas para um usuário bloqueado.');
+        return;
+      }
+      if (!isPartnerFriend) {
+        toast.error('Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.', {
+          id: 'dm-not-friend-warning',
+          duration: 5000,
+          icon: '⛔',
+          style: {
+            background: '#dc2626',
+            color: '#ffffff',
+            fontWeight: 600,
+            fontSize: '14px',
+            borderRadius: '10px',
+            boxShadow: '0 8px 30px rgba(220, 38, 38, 0.5)',
+            border: '1px solid #ef4444',
+            padding: '12px 18px',
+          },
+        });
+
+        const errorMsg: DirectMessage = {
+          id: `sys-err-${Date.now()}`,
+          chatId: activeDmChat.id,
+          senderId: 'system',
+          senderName: 'Sistema',
+          avatarUrl: null,
+          content: 'Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.',
+          msgType: 'system_error' as any,
+          createdAt: new Date().toISOString(),
+        };
+        setDmMessages(prev => [...prev, errorMsg]);
         return;
       }
       let fileUrl = '';
@@ -1410,7 +1463,7 @@ export function ChatPanel({
       }
       onSendMessage?.(msgText, 'text', undefined, undefined, currentChannel, myAvatarUrl);
     }
-  }, [input, stagedFile, replyingTo, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, addMessage]);
+  }, [input, stagedFile, replyingTo, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage]);
 
 
   const stageFile = (file: File) => {
@@ -1865,7 +1918,12 @@ export function ChatPanel({
                       }}
                     >
                       {isSystemMsg ? (
-                        systemNotificationsEnabled ? (
+                        msg.type === 'system_error' ? (
+                          <div className={styles.systemErrorMessage}>
+                            <span className={styles.systemMessageIcon}>⛔</span>
+                            <span>{msg.message}</span>
+                          </div>
+                        ) : systemNotificationsEnabled ? (
                           <div className={styles.systemMessage}>
                             {!/^(\p{Emoji_Presentation}|\p{Extended_Pictographic})/u.test(msg.message) && (
                               <span className={styles.systemMessageIcon}>⚙️</span>

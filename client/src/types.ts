@@ -62,7 +62,7 @@ export interface ChatMessage {
   message: string;
   timestamp: string;
   isSystem?: boolean;
-  type?: 'text' | 'image' | 'giphy' | 'file' | 'system';
+  type?: 'text' | 'image' | 'giphy' | 'file' | 'system' | 'system_error';
   url?: string;
   filename?: string;
   channelId?: string;

@@ -188,7 +188,7 @@ export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
     }
     setIsSendingRequest(true);
     try {
-      const tagClean = customTag || (user.tag ? user.tag.replace('#', '') : '');
+      const tagClean = (effectiveTag && effectiveTag !== '0000') ? effectiveTag : (customTag || (user.tag ? user.tag.replace('#', '') : ''));
       const identifier = tagClean ? `${user.name}#${tagClean}` : (user.name || '');
       const res = await sendFriendRequestToSupabase(identifier, user.id);
       if (res.success) {

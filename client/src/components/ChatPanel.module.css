@@ -283,6 +283,33 @@
   box-shadow: 0 2px 8px rgba(124, 58, 237, 0.08);
 }
 
+.systemErrorMessage {
+  background: rgba(220, 38, 38, 0.22);
+  border: 1px solid rgba(239, 68, 68, 0.55);
+  border-left: 3px solid #ef4444;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fecaca;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: slideUpFade 0.25s ease-out;
+}
+
+:global([data-theme="light"]) .systemErrorMessage {
+  background: rgba(254, 242, 242, 0.98);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-left: 3px solid #dc2626;
+  color: #b91c1c;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.15);
+}
+
 .systemMessageIcon {
   font-size: 13px;
   display: inline-flex;

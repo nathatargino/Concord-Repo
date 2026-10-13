@@ -60,6 +60,7 @@ const rooms = new Map<string, RoomState>();
 const codeToRoomId = new Map<string, string>(); // reverse lookup
 const screenViewersMap = new Map<string, Map<string, string>>(); // broadcasterId -> (viewerSocketId -> viewerName)
 const pendingFriendRequests = new Map<string, any[]>(); // targetIdentifier -> list of pending request payloads
+const pendingDirectMessages = new Map<string, any[]>(); // targetIdentifier -> list of pending DM payloads
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -534,6 +535,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         user.avatarUrl = effectiveAvatar;
       }
       room.users.set(socket.id, user);
+      socket.data.user = user;
 
       if (room.isServer) {
         if (!room.knownMembers) room.knownMembers = new Map();
@@ -674,6 +676,15 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           }
           pendingFriendRequests.delete(k);
         }
+
+        const pendingDms = pendingDirectMessages.get(k);
+        if (pendingDms && pendingDms.length > 0) {
+          for (const dm of pendingDms) {
+            socket.emit('receive_direct_message', dm);
+            console.log(`[DM] Entregue mensagem direta acumulada para ${trimmed} (chave ${k})`);
+          }
+          pendingDirectMessages.delete(k);
+        }
       }
 
       if (room) {
@@ -757,7 +768,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
-        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sName = (sUser?.name || '').trim().toLowerCase().replace(/^@/, '');
         const sPersistentId = s.data.persistentId;
         const sUserId = s.data.userId;
         const sTag = (sUser?.tag || '').replace('#', '').trim().toLowerCase();
@@ -766,8 +777,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           targetIdClean && (
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
-            sPersistentId === targetIdClean ||
-            sUserId === targetIdClean
+            sPersistentId === targetIdClean || 
+            sUserId === targetIdClean ||
+            s.id === targetIdClean
           )
         );
         const matchName = Boolean(
@@ -776,7 +788,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             (targetTagClean && sTag && sName === targetNameClean && sTag === targetTagClean) ||
             (!targetTagClean && sName === targetNameClean) ||
             (targetTagClean === '0000' && sName === targetNameClean) ||
-            (sTag === '0000' && sName === targetNameClean)
+            (sTag === '0000' && sName === targetNameClean) ||
+            sName.includes(targetNameClean) ||
+            targetNameClean.includes(sName)
           )
         );
 
@@ -828,7 +842,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
-        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sName = (sUser?.name || '').trim().toLowerCase().replace(/^@/, '');
         const sPersistentId = s.data.persistentId;
         const sUserId = s.data.userId;
 
@@ -837,10 +851,17 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
             sPersistentId === targetIdClean ||
-            sUserId === targetIdClean
+            sUserId === targetIdClean ||
+            s.id === targetIdClean
           )
         );
-        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+        const matchName = Boolean(
+          targetNameClean && sName && (
+            sName === targetNameClean ||
+            sName.includes(targetNameClean) ||
+            targetNameClean.includes(sName)
+          )
+        );
 
         if (matchId || matchName) {
           s.emit('friend_request_response', {
@@ -872,7 +893,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
-        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sName = (sUser?.name || '').trim().toLowerCase().replace(/^@/, '');
         const sPersistentId = s.data.persistentId;
         const sUserId = s.data.userId;
 
@@ -881,10 +902,17 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
             sPersistentId === targetIdClean ||
-            sUserId === targetIdClean
+            sUserId === targetIdClean ||
+            s.id === targetIdClean
           )
         );
-        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+        const matchName = Boolean(
+          targetNameClean && sName && (
+            sName === targetNameClean ||
+            sName.includes(targetNameClean) ||
+            targetNameClean.includes(sName)
+          )
+        );
 
         if (matchId || matchName) {
           s.emit('friend_request_cancelled', {
@@ -918,10 +946,12 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (targetNameClean.startsWith('@')) targetNameClean = targetNameClean.substring(1).trim();
       if (targetNameClean.includes('#')) targetNameClean = targetNameClean.split('#')[0].trim();
 
+      let delivered = false;
+
       for (const [targetSocketId, s] of io.sockets.sockets) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
-        const sName = (sUser?.name || '').trim().toLowerCase();
+        const sName = (sUser?.name || '').trim().toLowerCase().replace(/^@/, '');
         const sPersistentId = s.data.persistentId;
         const sUserId = s.data.userId;
 
@@ -929,15 +959,35 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           targetIdClean && (
             targetSocketId === targetIdClean || 
             sUser?.id === targetIdClean || 
-            sPersistentId === targetIdClean ||
-            sUserId === targetIdClean
+            sPersistentId === targetIdClean || 
+            sUserId === targetIdClean ||
+            s.id === targetIdClean
           )
         );
-        const matchName = Boolean(targetNameClean && sName && sName === targetNameClean);
+        const matchName = Boolean(
+          targetNameClean && sName && (
+            sName === targetNameClean ||
+            sName.includes(targetNameClean) ||
+            targetNameClean.includes(sName)
+          )
+        );
 
         if (matchId || matchName) {
           s.emit('receive_direct_message', payload);
+          delivered = true;
           console.log(`[DM] Entregue para socket destinatario ${targetSocketId} (${sUser?.name})`);
+        }
+      }
+
+      // Se não foi entregue imediatamente em tempo real, enfileirar para entrega garantida
+      if (!delivered) {
+        const pendingKeys = [targetNameClean];
+        if (targetIdClean) pendingKeys.push(targetIdClean);
+        for (const k of pendingKeys) {
+          if (!k) continue;
+          const existing = pendingDirectMessages.get(k) || [];
+          existing.push(payload);
+          pendingDirectMessages.set(k, existing);
         }
       }
 

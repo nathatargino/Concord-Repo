@@ -9,8 +9,10 @@ import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
 import { useAudioStore } from './stores/useAudioStore';
 import { supabase, saveMyServer, saveRecentRoom, findRoomInSupabase, isUuid, syncProfileAfterAuth, syncCloudUserData, getOrCreatePersistentId, getSavedUsername, saveUsername, fetchDirectChatsFromSupabase, joinServerInSupabase, ensureSupabaseSessionRestored } from './lib/supabase';
+import { initSocialRealtime } from './lib/socialRealtime';
+import { applyTheme } from './utils/theme';
 import type { UserInfo } from './types';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 
 import { LoginModal } from './components/LoginModal';
 import { Sidebar } from './components/Sidebar';
@@ -175,6 +177,9 @@ export default function App() {
             if (!(access_token && refresh_token) && !code) return;
 
             const handleAuthenticatedUser = async (user: any) => {
+              try {
+                localStorage.setItem('concord_user_id', user.id);
+              } catch {}
               const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
               await syncCloudUserData(user.id);
               const pid = getOrCreatePersistentId();
@@ -264,6 +269,11 @@ export default function App() {
       const { ytVol, callMuted } = useAudioStore.getState();
       electron.setStreamingVolume(callMuted ? 0 : ytVol);
     }
+  }, []);
+
+  // Inicializa o canal de presenca e notificacoes sociais em tempo real (Supabase + Socket)
+  useEffect(() => {
+    initSocialRealtime();
   }, []);
 
   // Sync YT mute when PiP toggles
@@ -507,6 +517,14 @@ export default function App() {
                 }
               }
             }
+            if (prefs.concord_theme === 'light') {
+              applyTheme('light');
+            } else {
+              const current = localStorage.getItem('concord_theme');
+              if (current !== 'light') {
+                applyTheme('dark');
+              }
+            }
           }
         } catch {}
       }
@@ -520,6 +538,9 @@ export default function App() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
+          try {
+            localStorage.setItem('concord_user_id', user.id);
+          } catch {}
           const { username: finalName, avatarUrl: finalAvatar } = await syncProfileAfterAuth(user);
           await syncCloudUserData(user.id);
           await store.refreshServers();
@@ -560,7 +581,8 @@ export default function App() {
     if (store.myName) {
       const pid = getOrCreatePersistentId();
       const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
-      socket.emit('set_username', store.myName, store.myAvatarUrl || null, tag, pid);
+      const uid = localStorage.getItem('concord_user_id') || undefined;
+      socket.emit('set_username', store.myName, store.myAvatarUrl || null, tag, pid, uid);
     }
   }, [store.myName, store.myAvatarUrl, store.myTag]);
 
@@ -591,7 +613,8 @@ export default function App() {
     saveUsername(name);
     const pid = getOrCreatePersistentId();
     const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
-    socket.emit('set_username', name, store.myAvatarUrl || null, tag, pid);
+    const uid = localStorage.getItem('concord_user_id') || undefined;
+    socket.emit('set_username', name, store.myAvatarUrl || null, tag, pid, uid);
     setLoginError('');
     setShowLogin(false);
   };
@@ -743,7 +766,8 @@ export default function App() {
           onUpdateProfile={(name, avatarUrl) => {
             const pid = getOrCreatePersistentId();
             const tag = store.myTag || localStorage.getItem('concord_user_tag') || '0000';
-            socket.emit('set_username', name, avatarUrl, tag, pid);
+            const uid = localStorage.getItem('concord_user_id') || undefined;
+            socket.emit('set_username', name, avatarUrl, tag, pid, uid);
             socket.emit('update_avatar', avatarUrl);
           }}
           onAdminAction={(action, targetId) => {
@@ -865,6 +889,34 @@ export default function App() {
           }}
         />
       )}
+
+      {/* ── NOTIFICAÇÕES TOAST DO SISTEMA (QUE SOBEM DA PARTE INFERIOR) ── */}
+      <Toaster
+        position="bottom-center"
+        toastOptions={{
+          style: {
+            background: 'var(--bg-elevated, #1A1A28)',
+            color: 'var(--text-primary, #EEF0FF)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '10px',
+            fontSize: '14px',
+            boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+          },
+          error: {
+            style: {
+              background: '#dc2626',
+              color: '#ffffff',
+              fontWeight: 600,
+              border: '1px solid #b91c1c',
+              boxShadow: '0 8px 30px rgba(220, 38, 38, 0.5)',
+            },
+            iconTheme: {
+              primary: '#ffffff',
+              secondary: '#dc2626',
+            },
+          },
+        }}
+      />
     </div>
   );
 }

@@ -5,17 +5,20 @@ const THEME_KEY = 'concord_theme';
 export function getStoredTheme(): ThemeMode {
   try {
     const val = localStorage.getItem(THEME_KEY);
-    if (val === 'light' || val === 'dark') return val;
+    if (val === 'light') return 'light';
   } catch {}
   return 'dark';
 }
 
 export function applyTheme(theme: ThemeMode) {
   try {
-    localStorage.setItem(THEME_KEY, theme);
-    document.documentElement.setAttribute('data-theme', theme);
-    document.body.setAttribute('data-theme', theme);
-    window.dispatchEvent(new CustomEvent('concord:theme-changed', { detail: { theme } }));
+    const effectiveTheme: ThemeMode = theme === 'light' ? 'light' : 'dark';
+    localStorage.setItem(THEME_KEY, effectiveTheme);
+    document.documentElement.setAttribute('data-theme', effectiveTheme);
+    if (document.body) {
+      document.body.setAttribute('data-theme', effectiveTheme);
+    }
+    window.dispatchEvent(new CustomEvent('concord:theme-changed', { detail: { theme: effectiveTheme } }));
   } catch (err) {
     console.warn('Error applying theme:', err);
   }

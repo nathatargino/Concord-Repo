@@ -364,7 +364,12 @@ export const HomeHub: React.FC = () => {
   const handleStartDm = async (friend: Friend) => {
     try {
       const targetId = friend.friendId || friend.userId;
-      const chat = await getOrCreateDirectChatInSupabase(targetId);
+      const chat = await getOrCreateDirectChatInSupabase(
+        targetId,
+        friend.friendName,
+        friend.friendAvatarUrl,
+        friend.friendTag
+      );
       if (chat) {
         setActiveDmChat(chat);
         setHomeTab('dm');

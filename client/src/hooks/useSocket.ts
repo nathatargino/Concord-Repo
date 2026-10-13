@@ -4,10 +4,15 @@ import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
-import { showNativeChatNotification, showNativeFriendRequestNotification } from '../utils/nativeNotification';
-import { playChimeSound } from './useAudio';
+import { showNativeChatNotification } from '../utils/nativeNotification';
 import { notifyInChat } from '../utils/systemMessage';
-import { getOrCreatePersistentId, getSavedUsername, type Friend } from '../lib/supabase';
+import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
+import {
+  handleIncomingFriendRequest,
+  handleIncomingFriendResponse,
+  handleIncomingFriendCancelled,
+  handleIncomingDirectMessage,
+} from '../lib/socialRealtime';
 import type { ChatMessage, MusicItem, RoomInfo, ServerChannel, UserInfo, WatchSession } from '../types';
 
 // We re-declare minimal event interfaces here to avoid importing server types
@@ -283,175 +288,24 @@ export function useSocket(callbacks: SocketCallbacks) {
     // ─── NOTIFICAÇÕES E SOLICITAÇÕES DE AMIZADE EM TEMPO REAL ─────────
     socket.on('receive_friend_request' as any, (data: any) => {
       console.log('[Socket] receive_friend_request:', data);
-      const myId = socket.id || useAppStore.getState().myId;
-
-      const newFriend: Friend = {
-        id: data.id || `fr-${Date.now()}`,
-        userId: myId,
-        friendId: data.senderId,
-        friendName: data.senderName,
-        friendAvatarUrl: data.senderAvatarUrl || null,
-        friendTag: data.senderTag || '0000',
-        status: 'pending',
-        isIncomingRequest: true,
-        onlineStatus: 'online',
-      };
-
-      const currentFriends = useAppStore.getState().friends || [];
-      const matchIndex = currentFriends.findIndex(f => 
-        f.id === newFriend.id || 
-        (f.friendId && f.friendId === newFriend.friendId) ||
-        (f.friendName && f.friendName.trim().toLowerCase() === newFriend.friendName.trim().toLowerCase())
-      );
-
-      let updated: Friend[];
-      if (matchIndex >= 0) {
-        updated = [...currentFriends];
-        updated[matchIndex] = {
-          ...updated[matchIndex],
-          ...newFriend,
-          isIncomingRequest: true,
-          status: 'pending',
-          onlineStatus: 'online',
-        };
-      } else {
-        updated = [newFriend, ...currentFriends];
-      }
-
-      useAppStore.getState().setFriends(updated);
-      try {
-        localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
-      } catch {}
-
-      playChimeSound();
-      toast(`Nova solicitação de amizade de ${data.senderName}!`, {
-        icon: '👋',
-        duration: 6000,
-      });
-
-      showNativeFriendRequestNotification(data.senderName, data.senderAvatarUrl);
-      window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+      handleIncomingFriendRequest(data);
     });
 
     socket.on('friend_request_response' as any, (data: any) => {
       console.log('[Socket] friend_request_response:', data);
-      const currentFriends = useAppStore.getState().friends || [];
-
-      if (data.action === 'accept') {
-        let updated = currentFriends.map(f => {
-          if (
-            (data.responderId && (f.friendId === data.responderId || f.userId === data.responderId)) ||
-            (data.responderName && f.friendName?.trim().toLowerCase() === data.responderName.trim().toLowerCase())
-          ) {
-            return { ...f, status: 'accepted' as const, onlineStatus: 'online' as const };
-          }
-          return f;
-        });
-
-        const found = updated.some(f => f.friendName?.trim().toLowerCase() === data.responderName?.trim().toLowerCase());
-        if (!found) {
-          updated = [{
-            id: `accepted-${Date.now()}`,
-            userId: socket.id || useAppStore.getState().myId,
-            friendId: data.responderId,
-            friendName: data.responderName,
-            friendAvatarUrl: data.responderAvatarUrl || null,
-            friendTag: data.responderTag || '0000',
-            status: 'accepted',
-            onlineStatus: 'online',
-          }, ...updated];
-        }
-
-        useAppStore.getState().setFriends(updated);
-        try {
-          localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
-        } catch {}
-
-        toast.success(`${data.responderName} aceitou seu pedido de amizade! 🎉`, {
-          duration: 6000,
-        });
-
-        showNativeFriendRequestNotification(data.responderName, data.responderAvatarUrl, `${data.responderName} aceitou sua solicitação de amizade!`);
-        window.dispatchEvent(new CustomEvent('concord:friends-updated'));
-      } else if (data.action === 'decline') {
-        const updated = currentFriends.filter(f => 
-          !(
-            (data.responderId && (f.friendId === data.responderId || f.userId === data.responderId)) ||
-            (data.responderName && f.friendName?.trim().toLowerCase() === data.responderName.trim().toLowerCase())
-          )
-        );
-        useAppStore.getState().setFriends(updated);
-        try {
-          localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
-        } catch {}
-        window.dispatchEvent(new CustomEvent('concord:friends-updated'));
-      }
+      handleIncomingFriendResponse(data);
     });
 
     socket.on('friend_request_cancelled' as any, (data: any) => {
       console.log('[Socket] friend_request_cancelled:', data);
-      const currentFriends = useAppStore.getState().friends || [];
-      const updated = currentFriends.filter(f => 
-        !(
-          (data.senderId && (f.friendId === data.senderId || f.userId === data.senderId)) ||
-          (data.senderName && f.friendName?.trim().toLowerCase() === data.senderName.trim().toLowerCase())
-        )
-      );
-      useAppStore.getState().setFriends(updated);
-      try {
-        localStorage.setItem('concord_mock_friends', JSON.stringify(updated));
-      } catch {}
-      window.dispatchEvent(new CustomEvent('concord:friends-updated'));
+      handleIncomingFriendCancelled(data);
     });
 
     socket.on('receive_direct_message' as any, (data: any) => {
       console.log('[Socket] receive_direct_message:', data);
-      const isFromMe = data.senderId === socket.id || data.senderName === useAppStore.getState().myName;
-
-      try {
-        const raw = localStorage.getItem(`concord_dm_${data.chatId}`);
-        const list = raw ? JSON.parse(raw) : [];
-        if (!list.some((m: any) => m.id === data.id || (m.content === data.content && m.senderName === data.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(data.createdAt).getTime()) < 2000))) {
-          list.push(data);
-          localStorage.setItem(`concord_dm_${data.chatId}`, JSON.stringify(list));
-        }
-      } catch {}
-
-      // Assegurar que o chat exista na lista de conversas diretas
-      try {
-        const rawChats = localStorage.getItem('concord_direct_chats');
-        const chatList = rawChats ? JSON.parse(rawChats) : [];
-        const partnerNameClean = isFromMe ? undefined : data.senderName;
-        const exists = chatList.some((c: any) => c.id === data.chatId || (partnerNameClean && c.partnerName?.toLowerCase() === partnerNameClean.toLowerCase()));
-        if (!exists && partnerNameClean) {
-          const newChat = {
-            id: data.chatId,
-            partnerId: data.senderId,
-            partnerName: partnerNameClean,
-            partnerAvatarUrl: data.senderAvatarUrl || null,
-            partnerTag: '0000',
-            updatedAt: data.createdAt || new Date().toISOString(),
-          };
-          chatList.unshift(newChat);
-          localStorage.setItem('concord_direct_chats', JSON.stringify(chatList));
-          useAppStore.getState().setDirectChats(chatList);
-          window.dispatchEvent(new CustomEvent('concord:direct-chats-updated'));
-        }
-      } catch {}
-
-      window.dispatchEvent(new CustomEvent('concord:new-dm-message', { detail: data }));
-
-      if (!isFromMe) {
-        showNativeChatNotification({
-          userName: data.senderName,
-          message: data.content,
-          roomName: 'Mensagem Direta',
-          avatarUrl: data.senderAvatarUrl,
-          sentAt: Date.now(),
-        });
-        playChimeSound();
-      }
+      handleIncomingDirectMessage(data);
     });
+
 
     socket.on('member_custom_role_updated' as any, (data: any) => {
       const myId = socket.id || useAppStore.getState().myId;
@@ -777,6 +631,20 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('receive_offer', (senderId, offer) => {
+      if ((offer as any)?.type === 'concord_system_event') {
+        const sysEvent = (offer as any).event;
+        const payload = (offer as any).payload;
+        if (sysEvent === 'receive_friend_request') {
+          handleIncomingFriendRequest(payload);
+        } else if (sysEvent === 'friend_request_response') {
+          handleIncomingFriendResponse(payload);
+        } else if (sysEvent === 'friend_request_cancelled') {
+          handleIncomingFriendCancelled(payload);
+        } else if (sysEvent === 'receive_direct_message') {
+          handleIncomingDirectMessage(payload);
+        }
+        return;
+      }
       callbacksRef.current.onReceiveOffer(senderId, offer);
     });
 
