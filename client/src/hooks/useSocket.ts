@@ -303,6 +303,9 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('receive_direct_message' as any, (data: any) => {
       console.log('[Socket] receive_direct_message:', data);
+      if (data && typeof data === 'object') {
+        data.__directSocketDelivery = true;
+      }
       handleIncomingDirectMessage(data);
     });
 
@@ -641,6 +644,9 @@ export function useSocket(callbacks: SocketCallbacks) {
         } else if (sysEvent === 'friend_request_cancelled') {
           handleIncomingFriendCancelled(payload);
         } else if (sysEvent === 'receive_direct_message') {
+          if (payload && typeof payload === 'object') {
+            payload.__directSocketDelivery = true;
+          }
           handleIncomingDirectMessage(payload);
         }
         return;

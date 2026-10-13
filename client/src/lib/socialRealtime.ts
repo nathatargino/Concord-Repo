@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { playChimeSound } from '../hooks/useAudio';
 import { showNativeChatNotification, showNativeFriendRequestNotification } from '../utils/nativeNotification';
 import type { Friend } from './supabase';
+import { isDmMuted } from './dmHelpers';
 
 const SOCIAL_CHANNEL_NAME = 'concord-global-social-v1';
 
@@ -284,9 +285,11 @@ export function handleIncomingDirectMessage(data: any) {
 
   const targetName = cleanName(data.targetName);
   const targetId = (data.targetUserId || '').trim();
+  const isDirectDelivery = Boolean(data.__directSocketDelivery);
 
   const isForMe = Boolean(
-    (targetName && myName && targetName === myName) ||
+    isDirectDelivery ||
+    (targetName && myName && (targetName === myName || targetName.includes(myName) || myName.includes(targetName))) ||
     (targetId && (targetId === myId || targetId === socketId || targetId === myPersistentId))
   );
 
@@ -341,26 +344,30 @@ export function handleIncomingDirectMessage(data: any) {
 
   window.dispatchEvent(new CustomEvent('concord:new-dm-message', { detail: data }));
 
-  showNativeChatNotification({
-    userName: data.senderName,
-    message: data.content,
-    roomName: 'Mensagem Direta',
-    avatarUrl: data.senderAvatarUrl,
-    sentAt: Date.now(),
-  });
-  playChimeSound();
-
-  const activeDmChat = store.activeDmChat;
-  const isAlreadyInThisDm = activeDmChat && (
-    activeDmChat.id === data.chatId ||
-    cleanName(activeDmChat.partnerName) === senderLower
-  );
-
-  if (!isAlreadyInThisDm) {
-    toast(`Nova mensagem de ${data.senderName}: ${data.content.slice(0, 35)}${data.content.length > 35 ? '...' : ''}`, {
-      icon: '💬',
-      duration: 5000,
+  // Se a conversa estiver silenciada, não emitir som, notificação nativa nem toast
+  const isMuted = isDmMuted(data.chatId, data.senderName);
+  if (!isMuted) {
+    showNativeChatNotification({
+      userName: data.senderName,
+      message: data.content,
+      roomName: 'Mensagem Direta',
+      avatarUrl: data.senderAvatarUrl,
+      sentAt: Date.now(),
     });
+    playChimeSound();
+
+    const activeDmChat = store.activeDmChat;
+    const isAlreadyInThisDm = activeDmChat && (
+      activeDmChat.id === data.chatId ||
+      cleanName(activeDmChat.partnerName) === senderLower
+    );
+
+    if (!isAlreadyInThisDm) {
+      toast(`Nova mensagem de ${data.senderName}: ${data.content.slice(0, 35)}${data.content.length > 35 ? '...' : ''}`, {
+        icon: '💬',
+        duration: 5000,
+      });
+    }
   }
 }
 
@@ -456,13 +463,27 @@ export function broadcastDirectMessage(payload: any) {
   }
 
   const sock = (window as any).__concord_socket;
-  if (sock && payload.targetUserId) {
+  if (sock) {
     try {
-      sock.emit('send_offer', payload.targetUserId, {
-        type: 'concord_system_event',
-        event: 'receive_direct_message',
-        payload,
-      });
+      sock.emit('send_direct_message', payload);
     } catch {}
+    if (payload.targetUserId) {
+      try {
+        sock.emit('send_offer', payload.targetUserId, {
+          type: 'concord_system_event',
+          event: 'receive_direct_message',
+          payload,
+        });
+      } catch {}
+    }
+    if (payload.targetName) {
+      try {
+        sock.emit('send_offer', payload.targetName, {
+          type: 'concord_system_event',
+          event: 'receive_direct_message',
+          payload,
+        });
+      } catch {}
+    }
   }
 }

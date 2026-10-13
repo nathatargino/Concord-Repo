@@ -1384,3 +1384,62 @@
   background: #e3e5e8 !important;
 }
 
+/* ─── Menu de Contexto de Mensagens Diretas (Sidebar) ─── */
+.dmContextMenuOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100002;
+  background: transparent;
+}
+
+.dmContextMenu {
+  position: fixed;
+  z-index: 100003;
+  background: #181924;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 210px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.12s ease-out;
+}
+
+.dmContextMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, color 0.12s;
+}
+
+.dmContextMenuItem:hover {
+  background: #5865f2;
+  color: #ffffff;
+}
+
+.dmContextMenuItemDanger {
+  color: #ef4444 !important;
+}
+
+.dmContextMenuItemDanger:hover {
+  background: rgba(239, 68, 68, 0.2) !important;
+  color: #fca5a5 !important;
+}
+
+.dmContextMenuDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
+}

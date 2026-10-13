@@ -1977,9 +1977,15 @@ export async function sendDirectMessageToSupabase(
   const currentName = cleanDisplayName(useAppStore.getState().myName || localStorage.getItem('concord_username') || 'Eu');
   const currentAvatar = useAppStore.getState().myAvatarUrl || null;
   const activeChat = useAppStore.getState().activeDmChat;
-  const partnerId = activeChat?.partnerId;
-  const partnerName = activeChat?.partnerName ? cleanDisplayName(activeChat.partnerName) : undefined;
+  const partnerId = activeChat?.partnerId || (activeChat as any)?.other_user_id;
+  const rawPartner = activeChat?.partnerName || (activeChat as any)?.other_user_name;
+  let partnerName = rawPartner ? cleanDisplayName(rawPartner) : undefined;
   const myNameLower = currentName.toLowerCase();
+  if (!partnerName && chatId.startsWith('dm-pair-')) {
+    const parts = chatId.replace('dm-pair-', '').split('__');
+    const matchOther = parts.find(p => p.toLowerCase() !== myNameLower);
+    if (matchOther) partnerName = matchOther;
+  }
   const partnerLower = partnerName ? partnerName.toLowerCase() : '';
   const pairKey = [myNameLower, partnerLower].filter(Boolean).sort().join('__');
 
@@ -2971,3 +2977,5 @@ export async function saveMessageToSupabase(
     return newMsg;
   }
 }
+
+export * from './dmHelpers';

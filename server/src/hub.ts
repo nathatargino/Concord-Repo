@@ -934,6 +934,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         senderId: data.senderId || socket.id,
         senderName: data.senderName,
         senderAvatarUrl: data.senderAvatarUrl || null,
+        targetUserId: data.targetUserId,
+        targetName: data.targetName,
         content: data.content,
         msgType: data.msgType || 'text',
         fileUrl: data.fileUrl,
@@ -1486,7 +1488,23 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
     // ─── WEBRTC SIGNALING ──────────────────────────────────────────
     socket.on('send_offer', (targetId: string, offer: RTCSessionDescriptionInit) => {
-      io.to(targetId).emit('receive_offer', socket.id, offer);
+      let targetSocket = io.sockets.sockets.get(targetId);
+      if (!targetSocket) {
+        const cleanT = (targetId || '').trim().toLowerCase().replace(/^@/, '');
+        for (const [sId, s] of io.sockets.sockets) {
+          if (sId === socket.id) continue;
+          const sName = (s.data.user?.name || '').trim().toLowerCase().replace(/^@/, '');
+          if (s.data.userId === targetId || s.data.persistentId === targetId || (cleanT && sName === cleanT)) {
+            targetSocket = s;
+            break;
+          }
+        }
+      }
+      if (targetSocket) {
+        targetSocket.emit('receive_offer', socket.id, offer);
+      } else {
+        io.to(targetId).emit('receive_offer', socket.id, offer);
+      }
     });
 
     socket.on('send_answer', (targetId: string, answer: RTCSessionDescriptionInit) => {

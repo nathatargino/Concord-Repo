@@ -29,7 +29,9 @@ import {
   getOrCreatePersistentId,
   getOrCreateDirectChatInSupabase,
   cleanDisplayName,
+  type DirectChat,
 } from '../lib/supabase';
+import { isDmMuted, toggleMuteDm, deleteDmConversation } from '../lib/dmHelpers';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type { ServerChannel, CustomRole } from '../types';
@@ -129,6 +131,26 @@ export const Sidebar: React.FC<Props> = ({
     targetName?: string;
     isOffline?: boolean;
   } | null>(null);
+
+  // Menu de contexto para DMs no Sidebar (Silenciar, Excluir Conversa, etc.)
+  const [dmContextMenu, setDmContextMenu] = useState<{
+    x: number;
+    y: number;
+    chat: DirectChat;
+  } | null>(null);
+
+  useEffect(() => {
+    const handleCloseDmMenu = () => setDmContextMenu(null);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDmContextMenu(null);
+    };
+    document.addEventListener('click', handleCloseDmMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('click', handleCloseDmMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Modal para criação de novos canais
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
@@ -891,6 +913,7 @@ export const Sidebar: React.FC<Props> = ({
                     const isDmActive = homeTab === 'dm' && activeDmChat?.id === chat.id;
                     const partnerName = cleanDisplayName(chat.partnerName || (chat as any).other_user_name || 'Usuário');
                     const partnerAvatar = chat.partnerAvatarUrl || (chat as any).other_user_avatar;
+                    const isMuted = isDmMuted(chat.id, chat.partnerName);
                     return (
                       <div key={chat.id} className={styles.channelRow}>
                         <button
@@ -899,7 +922,16 @@ export const Sidebar: React.FC<Props> = ({
                             setActiveDmChat(chat);
                             setHomeTab('dm');
                           }}
-                          title={`Conversar com ${partnerName}`}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDmContextMenu({
+                              x: e.clientX,
+                              y: e.clientY,
+                              chat,
+                            });
+                          }}
+                          title={`Conversar com ${partnerName} (Botão direito para opções)`}
                         >
                           <span className={styles.channelItemLeft} style={{ gap: '8px' }}>
                             <div style={{ position: 'relative', width: 22, height: 22, flexShrink: 0 }}>
@@ -913,6 +945,13 @@ export const Sidebar: React.FC<Props> = ({
                             </div>
                             <span className={styles.channelName}>{partnerName}</span>
                           </span>
+                          {isMuted && (
+                            <i
+                              className="fa-solid fa-bell-slash"
+                              style={{ fontSize: '11px', color: '#9ca3af', marginLeft: 'auto', opacity: 0.8 }}
+                              title="Notificações silenciadas"
+                            />
+                          )}
                         </button>
                       </div>
                     );
@@ -1965,6 +2004,113 @@ export const Sidebar: React.FC<Props> = ({
             );
           }}
         />
+      )}
+
+      {/* ═══ PORTAL: MENU DE CONTEXTO PARA MENSAGEM DIRETA ═══ */}
+      {dmContextMenu && createPortal(
+        <div
+          className={styles.dmContextMenuOverlay}
+          onClick={() => setDmContextMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setDmContextMenu(null);
+          }}
+        >
+          <div
+            className={styles.dmContextMenu}
+            style={{
+              top: Math.min(dmContextMenu.y, window.innerHeight - 200),
+              left: Math.min(dmContextMenu.x, window.innerWidth - 230),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Abrir conversa */}
+            <button
+              type="button"
+              className={styles.dmContextMenuItem}
+              onClick={() => {
+                setActiveDmChat(dmContextMenu.chat);
+                setHomeTab('dm');
+                setDmContextMenu(null);
+              }}
+            >
+              <i className="fa-regular fa-comment-dots"></i>
+              <span>Abrir Conversa</span>
+            </button>
+
+            {/* Ver perfil */}
+            <button
+              type="button"
+              className={styles.dmContextMenuItem}
+              onClick={() => {
+                const partnerName = cleanDisplayName(dmContextMenu.chat.partnerName || (dmContextMenu.chat as any).other_user_name || 'Usuário');
+                openUserProfile({
+                  id: dmContextMenu.chat.partnerId || 'partner',
+                  name: partnerName,
+                  avatarUrl: dmContextMenu.chat.partnerAvatarUrl || (dmContextMenu.chat as any).other_user_avatar || null,
+                  isMe: false,
+                });
+                setDmContextMenu(null);
+              }}
+            >
+              <i className="fa-regular fa-user"></i>
+              <span>Ver Perfil</span>
+            </button>
+
+            <div className={styles.dmContextMenuDivider} />
+
+            {/* Silenciar / Reativar */}
+            <button
+              type="button"
+              className={styles.dmContextMenuItem}
+              onClick={() => {
+                const partnerName = cleanDisplayName(dmContextMenu.chat.partnerName || (dmContextMenu.chat as any).other_user_name || 'Usuário');
+                const isNowMuted = toggleMuteDm(dmContextMenu.chat.id, partnerName);
+                if (isNowMuted) {
+                  toast(`Notificações de ${partnerName} silenciadas.`, { icon: '🔕' });
+                } else {
+                  toast.success(`Notificações de ${partnerName} reativadas!`);
+                }
+                setDmContextMenu(null);
+              }}
+            >
+              <i className={`fa-solid ${isDmMuted(dmContextMenu.chat.id, dmContextMenu.chat.partnerName) ? 'fa-bell' : 'fa-bell-slash'}`}></i>
+              <span>
+                {isDmMuted(dmContextMenu.chat.id, dmContextMenu.chat.partnerName)
+                  ? 'Reativar Notificações'
+                  : 'Silenciar Conversa'}
+              </span>
+            </button>
+
+            <div className={styles.dmContextMenuDivider} />
+
+            {/* Excluir Conversa */}
+            <button
+              type="button"
+              className={`${styles.dmContextMenuItem} ${styles.dmContextMenuItemDanger}`}
+              onClick={() => {
+                const partnerName = cleanDisplayName(dmContextMenu.chat.partnerName || (dmContextMenu.chat as any).other_user_name || 'Usuário');
+                const chatId = dmContextMenu.chat.id;
+                setDmContextMenu(null);
+                showConfirmModal({
+                  title: 'Excluir Conversa',
+                  message: `Tem certeza que deseja excluir toda a conversa com ${partnerName}? Esta ação apagará todas as mensagens e não pode ser desfeita.`,
+                  confirmText: 'Excluir Conversa',
+                  cancelText: 'Cancelar',
+                  isDanger: true,
+                  onConfirm: () => {
+                    deleteDmConversation(chatId, partnerName);
+                    toast.success('Conversa excluída com sucesso.');
+                  },
+                });
+              }}
+            >
+              <i className="fa-solid fa-trash"></i>
+              <span>Excluir Conversa</span>
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </aside>
   );

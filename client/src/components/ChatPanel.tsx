@@ -8,7 +8,19 @@ import type { ChatMessage } from '../types';
 import { GiphyFetch } from '@giphy/js-fetch-api';
 import { Grid } from '@giphy/react-components';
 import styles from './ChatPanel.module.css';
-import { fetchChannelMessages, saveMessageToSupabase, fetchDirectMessagesFromSupabase, sendDirectMessageToSupabase, cleanDisplayName, type DirectMessage, supabase } from '../lib/supabase';
+import { 
+  fetchChannelMessages, 
+  saveMessageToSupabase, 
+  fetchDirectMessagesFromSupabase, 
+  sendDirectMessageToSupabase, 
+  cleanDisplayName, 
+  type DirectMessage, 
+  supabase,
+  isDmMuted,
+  toggleMuteDm,
+  deleteDmConversation,
+  deleteDmMessage,
+} from '../lib/supabase';
 import { playChimeSound } from '../hooks/useAudio';
 import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 import { StreamingComingSoon } from './StreamingComingSoon';
@@ -219,6 +231,7 @@ export function ChatPanel({
     homeTab,
     friends,
     systemNotificationsEnabled,
+    showConfirmModal,
   } = useAppStore();
 
   const { ytVol, setYtVol, callMuted } = useAudioStore();
@@ -642,17 +655,27 @@ export function ChatPanel({
   useEffect(() => {
     if (!isDmMode || !activeDmChat?.id) return;
     let isMounted = true;
+
     const loadDms = async () => {
       try {
         const list = await fetchDirectMessagesFromSupabase(activeDmChat.id);
         if (isMounted) {
           setDmMessages((prev) => {
-            const merged = [...list];
-            for (const pm of prev) {
-              const exists = merged.some(m => m.id === pm.id || (m.content === pm.content && m.senderName === pm.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(pm.createdAt).getTime()) < 3000));
-              if (!exists) merged.push(pm);
+            const map = new Map<string, DirectMessage>();
+            for (const item of list) {
+              map.set(item.id, item);
             }
-            return merged;
+            for (const item of prev) {
+              const alreadyHas = list.some(
+                (l) => l.id === item.id || (l.content === item.content && l.senderName === item.senderName && Math.abs(new Date(l.createdAt).getTime() - new Date(item.createdAt).getTime()) < 2000)
+              );
+              if (!alreadyHas) {
+                map.set(item.id, item);
+              }
+            }
+            const res = Array.from(map.values());
+            res.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            return res;
           });
         }
       } catch {}
@@ -666,25 +689,49 @@ export function ChatPanel({
       const msgSenderClean = cleanDisplayName(newMsg.senderName || '').toLowerCase();
       const chatPartnerClean = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').toLowerCase();
       const myClean = cleanDisplayName(myName || '').toLowerCase();
-      const isTargetMe = newMsg.targetName ? cleanDisplayName(newMsg.targetName).toLowerCase() === myClean : true;
-      const isSenderPartner = msgSenderClean === chatPartnerClean;
+      const targetClean = cleanDisplayName(newMsg.targetName || '').toLowerCase();
+
+      const pairKeyExpected = [myClean, chatPartnerClean].filter(Boolean).sort().join('__');
+      const pairKeyActual = [msgSenderClean, targetClean].filter(Boolean).sort().join('__');
+
+      const isSenderPartner = (msgSenderClean === chatPartnerClean || chatPartnerClean.includes(msgSenderClean) || msgSenderClean.includes(chatPartnerClean));
+      const isTargetMe = targetClean ? (targetClean === myClean || myClean.includes(targetClean) || targetClean.includes(myClean)) : true;
+
       const matchesChat = Boolean(
         newMsg.chatId === activeDmChat.id ||
+        (pairKeyExpected && pairKeyActual && pairKeyExpected === pairKeyActual) ||
         (newMsg.senderId && activeDmChat.partnerId && newMsg.senderId === activeDmChat.partnerId) ||
         (isSenderPartner && isTargetMe) ||
-        (msgSenderClean === myClean && cleanDisplayName(newMsg.targetName || '').toLowerCase() === chatPartnerClean)
+        (msgSenderClean === myClean && targetClean === chatPartnerClean) ||
+        isSenderPartner
       );
 
       if (matchesChat) {
         setDmMessages((prev) => {
-          if (prev.some(m => m.id === newMsg.id || (m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 2000))) {
+          if (prev.some(m => m.id === newMsg.id || (m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 1500))) {
             return prev;
           }
-          return [...prev, newMsg];
+          const next = [...prev, newMsg];
+          next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          return next;
         });
       }
     };
     window.addEventListener('concord:new-dm-message', handleNewDmMessage);
+
+    const handleDmMessageDeleted = (e: any) => {
+      const msgId = e.detail?.messageId;
+      if (msgId && isMounted) {
+        setDmMessages((prev) => prev.filter((m) => m.id !== msgId));
+      }
+    };
+    const handleDmDeleted = () => {
+      if (isMounted) {
+        setDmMessages([]);
+      }
+    };
+    window.addEventListener('concord:dm-message-deleted', handleDmMessageDeleted);
+    window.addEventListener('concord:dm-deleted', handleDmDeleted);
 
     // Supabase Realtime subscription para mensagens diretas instantâneas
     let dmChannel: any = null;
@@ -730,6 +777,8 @@ export function ChatPanel({
       isMounted = false;
       clearInterval(timer);
       window.removeEventListener('concord:new-dm-message', handleNewDmMessage);
+      window.removeEventListener('concord:dm-message-deleted', handleDmMessageDeleted);
+      window.removeEventListener('concord:dm-deleted', handleDmDeleted);
       if (dmChannel) {
         supabase.removeChannel(dmChannel);
       }
@@ -1748,6 +1797,52 @@ export function ChatPanel({
         </div>
 
         <div className={styles.headerActions}>
+          {isDmMode && activeDmChat && (
+            <>
+              <button
+                type="button"
+                className={`${styles.dmHeaderBtn} ${isDmMuted(activeDmChat.id, activeDmChat.partnerName) ? styles.dmHeaderBtnMuted : ''}`}
+                onClick={() => {
+                  const partnerName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'Usuário');
+                  const isNowMuted = toggleMuteDm(activeDmChat.id, partnerName);
+                  if (isNowMuted) {
+                    toast(`Notificações de ${partnerName} silenciadas.`, { icon: '🔕' });
+                  } else {
+                    toast.success(`Notificações de ${partnerName} reativadas!`);
+                  }
+                }}
+                title={isDmMuted(activeDmChat.id, activeDmChat.partnerName) ? 'Reativar notificações desta conversa' : 'Silenciar notificações desta conversa'}
+              >
+                <i className={`fa-solid ${isDmMuted(activeDmChat.id, activeDmChat.partnerName) ? 'fa-bell-slash' : 'fa-bell'}`}></i>
+                <span>{isDmMuted(activeDmChat.id, activeDmChat.partnerName) ? 'Silenciado' : 'Silenciar'}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`${styles.dmHeaderBtn} ${styles.dmHeaderBtnDanger}`}
+                onClick={() => {
+                  const partnerName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'Usuário');
+                  const chatId = activeDmChat.id;
+                  showConfirmModal({
+                    title: 'Excluir Conversa',
+                    message: `Tem certeza que deseja excluir toda a conversa com ${partnerName}? Esta ação apagará todas as mensagens e não pode ser desfeita.`,
+                    confirmText: 'Excluir Conversa',
+                    cancelText: 'Cancelar',
+                    isDanger: true,
+                    onConfirm: () => {
+                      deleteDmConversation(chatId, partnerName);
+                      toast.success('Conversa excluída com sucesso.');
+                    },
+                  });
+                }}
+                title="Excluir esta conversa e histórico"
+              >
+                <i className="fa-solid fa-trash-can"></i>
+                <span>Excluir</span>
+              </button>
+            </>
+          )}
+
           <div className={styles.searchWrapper}>
             <i className={`fa-solid fa-magnifying-glass ${styles.searchIcon}`}></i>
             <input
@@ -3483,6 +3578,79 @@ export function ChatPanel({
                 <i className="fa-solid fa-clipboard"></i>
                 <span>Copiar Texto</span>
               </button>
+            )}
+
+            {isDmMode && activeDmChat && (
+              <>
+                <div className={styles.contextMenuDivider} />
+
+                {/* Silenciar / Reativar Conversa */}
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  onClick={() => {
+                    const partnerName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'Usuário');
+                    const isNowMuted = toggleMuteDm(activeDmChat.id, partnerName);
+                    if (isNowMuted) {
+                      toast(`Notificações de ${partnerName} silenciadas.`, { icon: '🔕' });
+                    } else {
+                      toast.success(`Notificações de ${partnerName} reativadas!`);
+                    }
+                    setContextMenu(null);
+                  }}
+                >
+                  <i className={`fa-solid ${isDmMuted(activeDmChat.id, activeDmChat.partnerName) ? 'fa-bell' : 'fa-bell-slash'}`}></i>
+                  <span>
+                    {isDmMuted(activeDmChat.id, activeDmChat.partnerName)
+                      ? 'Reativar Notificações'
+                      : 'Silenciar Conversa'}
+                  </span>
+                </button>
+
+                {/* Excluir Esta Mensagem Individual */}
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  style={{ color: '#f87171' }}
+                  onClick={() => {
+                    const targetMsgId = contextMenu.msg.id;
+                    const partnerName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'Usuário');
+                    setDmMessages((prev) => prev.filter((m) => m.id !== targetMsgId));
+                    deleteDmMessage(targetMsgId, activeDmChat.id, partnerName);
+                    toast.success('Mensagem excluída.');
+                    setContextMenu(null);
+                  }}
+                >
+                  <i className="fa-regular fa-trash-can" style={{ color: '#f87171' }}></i>
+                  <span>Excluir Mensagem</span>
+                </button>
+
+                {/* Excluir Conversa Inteira */}
+                <button
+                  type="button"
+                  className={styles.contextMenuItem}
+                  style={{ color: '#ef4444', fontWeight: 600 }}
+                  onClick={() => {
+                    const partnerName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'Usuário');
+                    const chatId = activeDmChat.id;
+                    setContextMenu(null);
+                    showConfirmModal({
+                      title: 'Excluir Conversa',
+                      message: `Tem certeza que deseja excluir toda a conversa com ${partnerName}? Esta ação apagará todas as mensagens e não pode ser desfeita.`,
+                      confirmText: 'Excluir Conversa',
+                      cancelText: 'Cancelar',
+                      isDanger: true,
+                      onConfirm: () => {
+                        deleteDmConversation(chatId, partnerName);
+                        toast.success('Conversa excluída com sucesso.');
+                      },
+                    });
+                  }}
+                >
+                  <i className="fa-solid fa-trash" style={{ color: '#ef4444' }}></i>
+                  <span>Excluir Conversa</span>
+                </button>
+              </>
             )}
           </div>
         </div>,
