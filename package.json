@@ -17,7 +17,7 @@
     "typecheck:desktop": "pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit",
     "typecheck:all": "pnpm --filter client exec tsc --noEmit && pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit && pnpm --filter server exec tsc --noEmit",
     "lint": "pnpm --filter client lint",
-    "harness:verify": "pnpm --filter client build && pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit && pnpm --filter server build",
+    "harness:verify": "pnpm --filter client build && pnpm --filter client exec tsc -p tsconfig.electron.json && pnpm --filter server build",
     "start": "pnpm --filter server start"
   },
   "devDependencies": {
