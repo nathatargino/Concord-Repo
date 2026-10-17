@@ -200,7 +200,14 @@ function ensureWidevineCdm(): void {
 // Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
-app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi');
+// Desativa recursos conflitantes e sandbox/out-of-process do Audio Service para garantir captura WASAPI Loopback no Windows (telas e janelas) sem DOMException
+app.commandLine.appendSwitch(
+    'disable-features',
+    'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi,AudioServiceOutOfProcess,AudioServiceSandbox'
+);
+// Desativa o sandbox do Audio Service do Chromium para permitir captura WASAPI loopback de áudio do sistema
+app.commandLine.appendSwitch('disable-audio-service-sandbox');
+
 // Disable web security restrictions that block YouTube iframe audio and media streaming
 app.commandLine.appendSwitch('disable-web-security');
 app.commandLine.appendSwitch('allow-running-insecure-content');
@@ -312,12 +319,31 @@ function createTray() {
 function setupAutoLaunch() {
     if (process.platform === 'win32' && !isDev) {
         try {
-            app.setLoginItemSettings({
-                openAtLogin: true,
-                openAsHidden: true,
-                path: process.execPath,
-                args: ['--hidden']
-            });
+            const prefs = readPrefsFromDisk();
+            const currentSettings = app.getLoginItemSettings();
+
+            // Determina se deve iniciar com o Windows:
+            // 1. Se o usuário já definiu explicitamente 'openAtLogin' nas preferências salvas, respeitar rigorosamente.
+            // 2. Se ainda não há preferência gravada, respeitar o estado atual do sistema operacional (app.getLoginItemSettings().openAtLogin).
+            // NUNCA forçar openAtLogin: true incondicionalmente para evitar reativação indesejada após atualizações.
+            let shouldOpenAtLogin: boolean;
+            if (prefs && prefs.openAtLogin !== undefined) {
+                shouldOpenAtLogin = prefs.openAtLogin === true || prefs.openAtLogin === 'true';
+            } else {
+                shouldOpenAtLogin = Boolean(currentSettings.openAtLogin);
+            }
+
+            if (currentSettings.openAtLogin !== shouldOpenAtLogin) {
+                app.setLoginItemSettings({
+                    openAtLogin: shouldOpenAtLogin,
+                    openAsHidden: true,
+                    path: process.execPath,
+                    args: ['--hidden']
+                });
+                fs.appendFileSync(logFile, `[AutoLaunch] Synced login item settings: openAtLogin=${shouldOpenAtLogin}\n`);
+            } else {
+                fs.appendFileSync(logFile, `[AutoLaunch] Login item settings already in desired state: openAtLogin=${shouldOpenAtLogin}\n`);
+            }
         } catch (e) {
             fs.appendFileSync(logFile, `[AutoLaunch] Error setting login items: ${e}\n`);
         }
@@ -913,10 +939,12 @@ app.whenReady().then(async () => {
                 return;
             }
 
-            // In Chromium on Windows (WASAPI loopback), 'audio: "loopback"' works even when 'video' is a window ('window:...').
-            // Allow system loopback audio both for screens ('screen:') and windows ('window:').
+            // In Chromium on Windows (WASAPI loopback), 'audio: "loopback"' works both for screens ('screen:') and windows ('window:').
+            // With disable-audio-service-sandbox and disabled AudioServiceSandbox, system loopback operates reliably without DOMException.
+            const isWindow = chosen.id.startsWith('window:');
+            const isScreen = chosen.id.startsWith('screen:');
             const audioStream = wantAudio ? 'loopback' : undefined;
-            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), audio=${audioStream}\n`);
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (isWindow=${isWindow}, isScreen=${isScreen}, name=${chosen.name}), audio=${audioStream}\n`);
             try {
                 // @ts-ignore
                 callback({
@@ -1338,14 +1366,15 @@ ipcMain.on('check-for-updates', () => {
 
 ipcMain.on('install-update', () => {
     if (isWindowsStore || isDev) return;
-    fs.appendFileSync(logFile, 'install-update called. Setting isQuitting = true and quitting to install.\n');
+    fs.appendFileSync(logFile, 'install-update called. Performing silent background update via quitAndInstall(true, true).\n');
     isQuitting = true;
     try {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.destroy();
         }
     } catch (e) {}
-    autoUpdater.quitAndInstall(false, true);
+    // true, true: Instalação silenciosa sem tela nativa do NSIS e reinicia o aplicativo automaticamente com tema do Concord
+    autoUpdater.quitAndInstall(true, true);
 });
 
 ipcMain.on('pip-action', (event, action, payload) => {
@@ -1582,6 +1611,20 @@ ipcMain.on('save-preferences', (_event, prefs: Record<string, any>) => {
             if ('keybindMicMute' in prefs || 'keybindDeafen' in prefs || 'keybindsEnabled' in prefs) {
                 registerGlobalKeybinds(merged);
             }
+            if ('openAtLogin' in prefs && process.platform === 'win32' && !isDev) {
+                const enable = prefs.openAtLogin === true || prefs.openAtLogin === 'true';
+                try {
+                    app.setLoginItemSettings({
+                        openAtLogin: enable,
+                        openAsHidden: true,
+                        path: process.execPath,
+                        args: ['--hidden']
+                    });
+                    fs.appendFileSync(logFile, `[AutoLaunch] Updated login items from save-preferences: openAtLogin=${enable}\n`);
+                } catch (e) {
+                    fs.appendFileSync(logFile, `[AutoLaunch] Error updating login items from save-preferences: ${e}\n`);
+                }
+            }
         } catch (e) {
             console.error('Failed to save preferences:', e);
         }
@@ -1596,6 +1639,44 @@ ipcMain.handle('load-preferences', () => {
     } catch (e) {
         console.error('Failed to load preferences:', e);
         return {};
+    }
+});
+
+ipcMain.handle('get-auto-launch', () => {
+    try {
+        if (process.platform === 'win32' && !isDev) {
+            const prefs = readPrefsFromDisk();
+            if (prefs && prefs.openAtLogin !== undefined) {
+                return prefs.openAtLogin === true || prefs.openAtLogin === 'true';
+            }
+            return Boolean(app.getLoginItemSettings().openAtLogin);
+        }
+        return false;
+    } catch {
+        return false;
+    }
+});
+
+ipcMain.handle('set-auto-launch', (_event, enabled: boolean) => {
+    try {
+        if (process.platform === 'win32' && !isDev) {
+            const shouldEnable = Boolean(enabled);
+            app.setLoginItemSettings({
+                openAtLogin: shouldEnable,
+                openAsHidden: true,
+                path: process.execPath,
+                args: ['--hidden']
+            });
+            const prefsPath = getPrefsPath();
+            const existing = readPrefsFromDisk();
+            existing.openAtLogin = shouldEnable;
+            writeAtomicSync(prefsPath, JSON.stringify(existing, null, 2));
+            fs.appendFileSync(logFile, `[AutoLaunch] Explicit set-auto-launch to ${shouldEnable}\n`);
+            return { ok: true, openAtLogin: shouldEnable };
+        }
+        return { ok: true, openAtLogin: Boolean(enabled) };
+    } catch (e: any) {
+        return { ok: false, error: e?.message || String(e) };
     }
 });
 

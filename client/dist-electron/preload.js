@@ -128,6 +128,8 @@ const electronBridge = {
             electron_1.ipcRenderer.removeListener('global-shortcut-triggered', subscription);
         };
     },
+    getAutoLaunch: () => electron_1.ipcRenderer.invoke('get-auto-launch'),
+    setAutoLaunch: (enabled) => electron_1.ipcRenderer.invoke('set-auto-launch', enabled),
 };
 electron_1.contextBridge.exposeInMainWorld('electron', electronBridge);
 electron_1.contextBridge.exposeInMainWorld('electronAPI', electronBridge);

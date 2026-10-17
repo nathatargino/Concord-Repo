@@ -59,6 +59,9 @@ export interface ElectronAPI {
     getKeybinds?: () => Promise<{ keybindMicMute: string; keybindDeafen: string; keybindsEnabled: boolean }>;
     setKeybinds?: (data: { keybindMicMute?: string; keybindDeafen?: string; keybindsEnabled?: boolean }) => Promise<{ ok: boolean; keybinds?: { keybindMicMute: string; keybindDeafen: string; keybindsEnabled: boolean }; error?: string }>;
     onGlobalShortcut?: (callback: (action: 'toggle-mic' | 'toggle-deafen') => void) => () => void;
+    /** Iniciar com o Windows (Auto Launch) */
+    getAutoLaunch?: () => Promise<boolean>;
+    setAutoLaunch?: (enabled: boolean) => Promise<{ ok: boolean; openAtLogin?: boolean; error?: string }>;
 }
 
 declare global {
@@ -197,6 +200,8 @@ const electronBridge: ElectronAPI = {
             ipcRenderer.removeListener('global-shortcut-triggered', subscription);
         };
     },
+    getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
+    setAutoLaunch: (enabled: boolean) => ipcRenderer.invoke('set-auto-launch', enabled),
 };
 
 contextBridge.exposeInMainWorld('electron', electronBridge);
