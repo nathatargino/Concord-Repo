@@ -227,41 +227,7 @@ export default function App() {
     }
   }, [navigate]);
 
-  // Sync audio volumes and screen share audio when stores change
-  useEffect(() => {
-    const unsubAudio = useAudioStore.subscribe((state, prevState) => {
-      audio.applyMicSettings();
-      audio.applyRemoteSettings();
-      audio.applyNoiseSuppressionSettings();
-      yt.applyYTVolume();
 
-      if (state.micMuted !== prevState.micMuted || state.callMuted !== prevState.callMuted) {
-        socket.emit('update_media_state', state.micMuted, state.callMuted);
-      }
-
-      const electron = (window as any).electron;
-      if (electron?.sendPipSync && useAppStore.getState().isPiPActive) {
-        const targetVol = state.callMuted ? 0 : state.ytVol;
-        electron.sendPipSync({ volume: targetVol });
-      }
-
-      if (electron?.setStreamingVolume) {
-        const targetVol = state.callMuted ? 0 : state.ytVol;
-        electron.setStreamingVolume(targetVol);
-      }
-    });
-
-    const unsubApp = useAppStore.subscribe((state, prevState) => {
-      if (state.screenShareUserId !== prevState.screenShareUserId) {
-        audio.applyRemoteSettings();
-      }
-    });
-
-    return () => {
-      unsubAudio();
-      unsubApp();
-    };
-  }, [audio, yt]);
 
   // Initial sync of streaming volume to Electron
   useEffect(() => {
@@ -345,6 +311,45 @@ export default function App() {
       navigate('/');
     }
   });
+
+  // Sync audio volumes and screen share audio when stores change
+  useEffect(() => {
+    const unsubAudio = useAudioStore.subscribe((state, prevState) => {
+      audio.applyMicSettings();
+      audio.applyRemoteSettings();
+      audio.applyNoiseSuppressionSettings();
+      yt.applyYTVolume();
+
+      if (state.micMuted !== prevState.micMuted || state.callMuted !== prevState.callMuted) {
+        socket.emit('update_media_state', state.micMuted, state.callMuted);
+      }
+
+      const electron = (window as any).electron;
+      if (electron?.sendPipSync && useAppStore.getState().isPiPActive) {
+        const targetVol = state.callMuted ? 0 : state.ytVol;
+        electron.sendPipSync({ volume: targetVol });
+      }
+
+      if (electron?.setStreamingVolume) {
+        const targetVol = state.callMuted ? 0 : state.ytVol;
+        electron.setStreamingVolume(targetVol);
+      }
+    });
+
+    const unsubApp = useAppStore.subscribe((state, prevState) => {
+      if (state.screenShareUserId !== prevState.screenShareUserId) {
+        if (state.screenShareUserId) {
+          rtc.ensureRemoteScreenStream(state.screenShareUserId);
+        }
+        audio.applyRemoteSettings();
+      }
+    });
+
+    return () => {
+      unsubAudio();
+      unsubApp();
+    };
+  }, [audio, yt, rtc, socket]);
 
   // ─── GLOBAL SHORTCUTS (ELECTRON) ─────────────────────────────────
   useEffect(() => {

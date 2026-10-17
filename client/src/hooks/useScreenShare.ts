@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
@@ -13,36 +13,60 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
   const isElectron = typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron);
   const { screenShareResolution, screenShareFps, screenShareContentHint } = useAudioStore.getState();
 
-  let widthConstraints = { ideal: 1920, max: 1920 };
-  let heightConstraints = { ideal: 1080, max: 1080 };
+  let targetWidth = 1920;
+  let targetHeight = 1080;
   if (screenShareResolution === '720p') {
-    widthConstraints = { ideal: 1280, max: 1280 };
-    heightConstraints = { ideal: 720, max: 720 };
+    targetWidth = 1280;
+    targetHeight = 720;
   } else if (screenShareResolution === '1440p') {
-    widthConstraints = { ideal: 2560, max: 2560 };
-    heightConstraints = { ideal: 1440, max: 1440 };
+    targetWidth = 2560;
+    targetHeight = 1440;
   }
 
-  const videoConstraintsWithRes: MediaTrackConstraints = {
-    width: widthConstraints,
-    height: heightConstraints,
-    frameRate: { ideal: screenShareFps, max: screenShareFps },
+  // W3C Screen Capture spec forbids 'max' or 'exact' in initial getDisplayMedia() options;
+  // use 'ideal' in getDisplayMedia() and apply 'max' post-capture via track.applyConstraints().
+  const idealVideoConstraints: MediaTrackConstraints = {
+    width: { ideal: targetWidth },
+    height: { ideal: targetHeight },
+    frameRate: { ideal: screenShareFps },
   };
 
-  const videoConstraintsFallback: MediaTrackConstraints = {
-    frameRate: { ideal: screenShareFps, max: screenShareFps },
-  };
-
-  const applyHints = (stream: MediaStream): MediaStream => {
+  const applyHintsAndConstraints = async (stream: MediaStream): Promise<MediaStream> => {
     const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack) {
-      // @ts-ignore
-      videoTrack.contentHint = screenShareContentHint;
+      try {
+        // @ts-ignore
+        videoTrack.contentHint = screenShareContentHint;
+      } catch {}
+      try {
+        await videoTrack.applyConstraints({
+          width: { ideal: targetWidth, max: targetWidth },
+          height: { ideal: targetHeight, max: targetHeight },
+          frameRate: { ideal: screenShareFps, max: screenShareFps },
+        });
+      } catch {
+        try {
+          await videoTrack.applyConstraints({
+            frameRate: { ideal: screenShareFps },
+          });
+        } catch {}
+      }
     }
+
     const audioTrack = stream.getAudioTracks()[0];
     if (audioTrack) {
-      // @ts-ignore
-      audioTrack.contentHint = 'music';
+      audioTrack.enabled = true;
+      try {
+        // @ts-ignore
+        audioTrack.contentHint = 'music';
+      } catch {}
+      try {
+        await audioTrack.applyConstraints({
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false,
+        });
+      } catch {}
     }
     return stream;
   };
@@ -51,91 +75,69 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
     if (withAudio) {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: videoConstraintsWithRes,
-          audio: {
-            autoGainControl: false,
-            echoCancellation: false,
-            noiseSuppression: false,
-          },
+          video: true,
+          audio: true,
         });
-        return applyHints(stream);
+        return await applyHintsAndConstraints(stream);
       } catch (err: any) {
         if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
           throw err;
         }
-        console.warn(`[ScreenShare] Electron screen share with resolution constraints failed, trying fallback:`, err);
-        try {
-          const fallbackWithAudio = await navigator.mediaDevices.getDisplayMedia({
-            video: videoConstraintsFallback,
-            audio: {
-              autoGainControl: false,
-              echoCancellation: false,
-              noiseSuppression: false,
-            },
-          });
-          return applyHints(fallbackWithAudio);
-        } catch {
-          const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
-            video: videoConstraintsFallback,
-            audio: false,
-          });
-          notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
-          return applyHints(fallbackVideoOnly);
-        }
+        console.warn(`[ScreenShare] Electron screen share with audio failed, trying video-only fallback:`, err);
+        const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+        notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
+        return await applyHintsAndConstraints(fallbackVideoOnly);
       }
     } else {
-      try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: videoConstraintsWithRes,
-          audio: false,
-        });
-        return applyHints(stream);
-      } catch {
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: videoConstraintsFallback,
-          audio: false,
-        });
-        return applyHints(stream);
-      }
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      return await applyHintsAndConstraints(stream);
     }
   }
 
-  // Browser capture
+  // Browser capture (Discord Web style)
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: videoConstraintsWithRes,
+      video: idealVideoConstraints,
       audio: withAudio ? {
         autoGainControl: false,
         echoCancellation: false,
         noiseSuppression: false,
+        // @ts-ignore
+        suppressLocalAudioPlayback: false,
       } : false,
       systemAudio: withAudio ? 'include' : 'exclude',
       selfBrowserSurface: 'include',
       surfaceSwitching: 'include',
       monitorTypeSurfaces: 'include',
     } as any);
-    return applyHints(stream);
+    return await applyHintsAndConstraints(stream);
   } catch (err: any) {
     if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
       throw err;
     }
     try {
       const fallbackStream = await navigator.mediaDevices.getDisplayMedia({
-        video: videoConstraintsFallback,
-        audio: withAudio ? {
-          autoGainControl: false,
-          echoCancellation: false,
-          noiseSuppression: false,
-        } : false,
+        video: true,
+        audio: withAudio,
+        systemAudio: withAudio ? 'include' : 'exclude',
       } as any);
-      return applyHints(fallbackStream);
-    } catch {
+      return await applyHintsAndConstraints(fallbackStream);
+    } catch (err2: any) {
+      if (err2?.name === 'NotAllowedError' || err2?.name === 'AbortError') {
+        throw err2;
+      }
       const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
-        video: videoConstraintsFallback,
+        video: true,
         audio: false,
       });
       notifyInChat('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.');
-      return applyHints(fallbackVideoOnly);
+      return await applyHintsAndConstraints(fallbackVideoOnly);
     }
   }
 }
@@ -144,7 +146,7 @@ export function useScreenShare(
   emit: EmitFn,
   addScreenShareTrack: (stream: MediaStream) => void,
   removeScreenShareTrack: () => void,
-  getRemoteAudioStreams?: GetRemoteStreamsFn,
+  _getRemoteAudioStreams?: GetRemoteStreamsFn,
 ) {
   const streamRef = useRef<MediaStream | null>(null);
   const echoFilterRef = useRef<EchoFilter | null>(null);
@@ -162,53 +164,13 @@ export function useScreenShare(
     echoFilterRef.current = null;
   }, []);
 
-  /**
-   * Process the loopback audio through the echo filter so that remote
-   * participants' voices (playing through the speakers) are subtracted
-   * from the captured audio before it is sent via WebRTC.
-   */
-  const filterLoopbackEcho = useCallback((stream: MediaStream): MediaStream => {
-    try {
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack) return stream;
-
-      disposeEchoFilter();
-
-      const filter = new EchoFilter();
-      const remoteStreams = getRemoteAudioStreams ? getRemoteAudioStreams() : new Map();
-      const cleanTrack = filter.start(audioTrack, remoteStreams);
-      echoFilterRef.current = filter;
-
-      if (cleanTrack && cleanTrack !== audioTrack) {
-        const filtered = new MediaStream();
-        stream.getVideoTracks().forEach((t) => filtered.addTrack(t));
-        filtered.addTrack(cleanTrack);
-        return filtered;
-      }
-
-      return stream;
-    } catch (err) {
-      console.warn('[ScreenShare] Error in filterLoopbackEcho, using raw stream:', err);
-      return stream;
-    }
-  }, [getRemoteAudioStreams, disposeEchoFilter]);
-
-  // Keep active echo filter synced with newly joined/speaking remote peers in real-time
-  useEffect(() => {
-    if (!getRemoteAudioStreams) return;
-    const interval = setInterval(() => {
-      if (echoFilterRef.current && getRemoteAudioStreams) {
-        const remoteStreams = getRemoteAudioStreams();
-        echoFilterRef.current.updateRemoteStreams(remoteStreams);
-      }
-    }, 1200);
-    return () => clearInterval(interval);
-  }, [getRemoteAudioStreams]);
-
   const stopScreenShare = useCallback(() => {
     isRequestingRef.current = false;
     isChangingRef.current = false;
     setIsPickerOpen(false);
+    if (typeof window !== 'undefined' && (window as any).electron?.setModalActive) {
+      (window as any).electron.setModalActive(false);
+    }
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     disposeEchoFilter();
@@ -229,9 +191,8 @@ export function useScreenShare(
       const stream = await captureDisplayMedia(withAudio);
       streamRef.current = stream;
 
-      // Filter echo from the loopback audio before sending via WebRTC
-      const processed = filterLoopbackEcho(stream);
-      addScreenShareTrack(processed);
+      // Send native display/WASAPI loopback stream directly to WebRTC (avoids Chromium WebAudio MediaStreamSource silence bug)
+      addScreenShareTrack(stream);
 
       emit('start_screen_share');
       useAppStore.getState().setAmSharing(true);
@@ -266,7 +227,7 @@ export function useScreenShare(
     } finally {
       isRequestingRef.current = false;
     }
-  }, [emit, filterLoopbackEcho, addScreenShareTrack, stopScreenShare]);
+  }, [emit, addScreenShareTrack, stopScreenShare]);
 
   const doChangeScreenShare = useCallback(async (withAudio: boolean = true) => {
     if (isRequestingRef.current) return;
@@ -279,9 +240,8 @@ export function useScreenShare(
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = stream;
 
-      // Re-apply echo filter for the new stream
-      const processed = filterLoopbackEcho(stream);
-      addScreenShareTrack(processed);
+      // Send native display/WASAPI loopback stream directly to WebRTC
+      addScreenShareTrack(stream);
 
       // Listen for user stopping via browser UI
       const videoTrack = stream.getVideoTracks()[0];
@@ -300,7 +260,7 @@ export function useScreenShare(
     } finally {
       isRequestingRef.current = false;
     }
-  }, [filterLoopbackEcho, addScreenShareTrack, stopScreenShare]);
+  }, [addScreenShareTrack, stopScreenShare]);
 
   const startScreenShare = useCallback(async () => {
     if (isRequestingRef.current || useAppStore.getState().amSharing) {
@@ -310,6 +270,7 @@ export function useScreenShare(
     const isElectron = typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron);
     if (isElectron) {
       isChangingRef.current = false;
+      (window as any).electron?.setModalActive?.(true);
       setIsPickerOpen(true);
       return;
     }
@@ -323,6 +284,7 @@ export function useScreenShare(
     const isElectron = typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron);
     if (isElectron) {
       isChangingRef.current = true;
+      (window as any).electron?.setModalActive?.(true);
       setIsPickerOpen(true);
       return;
     }
@@ -332,12 +294,18 @@ export function useScreenShare(
 
   const closePicker = useCallback(() => {
     setIsPickerOpen(false);
+    if (typeof window !== 'undefined' && (window as any).electron?.setModalActive) {
+      (window as any).electron.setModalActive(false);
+    }
     isChangingRef.current = false;
     isRequestingRef.current = false;
   }, []);
 
   const confirmPicker = useCallback(async (sourceId: string, withAudio: boolean) => {
     setIsPickerOpen(false);
+    if (typeof window !== 'undefined' && (window as any).electron?.setModalActive) {
+      (window as any).electron.setModalActive(false);
+    }
     try {
       if (typeof window !== 'undefined' && (window as any).electron?.selectScreenSource) {
         await (window as any).electron.selectScreenSource({ sourceId, withAudio });

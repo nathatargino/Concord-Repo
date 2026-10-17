@@ -828,6 +828,16 @@ electron_1.app.whenReady().then(async () => {
     let selectedScreenSource = null;
     electron_1.ipcMain.handle('get-screen-sources', async () => {
         try {
+            // Garantir que nenhuma WebContentsView de streaming fique sobrepondo o modal de escolha de tela
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                isModalActive = true;
+                if (activeStreamingService) {
+                    modalHiddenStreamingService = activeStreamingService;
+                }
+                hideStreamingView('netflix');
+                hideStreamingView('prime');
+                hideStreamingView('crunchyroll');
+            }
             const sources = await electron_1.desktopCapturer.getSources({
                 types: ['screen', 'window'],
                 thumbnailSize: { width: 320, height: 180 },
@@ -855,11 +865,14 @@ electron_1.app.whenReady().then(async () => {
     // Uses the user-selected screen/window source and audio preference from the picker modal
     electron_1.session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
         try {
-            const isRecent = selectedScreenSource && (Date.now() - selectedScreenSource.timestamp < 15000);
+            const isRecent = selectedScreenSource && (Date.now() - selectedScreenSource.timestamp < 60000);
             const targetId = isRecent ? selectedScreenSource?.sourceId : null;
             const wantAudio = (isRecent && selectedScreenSource ? selectedScreenSource.withAudio : true) && request.audioRequested;
             fs.appendFileSync(logFile, `[ScreenShare-Main] Handler invoked: audioRequested=${request.audioRequested}, isRecent=${isRecent}, targetId=${targetId}, wantAudio=${wantAudio}\n`);
-            const sources = await electron_1.desktopCapturer.getSources({ types: ['screen', 'window'] });
+            const sources = await electron_1.desktopCapturer.getSources({
+                types: ['screen', 'window'],
+                thumbnailSize: { width: 0, height: 0 },
+            });
             let chosen = targetId ? sources.find((s) => s.id === targetId) : null;
             if (!chosen) {
                 // Fallback to screen if not found or not specified
@@ -2279,12 +2292,18 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         applyStyling();
     });
     view.webContents.on('did-navigate', (_e, navUrl) => {
+        if (navUrl && !navUrl.includes('static.crunchyroll.com') && !navUrl.includes('vilos')) {
+            instObj.currentUrl = navUrl;
+        }
         applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
         }
     });
     view.webContents.on('did-navigate-in-page', (_e, navUrl) => {
+        if (navUrl && !navUrl.includes('static.crunchyroll.com') && !navUrl.includes('vilos')) {
+            instObj.currentUrl = navUrl;
+        }
         applyStyling();
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
@@ -2377,6 +2396,70 @@ electron_1.ipcMain.on('set-streaming-volume', (_event, volume) => {
         }
     }
 });
+/**
+ * Inspeciona todos os frames (incluindo iframes cross-origin como o Vilos da Crunchyroll)
+ * para obter o estado real de reprodução e URL da página principal.
+ */
+async function queryStreamingPlaybackState(inst) {
+    const wc = inst.view?.webContents;
+    const fallbackUrl = (wc && !wc.isDestroyed() ? wc.getURL() : '') || inst.currentUrl || '';
+    if (!wc || wc.isDestroyed()) {
+        return { url: fallbackUrl, positionSeconds: 0, isPlaying: false, hasVideo: false };
+    }
+    let bestVideoResult = null;
+    const frames = wc.mainFrame?.framesInSubtree || [wc.mainFrame];
+    for (const frame of frames) {
+        if (!frame || frame.isDestroyed?.())
+            continue;
+        try {
+            const res = await frame.executeJavaScript(`
+                (function() {
+                    var v = (typeof window.__concord_get_active_video === 'function')
+                        ? window.__concord_get_active_video()
+                        : document.querySelector('video');
+                    if (!v) return { hasVideo: false, currentTime: 0, isPlaying: false, score: 0 };
+                    var rect = v.getBoundingClientRect();
+                    var score = (rect.width * rect.height) + (v.readyState >= 1 ? 100000 : 0) + (!v.paused ? 50000 : 0);
+                    return {
+                        hasVideo: true,
+                        currentTime: typeof v.currentTime === 'number' && !isNaN(v.currentTime) ? v.currentTime : 0,
+                        isPlaying: !v.paused,
+                        score: score
+                    };
+                })()
+            `);
+            if (res && res.hasVideo && (!bestVideoResult || res.score > bestVideoResult.score)) {
+                bestVideoResult = res;
+            }
+        }
+        catch {
+            // Frame pode ter sido destruído durante navegação
+        }
+    }
+    const topUrl = wc.getURL() || inst.currentUrl || '';
+    if (topUrl && !topUrl.includes('static.crunchyroll.com') && !topUrl.includes('vilos')) {
+        inst.currentUrl = topUrl;
+    }
+    return {
+        url: inst.currentUrl || topUrl || fallbackUrl,
+        positionSeconds: bestVideoResult?.currentTime || 0,
+        isPlaying: bestVideoResult ? bestVideoResult.isPlaying : true,
+        hasVideo: Boolean(bestVideoResult?.hasVideo),
+    };
+}
+electron_1.ipcMain.handle('get-streaming-state', async (_event, service) => {
+    const targetService = service || activeStreamingService;
+    const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed()) {
+        return { ok: false, service: targetService || null, url: '', positionSeconds: 0, isPlaying: false, hasVideo: false };
+    }
+    const state = await queryStreamingPlaybackState(inst);
+    return {
+        ok: true,
+        service: inst.service,
+        ...state,
+    };
+});
 electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
     const targetService = payload?.service || activeStreamingService;
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
@@ -2392,100 +2475,49 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
     }
     else if (command === 'play') {
         broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'play' });
-        // Sincronizar evento de playback com a Watch Party no Concord
-        wc.executeJavaScript(`
-            (function() {
-                var v = (typeof window.__concord_get_active_video === 'function')
-                    ? window.__concord_get_active_video()
-                    : document.querySelector('video');
-                return {
-                    currentTime: v ? v.currentTime : 0,
-                    url: window.location.href
-                };
-            })()
-        `).then((res) => {
+        // Sincronizar evento de playback com a Watch Party no Concord (suporta iframe Vilos da Crunchyroll)
+        queryStreamingPlaybackState(inst).then((res) => {
             if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
                 mainWindow.webContents.send('streaming-event', {
                     type: 'playback-event',
                     playbackType: 'play',
                     service: inst.service,
-                    url: res?.url || inst.currentUrl || '',
-                    positionSeconds: res?.currentTime || 0,
+                    url: res.url || inst.currentUrl || '',
+                    positionSeconds: res.positionSeconds || 0,
                     isPlaying: true,
                 });
             }
-        }).catch(() => {
-            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
-                mainWindow.webContents.send('streaming-event', {
-                    type: 'playback-event',
-                    playbackType: 'play',
-                    service: inst.service,
-                    url: inst.currentUrl || '',
-                    isPlaying: true,
-                });
-            }
-        });
+        }).catch(() => { });
     }
     else if (command === 'pause') {
         broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'pause' });
-        // Sincronizar evento de playback com a Watch Party no Concord
-        wc.executeJavaScript(`
-            (function() {
-                var v = (typeof window.__concord_get_active_video === 'function')
-                    ? window.__concord_get_active_video()
-                    : document.querySelector('video');
-                return {
-                    currentTime: v ? v.currentTime : 0,
-                    url: window.location.href
-                };
-            })()
-        `).then((res) => {
+        // Sincronizar evento de playback com a Watch Party no Concord (suporta iframe Vilos da Crunchyroll)
+        queryStreamingPlaybackState(inst).then((res) => {
             if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
                 mainWindow.webContents.send('streaming-event', {
                     type: 'playback-event',
                     playbackType: 'pause',
                     service: inst.service,
-                    url: res?.url || inst.currentUrl || '',
-                    positionSeconds: res?.currentTime || 0,
+                    url: res.url || inst.currentUrl || '',
+                    positionSeconds: res.positionSeconds || 0,
                     isPlaying: false,
                 });
             }
-        }).catch(() => {
-            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
-                mainWindow.webContents.send('streaming-event', {
-                    type: 'playback-event',
-                    playbackType: 'pause',
-                    service: inst.service,
-                    url: inst.currentUrl || '',
-                    isPlaying: false,
-                });
-            }
-        });
+        }).catch(() => { });
     }
     else if (command === 'skip') {
         broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
         // Sincronizar evento de seek com a Watch Party no Concord
         setTimeout(() => {
-            wc.executeJavaScript(`
-                (function() {
-                    var v = (typeof window.__concord_get_active_video === 'function')
-                        ? window.__concord_get_active_video()
-                        : document.querySelector('video');
-                    return {
-                        currentTime: v ? v.currentTime : 0,
-                        isPlaying: v ? !v.paused : true,
-                        url: window.location.href
-                    };
-                })()
-            `).then((res) => {
+            queryStreamingPlaybackState(inst).then((res) => {
                 if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
                     mainWindow.webContents.send('streaming-event', {
                         type: 'playback-event',
                         playbackType: 'seek',
                         service: inst.service,
-                        url: res?.url || inst.currentUrl || '',
-                        positionSeconds: res?.currentTime || 0,
-                        isPlaying: res?.isPlaying ?? true,
+                        url: res.url || inst.currentUrl || '',
+                        positionSeconds: res.positionSeconds || 0,
+                        isPlaying: res.isPlaying,
                     });
                 }
             }).catch(() => { });
@@ -2494,11 +2526,12 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
     else if (command === 'seek' && typeof payload?.time === 'number') {
         broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'seek', positionSeconds: payload.time });
         if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+            const currentTopUrl = wc.getURL() || inst.currentUrl || '';
             mainWindow.webContents.send('streaming-event', {
                 type: 'playback-event',
                 playbackType: 'seek',
                 service: inst.service,
-                url: inst.currentUrl || '',
+                url: currentTopUrl,
                 positionSeconds: payload.time,
                 isPlaying: true,
             });

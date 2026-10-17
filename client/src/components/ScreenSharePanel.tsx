@@ -45,11 +45,14 @@ export const ScreenSharePanel: React.FC<Props> = ({
     onStopWatchingRef.current = onStopWatching;
   });
 
-  // Notificar entrada/saída como espectador
+  // Notificar entrada/saída como espectador e ocultar WebContentsView de streaming para não sobrepor o painel
   useEffect(() => {
     if (screenShareUserId && screenShareUserId !== myId) {
+      const electron = typeof window !== 'undefined' ? (window as any).electron : null;
+      electron?.setModalActive?.(true);
       onStartWatchingRef.current?.(screenShareUserId);
       return () => {
+        electron?.setModalActive?.(false);
         onStopWatchingRef.current?.(screenShareUserId);
       };
     }

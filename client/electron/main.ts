@@ -851,6 +851,17 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('get-screen-sources', async () => {
         try {
+            // Garantir que nenhuma WebContentsView de streaming fique sobrepondo o modal de escolha de tela
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                isModalActive = true;
+                if (activeStreamingService) {
+                    modalHiddenStreamingService = activeStreamingService;
+                }
+                hideStreamingView('netflix');
+                hideStreamingView('prime');
+                hideStreamingView('crunchyroll');
+            }
+
             const sources = await desktopCapturer.getSources({
                 types: ['screen', 'window'],
                 thumbnailSize: { width: 320, height: 180 },
@@ -879,12 +890,15 @@ app.whenReady().then(async () => {
     // Uses the user-selected screen/window source and audio preference from the picker modal
     session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
         try {
-            const isRecent = selectedScreenSource && (Date.now() - selectedScreenSource.timestamp < 15000);
+            const isRecent = selectedScreenSource && (Date.now() - selectedScreenSource.timestamp < 60000);
             const targetId = isRecent ? selectedScreenSource?.sourceId : null;
             const wantAudio = (isRecent && selectedScreenSource ? selectedScreenSource.withAudio : true) && request.audioRequested;
             fs.appendFileSync(logFile, `[ScreenShare-Main] Handler invoked: audioRequested=${request.audioRequested}, isRecent=${isRecent}, targetId=${targetId}, wantAudio=${wantAudio}\n`);
 
-            const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+            const sources = await desktopCapturer.getSources({
+                types: ['screen', 'window'],
+                thumbnailSize: { width: 0, height: 0 },
+            });
             let chosen = targetId ? sources.find((s) => s.id === targetId) : null;
             if (!chosen) {
                 // Fallback to screen if not found or not specified

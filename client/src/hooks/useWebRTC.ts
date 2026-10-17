@@ -66,7 +66,7 @@ function applySenderBitrate(sender: RTCRtpSender, isVideo: boolean, peerCount: n
       params.degradationPreference =
         screenShareContentHint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
     } else {
-      params.encodings[0].maxBitrate = 96_000; // 96 kbps for screen audio
+      params.encodings[0].maxBitrate = 128_000; // 128 kbps high-clarity stereo/system audio for screen share
     }
 
     sender.setParameters(params).catch(() => {});
@@ -90,6 +90,59 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
   ]);
 
   const myIdRef = useRef('');
+
+  const attachScreenAudioTrack = useCallback(
+    (peerId: string, peerData: PeerConnection, sAudio: MediaStreamTrack) => {
+      let screenAudioEl = peerData.screenAudioEl;
+      if (!screenAudioEl) {
+        screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
+        if (!screenAudioEl) {
+          screenAudioEl = document.createElement('audio');
+          screenAudioEl.id = `remote-screen-audio-${peerId}`;
+          screenAudioEl.autoplay = true;
+          (screenAudioEl as any).playsInline = true;
+
+          const container = document.getElementById('remote-audios') || document.body;
+          container.appendChild(screenAudioEl);
+        }
+        peerData.screenAudioEl = screenAudioEl;
+      }
+
+      const existingStream = screenAudioEl.srcObject as MediaStream | null;
+      const alreadyAttached =
+        existingStream instanceof MediaStream &&
+        existingStream.getAudioTracks().some((t) => t.id === sAudio.id);
+
+      const audioOnlyStream = alreadyAttached && existingStream ? existingStream : new MediaStream([sAudio]);
+      if (!alreadyAttached) {
+        screenAudioEl.srcObject = audioOnlyStream;
+      }
+
+      const outputId = useAudioStore.getState().selectedAudioOutputId;
+      if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
+        (screenAudioEl as any).setSinkId(outputId).catch(() => {});
+      }
+
+      if (attachRemoteScreenAudio) {
+        attachRemoteScreenAudio(screenAudioEl, audioOnlyStream, peerId);
+      } else {
+        screenAudioEl.play().catch((err) => {
+          console.warn('[WebRTC] Remote screen audio autoplay blocked:', err);
+        });
+      }
+
+      sAudio.onunmute = () => {
+        if (peerData.screenAudioEl) {
+          if (attachRemoteScreenAudio) {
+            attachRemoteScreenAudio(peerData.screenAudioEl, audioOnlyStream, peerId);
+          } else if (peerData.screenAudioEl.paused) {
+            peerData.screenAudioEl.play().catch(() => {});
+          }
+        }
+      };
+    },
+    [attachRemoteScreenAudio]
+  );
 
   // Fetch ICE servers from server
   const fetchIceServers = useCallback(async () => {
@@ -211,45 +264,12 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
       };
 
       // Remote tracks
-      pc.ontrack = ({ track, streams }) => {
+      pc.ontrack = ({ track, streams, transceiver }) => {
         if (track.kind === 'video') {
           // This is a screen share stream: ALWAYS isolate to a pure video-only MediaStream
           const videoOnlyStream = new MediaStream([track]);
           remoteScreenStreamsRef.current.set(peerId, videoOnlyStream);
           setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
-
-          // If streams[0] also contains a screen audio track, connect it to screen audio element
-          const sAudio = streams[0]?.getAudioTracks()[0];
-          if (sAudio) {
-            let screenAudioEl = peerData.screenAudioEl;
-            if (!screenAudioEl) {
-              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
-              if (!screenAudioEl) {
-                screenAudioEl = document.createElement('audio');
-                screenAudioEl.id = `remote-screen-audio-${peerId}`;
-                screenAudioEl.autoplay = true;
-                (screenAudioEl as any).playsInline = true;
-
-                const container = document.getElementById('remote-audios') || document.body;
-                container.appendChild(screenAudioEl);
-              }
-              peerData.screenAudioEl = screenAudioEl;
-            }
-
-            const audioOnlyStream = new MediaStream([sAudio]);
-            screenAudioEl.srcObject = audioOnlyStream;
-            const outputId = useAudioStore.getState().selectedAudioOutputId;
-            if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
-              (screenAudioEl as any).setSinkId(outputId).catch(() => {});
-            }
-            screenAudioEl.play().catch((err) => {
-              console.warn('[WebRTC] Screen audio autoplay blocked:', err);
-            });
-
-            if (attachRemoteScreenAudio) {
-              attachRemoteScreenAudio(screenAudioEl, audioOnlyStream, peerId);
-            }
-          }
 
           track.onended = () => {
             remoteScreenStreamsRef.current.delete(peerId);
@@ -271,42 +291,20 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
           };
         } else if (track.kind === 'audio') {
           // Diferencie microfone vs áudio da tela de forma infalível:
-          // A primeira trilha de áudio sem vídeo (quando !peerData.micTrack || peerData.micTrack.id === track.id) é o microfone.
-          // Qualquer segunda trilha de áudio (peerData.micTrack && peerData.micTrack.id !== track.id)
-          // OU trilha cujo streams[0] tenha vídeo é ÁUDIO DE TELA!
+          // 1. Se streams[0] tem trilha de vídeo, é áudio da tela.
+          // 2. Se já temos peerData.micTrack com ID diferente, é a segunda trilha de áudio (áudio da tela).
+          // 3. Se este transceiver de áudio não é o primeiro transceiver de áudio da conexão (mid > primeiro mid de áudio), é áudio da tela.
           const hasVideoInStream = (streams[0]?.getVideoTracks().length ?? 0) > 0;
           const isSecondAudio = Boolean(peerData.micTrack && peerData.micTrack.id !== track.id);
-          const isScreenAudio = hasVideoInStream || isSecondAudio;
+          const audioTransceivers = pc.getTransceivers().filter(
+            (t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio'
+          );
+          const isAdditionalAudioTransceiver =
+            audioTransceivers.length > 1 && transceiver && audioTransceivers[0] !== transceiver;
+          const isScreenAudio = hasVideoInStream || isSecondAudio || Boolean(isAdditionalAudioTransceiver);
 
           if (isScreenAudio) {
-            let screenAudioEl = peerData.screenAudioEl;
-            if (!screenAudioEl) {
-              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
-              if (!screenAudioEl) {
-                screenAudioEl = document.createElement('audio');
-                screenAudioEl.id = `remote-screen-audio-${peerId}`;
-                screenAudioEl.autoplay = true;
-                (screenAudioEl as any).playsInline = true;
-
-                const container = document.getElementById('remote-audios') || document.body;
-                container.appendChild(screenAudioEl);
-              }
-              peerData.screenAudioEl = screenAudioEl;
-            }
-
-            const audioOnlyStream = new MediaStream([track]);
-            screenAudioEl.srcObject = audioOnlyStream;
-            const outputId = useAudioStore.getState().selectedAudioOutputId;
-            if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
-              (screenAudioEl as any).setSinkId(outputId).catch(() => {});
-            }
-            screenAudioEl.play().catch((err) => {
-              console.warn('[WebRTC] Remote screen audio autoplay blocked:', err);
-            });
-
-            if (attachRemoteScreenAudio) {
-              attachRemoteScreenAudio(screenAudioEl, audioOnlyStream, peerId);
-            }
+            attachScreenAudioTrack(peerId, peerData, track);
           } else {
             peerData.micTrack = track;
             let audioEl = peerData.audioEl;
@@ -349,7 +347,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       return peerData;
     },
-    [emit, attachRemoteStream, attachRemoteScreenAudio]
+    [emit, attachRemoteStream, attachScreenAudioTrack]
   );
 
   const flushPendingIce = useCallback(async (peerId: string) => {
@@ -567,6 +565,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         if (videoTrack) {
           if (peer.screenVideoTransceiver) {
             await peer.screenVideoTransceiver.sender.replaceTrack(videoTrack);
+            if (typeof peer.screenVideoTransceiver.sender.setStreams === 'function') {
+              peer.screenVideoTransceiver.sender.setStreams(stream);
+            }
             peer.screenVideoTransceiver.direction = 'sendonly';
           } else {
             peer.screenVideoTransceiver = peer.pc.addTransceiver(videoTrack, {
@@ -587,6 +588,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         if (audioTrack) {
           if (peer.screenAudioTransceiver) {
             await peer.screenAudioTransceiver.sender.replaceTrack(audioTrack);
+            if (typeof peer.screenAudioTransceiver.sender.setStreams === 'function') {
+              peer.screenAudioTransceiver.sender.setStreams(stream);
+            }
             peer.screenAudioTransceiver.direction = 'sendonly';
           } else {
             peer.screenAudioTransceiver = peer.pc.addTransceiver(audioTrack, {
@@ -671,16 +675,31 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
   /**
    * Recovers or ensures an active MediaStream for the remote broadcaster
-   * by inspecting receivers if the stream was missed or unmounted.
+   * by inspecting receivers if the stream was missed or unmounted, and also
+   * guarantees any remote screen audio track is attached and playing.
    */
   const ensureRemoteScreenStream = useCallback((userId: string): MediaStream | null => {
+    const peer = peersRef.current.get(userId);
+    if (peer) {
+      const receivers = peer.pc.getReceivers();
+      const liveScreenAudioReceiver = receivers.find(
+        (r) =>
+          r.track &&
+          r.track.kind === 'audio' &&
+          r.track.readyState === 'live' &&
+          r.track.id !== peer.micTrack?.id
+      );
+      if (liveScreenAudioReceiver?.track) {
+        attachScreenAudioTrack(userId, peer, liveScreenAudioReceiver.track);
+      }
+    }
+
     const existing = remoteScreenStreamsRef.current.get(userId);
     const liveVideoTrack = existing?.getVideoTracks().find((t) => t.readyState === 'live');
     if (existing && liveVideoTrack) {
       return existing;
     }
 
-    const peer = peersRef.current.get(userId);
     if (!peer) return null;
 
     const receivers = peer.pc.getReceivers();
@@ -696,7 +715,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     }
 
     return null;
-  }, []);
+  }, [attachScreenAudioTrack]);
 
   // Collect remote voice MediaStreams so the echo filter can subtract them from loopback
   const getRemoteAudioStreams = useCallback((): Map<string, MediaStream> => {

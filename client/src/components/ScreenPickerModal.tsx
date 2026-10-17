@@ -115,9 +115,15 @@ export const ScreenPickerModal: React.FC<ScreenPickerModalProps> = ({
   }, []);
 
   useEffect(() => {
+    const electron = typeof window !== 'undefined' ? (window as any).electron : null;
     if (isOpen) {
+      electron?.setModalActive?.(true);
       loadSources();
+      return () => {
+        electron?.setModalActive?.(false);
+      };
     } else {
+      electron?.setModalActive?.(false);
       setSelectedSourceId(null);
       setSources([]);
     }

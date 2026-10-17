@@ -35,12 +35,14 @@
   border-radius: 20px;
   padding: 24px;
   width: 100%;
-  max-width: 460px;
+  max-width: 520px;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8), 0 0 30px rgba(124, 92, 255, 0.15);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   animation: modalScale 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
 }
@@ -53,6 +55,7 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 12px;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .modalHeaderLeft {
@@ -122,6 +125,7 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   gap: 4px;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .tabBtn {
@@ -156,6 +160,40 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 92, 255, 0.4) transparent;
+  padding-right: 6px;
+  padding-bottom: 6px;
+}
+
+.serverSection::-webkit-scrollbar,
+.form::-webkit-scrollbar,
+.audioSection::-webkit-scrollbar {
+  width: 6px;
+}
+
+.serverSection::-webkit-scrollbar-track,
+.form::-webkit-scrollbar-track,
+.audioSection::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.serverSection::-webkit-scrollbar-thumb,
+.form::-webkit-scrollbar-thumb,
+.audioSection::-webkit-scrollbar-thumb {
+  background: rgba(124, 92, 255, 0.35);
+  border-radius: 8px;
+}
+
+.serverSection::-webkit-scrollbar-thumb:hover,
+.form::-webkit-scrollbar-thumb:hover,
+.audioSection::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 92, 255, 0.6);
 }
 
 .serverInfoBox {
@@ -373,6 +411,14 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 92, 255, 0.4) transparent;
+  padding-right: 6px;
+  padding-bottom: 6px;
 }
 
 .avatarPreviewArea {
@@ -487,6 +533,14 @@
   flex-direction: column;
   gap: 14px;
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 92, 255, 0.4) transparent;
+  padding-right: 6px;
+  padding-bottom: 8px;
 }
 
 .deviceSelect {

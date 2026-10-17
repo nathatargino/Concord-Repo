@@ -344,20 +344,25 @@ export function useAudio() {
 
   const attachRemoteScreenAudio = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
-      const { screenShareVol, callMuted, localMutedUsers } = useAudioStore.getState();
+      const { screenShareVol, callMuted, localMutedUsers, selectedAudioOutputId } = useAudioStore.getState();
       const currentWatchingId = useAppStore.getState().screenShareUserId;
       const isWatching = currentWatchingId === userId;
       const isLocalMuted = localMutedUsers.includes(userId);
       const targetVol = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
 
-      audioEl.srcObject = stream;
+      if (audioEl.srcObject !== stream) {
+        audioEl.srcObject = stream;
+      }
+      if (selectedAudioOutputId && selectedAudioOutputId !== 'default' && typeof (audioEl as any).setSinkId === 'function') {
+        (audioEl as any).setSinkId(selectedAudioOutputId).catch(() => {});
+      }
       audioEl.volume = Math.min(1, Math.max(0, targetVol));
       audioEl.muted = (callMuted || isLocalMuted || !isWatching || targetVol === 0);
 
-      if (isWatching && targetVol > 0) {
+      // Always keep the WebRTC audio element playing (even when muted while !isWatching)
+      // so Chromium drains incoming RTP audio packets and never stalls when the user clicks to watch.
+      if (audioEl.paused) {
         audioEl.play().catch((e) => console.warn('[useAudio] Screen audio play prevented:', e));
-      } else {
-        audioEl.pause();
       }
 
       const prevGain = screenAudioGains.get(userId);
@@ -440,9 +445,7 @@ export function useAudio() {
         gainNode.gain.value = targetVol > 1 ? (targetVol - 1) : 0;
       }
 
-      if (!isWatching || targetVol === 0) {
-        audio.pause();
-      } else if (audio.paused && targetVol > 0) {
+      if (audio.paused && audio.srcObject) {
         audio.play().catch(() => {});
       }
     });
