@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
-import { playJoinSound, playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
+import { playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
 import { notifyInChat } from '../utils/systemMessage';
 import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
@@ -189,6 +189,7 @@ export function useSocket(callbacks: SocketCallbacks) {
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
   const joinGracePeriodUntilRef = useRef<number>(Date.now() + 4000);
+  const needsVoiceRejoinRef = useRef<boolean>(false);
 
   const store = useAppStore();
 
@@ -201,8 +202,6 @@ export function useSocket(callbacks: SocketCallbacks) {
       reconnectionDelayMax: 10000,
       randomizationFactor: 0.5,
       timeout: 45000,
-      ackTimeout: 10000,
-      retries: 3,
     });
 
     socketRef.current = socket;
@@ -258,6 +257,9 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('disconnect', (reason) => {
       console.warn('[Socket] Desconectado do servidor:', reason);
+      if (useAppStore.getState().inVoice) {
+        needsVoiceRejoinRef.current = true;
+      }
       useAppStore.getState().setConnected(false);
     });
 
@@ -276,9 +278,10 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
       callbacksRef.current.onRoomJoined?.(room);
 
-      // Re-sincronizar presença de voz e streaming sob reconexão
+      // Re-sincronizar presença de voz e streaming APENAS após reconexão real do socket
       const appState = useAppStore.getState();
-      if (appState.inVoice) {
+      if (appState.inVoice && needsVoiceRejoinRef.current) {
+        needsVoiceRejoinRef.current = false;
         console.log('[Socket] Re-estabelecendo presença em voz após reconexão...');
         socket.emit('join_voice');
         const audioState = useAudioStore.getState();
@@ -684,7 +687,6 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('user_joined_voice', (userId) => {
-      if (useAppStore.getState().inVoice) playJoinSound();
       callbacksRef.current.onUserJoinedVoice(userId);
     });
 

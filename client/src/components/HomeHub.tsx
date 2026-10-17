@@ -221,19 +221,20 @@ export const HomeHub: React.FC = () => {
       const generatedCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const roomId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
 
-      fetch(`${SERVER_URL}/api/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          persistentId,
-          code: generatedCode,
-          id: roomId,
-          isServer: false,
-          name: finalRoomName,
+      await Promise.allSettled([
+        fetch(`${SERVER_URL}/api/rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persistentId,
+            code: generatedCode,
+            id: roomId,
+            isServer: false,
+            name: finalRoomName,
+          }),
         }),
-      }).catch(() => {});
-
-      createRoomInSupabase(finalRoomName, generatedCode, roomId).catch(() => {});
+        createRoomInSupabase(finalRoomName, generatedCode, roomId),
+      ]);
 
       saveRecentRoom({
         id: roomId,
@@ -259,6 +260,8 @@ export const HomeHub: React.FC = () => {
         toast.success('Sala criada com sucesso!');
       }
 
+      useAppStore.getState().setServerMembers([]);
+      useAppStore.getState().setUsers([]);
       setIsServer(false);
       setActiveRailContext(roomId);
       setIsPromptModalOpen(false);

@@ -412,7 +412,15 @@ export function ChatPanel({
         } else if (event.type === 'playback-event') {
           const effectiveInVoice = inVoice || Boolean(useAppStore.getState().inVoice);
           if (effectiveInVoice) {
-            if (event.playbackType === 'title-started') {
+            const currentSession = useAppStore.getState().watchSession;
+            const currentMyId = useAppStore.getState().myId;
+            const shouldAutoStart =
+              event.playbackType === 'title-started' ||
+              (!currentSession && Boolean(event.url)) ||
+              (currentSession && currentSession.platform !== event.service && Boolean(event.url)) ||
+              (currentSession && currentSession.startedBy === currentMyId && Boolean(event.url) && event.url !== currentSession.titleUrl);
+
+            if (shouldAutoStart && event.url) {
               onWatchSessionStart?.({
                 platform: event.service,
                 titleUrl: event.url,
@@ -439,16 +447,72 @@ export function ChatPanel({
     }
   }, [setActiveStreaming, setActiveMediaTab, setStreamingSession, inVoice, onWatchSessionStart, onWatchSessionAction, onWatchSessionHeartbeat]);
 
-  // ── Sincronização Manual com o Líder da Watch Party ──
-  const handleManualSync = () => {
-    const currentSession = useAppStore.getState().watchSession;
-    const electron = (window as any).electron;
-    if (!currentSession) {
-      toast('Nenhuma Watch Party ativa no momento.', { icon: 'ℹ️' });
+  // ── Iniciar ou Assumir Watch Party Manualmente ──
+  const handleStartWatchParty = async (serviceOverride?: 'netflix' | 'prime' | 'crunchyroll') => {
+    const effectiveInVoice = inVoice || Boolean(useAppStore.getState().inVoice);
+    if (!effectiveInVoice) {
+      toast.error('Você precisa estar em uma call de voz para iniciar uma Watch Party.');
       return;
     }
-    if (!inVoice) {
+    const electron = (window as any).electron;
+    const targetService: 'netflix' | 'prime' | 'crunchyroll' =
+      serviceOverride ||
+      (activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll'
+        ? (activeMediaTab as any)
+        : (useAppStore.getState().activeStreaming?.service as any) || 'netflix');
+
+    const defaultUrl =
+      targetService === 'netflix'
+        ? 'https://www.netflix.com/browse'
+        : targetService === 'prime'
+        ? 'https://www.primevideo.com'
+        : 'https://www.crunchyroll.com/';
+
+    if (electron?.getStreamingState) {
+      try {
+        const state = await electron.getStreamingState(targetService);
+        if (state && state.ok && state.url) {
+          onWatchSessionStart?.({
+            platform: targetService,
+            titleUrl: state.url,
+            positionSeconds: state.positionSeconds || 0,
+            isPlaying: state.isPlaying ?? true,
+          });
+          toast.success('Watch Party iniciada! Seus amigos já podem clicar em Sincronizar.');
+          return;
+        }
+      } catch {
+        // fallback abaixo
+      }
+    }
+
+    const fallbackUrl = useAppStore.getState().activeStreaming?.url || defaultUrl;
+    onWatchSessionStart?.({
+      platform: targetService,
+      titleUrl: fallbackUrl,
+      positionSeconds: 0,
+      isPlaying: true,
+    });
+    toast.success('Watch Party iniciada! Seus amigos já podem clicar em Sincronizar.');
+  };
+
+  // ── Sincronização Manual com o Líder da Watch Party ──
+  const handleManualSync = async () => {
+    const currentSession = useAppStore.getState().watchSession;
+    const electron = (window as any).electron;
+    const effectiveInVoice = inVoice || Boolean(useAppStore.getState().inVoice);
+    if (!effectiveInVoice) {
       toast.error('Você precisa estar em uma call de voz para sincronizar.');
+      return;
+    }
+    if (!currentSession) {
+      // Se não houver Watch Party ativa mas o usuário estiver com uma plataforma aberta, inicia a Watch Party automaticamente!
+      const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll';
+      if (isStreamingTab && electron?.getStreamingState) {
+        await handleStartWatchParty(activeMediaTab as any);
+        return;
+      }
+      toast('Nenhuma Watch Party ativa. Abra um título e clique em "Iniciar Watch Party".', { icon: 'ℹ️' });
       return;
     }
 
@@ -1865,7 +1929,7 @@ export function ChatPanel({
             )}
           </div>
 
-          {/* Botão rápido de sincronizar no cabeçalho quando player aberto e há Watch Party */}
+          {/* Botão rápido de iniciar/sincronizar Watch Party no cabeçalho quando player aberto */}
           {showVideoPlayer && watchSession && (
             <button
               className={styles.headerWatchSyncBtn}
@@ -1874,6 +1938,16 @@ export function ChatPanel({
             >
               <i className="fa-solid fa-arrows-rotate"></i>
               <span>Sincronizar</span>
+            </button>
+          )}
+          {showVideoPlayer && !watchSession && activeMediaTab !== 'youtube' && (
+            <button
+              className={styles.headerWatchSyncBtn}
+              onClick={() => handleStartWatchParty()}
+              title="Iniciar Watch Party com o vídeo atual para todos na call"
+            >
+              <i className="fa-solid fa-tower-broadcast"></i>
+              <span>Iniciar Watch Party</span>
             </button>
           )}
 
@@ -2925,8 +2999,8 @@ export function ChatPanel({
 
                       {/* Controles do Streaming (Play, Pause, Skip 10s, Sincronizar, Sair/Catálogo, Tela Cheia) */}
                       <div className={styles.videoShortcutWrapper}>
-                        {/* Banner de status da Watch Party quando ativa para a plataforma atual */}
-                        {watchSession && watchSession.platform === currentService && (
+                        {/* Banner de status e início da Watch Party para a plataforma atual */}
+                        {watchSession && watchSession.platform === currentService ? (
                           <div className={styles.playerWatchPartyBanner}>
                             <div className={styles.playerWatchPartyLeft}>
                               <span className={styles.playerWatchPartyPulse} />
@@ -2938,14 +3012,44 @@ export function ChatPanel({
                                 {watchSession.isPlaying ? '▶ Reproduzindo' : '⏸ Pausado'}
                               </span>
                             </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className={styles.playerWatchPartySyncBtn}
+                                onClick={() => handleStartWatchParty(currentService)}
+                                title="Definir o vídeo que você está assistindo agora como a transmissão da Watch Party"
+                              >
+                                <i className="fa-solid fa-tower-broadcast"></i>
+                                <span>Transmitir Meu Vídeo</span>
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.playerWatchPartySyncBtn}
+                                onClick={handleManualSync}
+                                title="Sincronizar no mesmo segundo que o líder agora"
+                              >
+                                <i className="fa-solid fa-arrows-rotate"></i>
+                                <span>Sincronizar com Líder</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className={styles.playerWatchPartyBanner}>
+                            <div className={styles.playerWatchPartyLeft}>
+                              <i className="fa-solid fa-tower-broadcast" style={{ color: '#5865f2', fontSize: '12px' }} />
+                              <span className={styles.playerWatchPartyTitle}>Watch Party ({platformLabel})</span>
+                              <span className={styles.playerWatchPartyLeader}>
+                                • Abra um episódio ou filme e clique ao lado para sincronizar com a call
+                              </span>
+                            </div>
                             <button
                               type="button"
                               className={styles.playerWatchPartySyncBtn}
-                              onClick={handleManualSync}
-                              title="Sincronizar no mesmo segundo que o líder agora"
+                              onClick={() => handleStartWatchParty(currentService)}
+                              title="Iniciar Watch Party deste vídeo para todos na call de voz"
                             >
-                              <i className="fa-solid fa-arrows-rotate"></i>
-                              <span>Sincronizar com Líder</span>
+                              <i className="fa-solid fa-play"></i>
+                              <span>Iniciar Watch Party</span>
                             </button>
                           </div>
                         )}
@@ -2961,6 +3065,8 @@ export function ChatPanel({
                               const currentSession = useAppStore.getState().watchSession || watchSession;
                               if (currentSession && currentSession.platform === currentService) {
                                 onWatchSessionAction?.({ action: 'play' });
+                              } else {
+                                handleStartWatchParty(currentService);
                               }
                             }}
                             title="Reproduzir vídeo"
@@ -3005,15 +3111,21 @@ export function ChatPanel({
                             <span>/skip</span>
                           </button>
 
-                          {/* Botão de Sincronizar na grade de controles */}
+                          {/* Botão de Iniciar Watch Party / Sincronizar na grade de controles */}
                           <button
                             type="button"
                             className={`${styles.videoShortcutBtn} ${styles.videoShortcutSync}`}
-                            onClick={handleManualSync}
-                            title="Sincronizar reprodução com o líder"
+                            onClick={() => {
+                              if (watchSession && watchSession.platform === currentService) {
+                                handleManualSync();
+                              } else {
+                                handleStartWatchParty(currentService);
+                              }
+                            }}
+                            title={watchSession && watchSession.platform === currentService ? 'Sincronizar reprodução com o líder' : 'Iniciar Watch Party para o grupo'}
                           >
-                            <i className="fa-solid fa-arrows-rotate"></i>
-                            <span>Sincronizar</span>
+                            <i className={`fa-solid ${watchSession && watchSession.platform === currentService ? 'fa-arrows-rotate' : 'fa-tower-broadcast'}`}></i>
+                            <span>{watchSession && watchSession.platform === currentService ? 'Sincronizar' : 'Watch Party'}</span>
                           </button>
 
                           <button

@@ -342,18 +342,36 @@ export async function createRoomInSupabase(name: string, code: string, customId?
       insertPayload.id = customId;
     }
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('rooms')
       .insert(insertPayload)
       .select()
       .single();
+
+    if (error && (error.code === 'PGRST204' || error.message?.includes('is_server'))) {
+      const compatPayload: any = {
+        code: code.toUpperCase(),
+        name,
+        created_by: user?.id || null,
+      };
+      if (customId && isUuid(customId)) {
+        compatPayload.id = customId;
+      }
+      const res2 = await supabase
+        .from('rooms')
+        .insert(compatPayload)
+        .select()
+        .single();
+      data = res2.data;
+      error = res2.error;
+    }
 
     if (error) {
       console.warn('[Supabase] Aviso ao criar sala temporária:', error.message);
       return null;
     }
 
-    return data as DbRoom;
+    return data ? ({ ...data, is_server: false } as DbRoom) : null;
   } catch (err) {
     console.warn('[Supabase] Exceção ao criar sala temporária:', err);
     return null;

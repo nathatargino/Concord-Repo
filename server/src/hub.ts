@@ -366,10 +366,10 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             for (const candidate of candidates) {
               const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate);
               
-              // Buscar sala respeitando a coluna is_server
+              // Buscar sala de forma resiliente mesmo se a coluna is_server não existir no schema cache
               const { data, error } = await supabaseClient
                 .from('rooms')
-                .select('id, code, name, icon_url, created_by, is_server')
+                .select('*')
                 .or(isUUID ? `id.eq.${candidate},code.ilike.${candidate}` : `code.ilike.${candidate}`)
                 .maybeSingle();
 
@@ -461,7 +461,12 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           }
         }
 
-        // Se ainda não encontrou nem na memória nem no banco, rejeita estritamente
+        // Se ainda não encontrou nem na memória nem no banco, cria em memória caso tenha código de fallback (evita race condition ao criar sala rápida)
+        if (!room && fallbackCode && fallbackCode.trim()) {
+          room = createRoom(persistentId, fallbackCode.trim().toUpperCase(), cleanIdOrCode, isServer, serverNameHint);
+          console.log(`[Room] Auto-created ${isServer ? 'server' : 'temp room'} ${room.id} (code: ${room.code}) on join_room`);
+        }
+
         if (!room) {
           socket.emit('room_error', 'Código de convite ou sala inválida ou expirada.');
           return;
@@ -509,24 +514,20 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           .catch((err: any) => console.warn('[Hub Supabase Sync Error]:', err));
       }
 
-      // Leave previous room if any (preserva voz caso o usuário esteja em call)
+      // Sair completamente da sala/servidor anterior ao trocar de sala para nunca misturar listas de usuários
       const prevRoomId = socket.data.roomId;
       if (prevRoomId && prevRoomId !== room.id) {
         const prevRoom = rooms.get(prevRoomId);
         if (prevRoom) {
-          if (!user.inVoice) {
-            handleLeaveVoice(socket, io, user, prevRoom);
-            prevRoom.users.delete(socket.id);
-            if (prevRoom.users.size === 0 && !prevRoom.isServer) {
-              destroyRoom(prevRoom.id);
-            } else {
-              handleAdminReassignment(socket.id, io, prevRoom);
-              broadcastUserList(io, prevRoom);
-            }
-            socket.leave(prevRoomId);
+          handleLeaveVoice(socket, io, user, prevRoom);
+          prevRoom.users.delete(socket.id);
+          if (prevRoom.users.size === 0 && !prevRoom.isServer) {
+            destroyRoom(prevRoom.id);
           } else {
-            socket.data.voiceRoomId = prevRoomId;
+            handleAdminReassignment(socket.id, io, prevRoom);
+            broadcastUserList(io, prevRoom);
           }
+          socket.leave(prevRoomId);
         }
       }
 
@@ -1590,12 +1591,15 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       socket.data.voiceRoomId = room.id;
 
+      const alreadyInVoice = room.voiceUsers.has(socket.id);
       user.inVoice = true;
       room.voiceUsers.add(socket.id);
 
       const existingInVoice = Array.from(room.voiceUsers).filter(id => id !== socket.id);
       socket.emit('existing_voice_users', existingInVoice);
-      socket.to(room.id).emit('user_joined_voice', socket.id);
+      if (!alreadyInVoice) {
+        socket.to(room.id).emit('user_joined_voice', socket.id);
+      }
       broadcastUserList(io, room);
 
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {

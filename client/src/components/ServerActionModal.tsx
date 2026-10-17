@@ -99,8 +99,8 @@ export const ServerActionModal: React.FC = () => {
 
       const createdServer = await createServerInSupabase(trimmed, generatedCode, serverId);
 
-      // Registrar servidor no backend Node.js
-      fetch(`${SERVER_URL}/api/rooms`, {
+      // Registrar servidor no backend Node.js antes de navegar
+      await fetch(`${SERVER_URL}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -138,6 +138,8 @@ export const ServerActionModal: React.FC = () => {
       recordRecentServer(newServerData);
       await refreshServers();
 
+      useAppStore.getState().setServerMembers([]);
+      useAppStore.getState().setUsers([]);
       setIsServer(true);
       setServerName(trimmed);
       setActiveRailContext(createdServer?.id || serverId);
@@ -210,6 +212,8 @@ export const ServerActionModal: React.FC = () => {
         await refreshServers();
       }
 
+      useAppStore.getState().setServerMembers([]);
+      useAppStore.getState().setUsers([]);
       setIsServer(isServerRoom);
       if (supabaseRoom.name) setServerName(supabaseRoom.name);
       setActiveRailContext(roomId);
@@ -233,21 +237,20 @@ export const ServerActionModal: React.FC = () => {
       const roomId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
       const targetRoomName = roomNameInput.trim() || `Sala de ${myName || 'Concord'}`;
 
-      fetch(`${SERVER_URL}/api/rooms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          persistentId,
-          code: generatedCode,
-          id: roomId,
-          isServer: false,
-          name: targetRoomName,
+      await Promise.allSettled([
+        fetch(`${SERVER_URL}/api/rooms`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persistentId,
+            code: generatedCode,
+            id: roomId,
+            isServer: false,
+            name: targetRoomName,
+          }),
         }),
-      }).catch((err) => console.warn('Server room creation background ping:', err));
-
-      createRoomInSupabase(targetRoomName, generatedCode, roomId).catch((err) =>
-        console.warn('Supabase room creation background:', err)
-      );
+        createRoomInSupabase(targetRoomName, generatedCode, roomId),
+      ]);
 
       // Salvar no histórico local de salas 14h
       saveRecentRoom({
@@ -274,6 +277,8 @@ export const ServerActionModal: React.FC = () => {
         toast.success('Sala criada!');
       }
 
+      useAppStore.getState().setServerMembers([]);
+      useAppStore.getState().setUsers([]);
       setIsServer(false);
       setActiveRailContext(roomId);
       closeActionModal();

@@ -321,6 +321,9 @@ export const useAppStore = create<AppState>((set) => ({
         channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'Geral' }],
         activeChannelId: room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral',
         messages: roomChanged ? [] : state.messages,
+        users: roomChanged ? [] : state.users,
+        serverMembers: roomChanged ? [] : state.serverMembers,
+        watchSession: roomChanged ? null : state.watchSession,
       };
     }),
   isServer: false,

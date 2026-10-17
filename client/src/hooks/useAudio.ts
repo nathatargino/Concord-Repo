@@ -294,34 +294,47 @@ export function useAudio() {
 
   const attachRemoteStream = useCallback((audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => {
     try {
-      const { remoteVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
+      const { remoteVol, callMuted, localMutedUsers, userVolumes, selectedAudioOutputId } = useAudioStore.getState();
       const userVol = userVolumes[userId] ?? 100;
-
       const isLocalMuted = localMutedUsers.includes(userId);
-      audioEl.srcObject = stream;
-      audioEl.volume = 0; // Controlled by Web Audio API GainNode instead
-      audioEl.muted = true;
+      const targetVol = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
 
-      // Force play to overcome some browser policies
+      audioEl.srcObject = stream;
+      audioEl.volume = Math.min(1, Math.max(0, targetVol));
+      audioEl.muted = (callMuted || isLocalMuted || targetVol === 0);
+
+      if (selectedAudioOutputId && selectedAudioOutputId !== 'default' && typeof (audioEl as any).setSinkId === 'function') {
+        (audioEl as any).setSinkId(selectedAudioOutputId).catch(() => {});
+      }
+
+      // Force play so Chromium decodes WebRTC RTP audio frames and outputs through the selected sink
       audioEl.play().catch((e) => console.warn('[useAudio] Autoplay prevented:', e));
 
-      // Reuse the active context for speaking detection so it isn't suspended
+      // Reuse the active context for speaking detection and >100% volume boost
       const activeCtx = audioNodes?.ctx ?? getAudioContext();
 
       if (activeCtx.state === 'suspended') {
-        activeCtx.resume();
+        activeCtx.resume().catch(() => {});
       }
 
-      let gainNode = remoteGains.get(userId);
-      if (!gainNode) {
+      // Always disconnect any stale GainNode from a previous stream/peer connection
+      const prevGain = remoteGains.get(userId);
+      if (prevGain) {
+        try { prevGain.disconnect(); } catch {}
+        remoteGains.delete(userId);
+      }
+
+      try {
         const source = activeCtx.createMediaStreamSource(stream);
-        gainNode = activeCtx.createGain();
+        const gainNode = activeCtx.createGain();
+        // Native audioEl handles 0..100% (0..1); GainNode adds boost when targetVol > 1 (101%..200%)
+        gainNode.gain.value = targetVol > 1 ? (targetVol - 1) : 0;
         source.connect(gainNode);
         gainNode.connect(activeCtx.destination);
         remoteGains.set(userId, gainNode);
+      } catch (e) {
+        console.warn('[useAudio] WebAudio boost node setup failed:', e);
       }
-
-      gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
 
       monitorSpeaking(stream, userId, activeCtx);
     } catch (err) {
@@ -347,36 +360,28 @@ export function useAudio() {
         audioEl.pause();
       }
 
+      const prevGain = screenAudioGains.get(userId);
+      if (prevGain) {
+        try { prevGain.disconnect(); } catch {}
+        screenAudioGains.delete(userId);
+      }
+
       // Boost (> 100% volume) via Web Audio API
       if (targetVol > 1 && isWatching) {
         const activeCtx = audioNodes?.ctx ?? getAudioContext();
         if (activeCtx.state === 'suspended') {
           activeCtx.resume().catch(() => {});
         }
-        let gainNode = screenAudioGains.get(userId);
-        if (!gainNode) {
-          try {
-            const source = activeCtx.createMediaStreamSource(stream);
-            gainNode = activeCtx.createGain();
-            source.connect(gainNode);
-            gainNode.connect(activeCtx.destination);
-            screenAudioGains.set(userId, gainNode);
-            audioEl.muted = true;
-          } catch (e) {
-            audioEl.muted = false;
-          }
+        try {
+          const source = activeCtx.createMediaStreamSource(stream);
+          const gainNode = activeCtx.createGain();
+          gainNode.gain.value = targetVol - 1;
+          source.connect(gainNode);
+          gainNode.connect(activeCtx.destination);
+          screenAudioGains.set(userId, gainNode);
+        } catch (e) {
+          // Ignore if already connected
         }
-        if (gainNode) {
-          gainNode.gain.value = targetVol;
-        }
-      } else {
-        const gainNode = screenAudioGains.get(userId);
-        if (gainNode) {
-          try { gainNode.disconnect(); } catch {}
-          screenAudioGains.delete(userId);
-        }
-        audioEl.muted = (callMuted || isLocalMuted || !isWatching || targetVol === 0);
-        audioEl.volume = Math.min(1, Math.max(0, targetVol));
       }
     } catch (err) {
       console.warn('[useAudio] attachRemoteScreenAudio failed', err);
@@ -391,20 +396,29 @@ export function useAudio() {
   }, []);
 
   const applyRemoteSettings = useCallback(() => {
-    const { remoteVol, screenShareVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
+    const { remoteVol, screenShareVol, callMuted, localMutedUsers, userVolumes, selectedAudioOutputId } = useAudioStore.getState();
     const currentWatchingId = useAppStore.getState().screenShareUserId;
 
     document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-audio-"]').forEach((audio) => {
       const userId = audio.id.replace('remote-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
       const userVol = userVolumes[userId] ?? 100;
+      const targetVol = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
+
+      audio.volume = Math.min(1, Math.max(0, targetVol));
+      audio.muted = callMuted || isLocalMuted || targetVol === 0;
+
+      if (selectedAudioOutputId && selectedAudioOutputId !== 'default' && typeof (audio as any).setSinkId === 'function') {
+        (audio as any).setSinkId(selectedAudioOutputId).catch(() => {});
+      }
+
+      if (audio.paused && targetVol > 0 && audio.srcObject) {
+        audio.play().catch(() => {});
+      }
 
       const gainNode = remoteGains.get(userId);
       if (gainNode) {
-        gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
-      } else {
-        audio.volume = isLocalMuted ? 0 : (remoteVol / 100);
-        audio.muted = callMuted || isLocalMuted;
+        gainNode.gain.value = targetVol > 1 ? (targetVol - 1) : 0;
       }
     });
 
@@ -414,12 +428,16 @@ export function useAudio() {
       const isWatching = currentWatchingId === userId;
       const targetVol = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
 
+      audio.volume = Math.min(1, Math.max(0, targetVol));
+      audio.muted = callMuted || isLocalMuted || !isWatching || targetVol === 0;
+
+      if (selectedAudioOutputId && selectedAudioOutputId !== 'default' && typeof (audio as any).setSinkId === 'function') {
+        (audio as any).setSinkId(selectedAudioOutputId).catch(() => {});
+      }
+
       const gainNode = screenAudioGains.get(userId);
       if (gainNode) {
-        gainNode.gain.value = targetVol;
-      } else {
-        audio.volume = Math.min(1, Math.max(0, targetVol));
-        audio.muted = callMuted || isLocalMuted || !isWatching || targetVol === 0;
+        gainNode.gain.value = targetVol > 1 ? (targetVol - 1) : 0;
       }
 
       if (!isWatching || targetVol === 0) {
@@ -432,7 +450,8 @@ export function useAudio() {
     screenAudioGains.forEach((gainNode, userId) => {
       const isLocalMuted = localMutedUsers.includes(userId);
       const isWatching = currentWatchingId === userId;
-      gainNode.gain.value = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
+      const targetVol = (callMuted || isLocalMuted || !isWatching) ? 0 : (screenShareVol / 100);
+      gainNode.gain.value = targetVol > 1 ? (targetVol - 1) : 0;
     });
   }, []);
 

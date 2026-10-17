@@ -422,6 +422,8 @@ export default function App() {
     }
     store.setActiveRailContext(roomId);
     store.clearMessages();
+    store.setUsers([]);
+    store.setServerMembers([]);
 
     const persistentId = getOrCreatePersistentId();
     const searchParams = new URLSearchParams(window.location.search);
@@ -436,13 +438,21 @@ export default function App() {
     const cachedServer = (store.servers || []).find(
       s => s.id === roomId || (s.code && s.code.toUpperCase() === roomId.toUpperCase()) || (codeParam && s.code && s.code.toUpperCase() === codeParam.toUpperCase())
     );
+    const cachedRecentRoom = (store.recentRooms || []).find(
+      r => r.id === roomId || (codeParam && r.code && r.code.toUpperCase() === codeParam.toUpperCase())
+    );
 
     const initialRoomId = cachedServer?.id || roomId;
-    const initialCode = cachedServer?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
+    const initialCode = cachedServer?.code || cachedRecentRoom?.code || codeParam || (roomId.length <= 8 ? roomId.toUpperCase() : 'CONCORD');
     const initialIsServer = cachedServer ? true : isServerParam;
-    const initialName = cachedServer?.name || (initialIsServer ? (store.serverName && store.serverName !== 'Sala Concord' ? store.serverName : 'Servidor Concord') : `Sala ${initialCode}`);
+    const initialName = cachedServer?.name || cachedRecentRoom?.name || (initialIsServer ? (store.serverName && store.serverName !== 'Sala Concord' ? store.serverName : 'Servidor Concord') : `Sala ${initialCode}`);
     const initialIconUrl = cachedServer?.icon_url || null;
     const initialIsOwner = cachedServer?.role === 'owner';
+
+    // Se o usuário estava em call em outra sala/servidor diferente, desconectar da call anterior ao entrar na nova sala
+    if (store.inVoice && store.activeCallInfo && store.activeCallInfo.roomId !== initialRoomId && store.activeCallInfo.roomId !== roomId) {
+      handleLeaveVoice();
+    }
 
     if (initialIsServer) {
       store.setIsServer(true);
@@ -884,6 +894,7 @@ export default function App() {
                   }}
                   onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
                   onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
+                  onWatchSessionStart={(data) => socket.emit('watch_session_start', data)}
                   inVoice={store.inVoice}
                 />
                 <AudioControls onUnlockAudio={yt.unlock} />

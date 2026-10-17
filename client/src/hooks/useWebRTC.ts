@@ -381,6 +381,16 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
   const onUserJoinedVoice = useCallback(
     async (userId: string) => {
       if (!inVoiceRef.current) return;
+      const existing = peersRef.current.get(userId);
+      if (
+        existing &&
+        (existing.pc.connectionState === 'connected' ||
+          existing.pc.iceConnectionState === 'connected' ||
+          existing.pc.iceConnectionState === 'completed')
+      ) {
+        return;
+      }
+      playJoinSound();
       const peerData = createPeerConnection(userId);
       try {
         peerData.makingOffer = true;

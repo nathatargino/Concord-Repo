@@ -341,6 +341,8 @@ function clickPauseButton() {
   }
 }
 
+let lastBroadcastVideo: HTMLVideoElement | null = null;
+
 /**
  * Suporte a URLs da Netflix, Prime Video e Crunchyroll.
  */
@@ -352,7 +354,7 @@ function isWatchPartyEligibleUrl(url: string, video?: HTMLVideoElement | null): 
   if (lowerUrl.includes('netflix.com/watch/')) return true;
 
   // Prime Video — rotas de reprodução e detalhe
-  if (lowerUrl.includes('primevideo.com') && (
+  if ((lowerUrl.includes('primevideo.com') || lowerUrl.includes('amazon.')) && (
     lowerUrl.includes('/watch') ||
     lowerUrl.includes('/detail') ||
     lowerUrl.includes('/gp/video') ||
@@ -371,10 +373,12 @@ function isWatchPartyEligibleUrl(url: string, video?: HTMLVideoElement | null): 
     return true;
   }
 
-  // Fallback: qualquer URL Netflix, Prime Video ou Crunchyroll se houver vídeo ativo em reprodução com duration > 45s
+  // Fallback: qualquer URL Netflix, Prime Video ou Crunchyroll se houver elemento <video> principal visível e carregado
   const activeVideo = video || getActiveVideo();
-  if (activeVideo && (lowerUrl.includes('netflix.com') || lowerUrl.includes('primevideo.com') || lowerUrl.includes('crunchyroll.com'))) {
-    if (!isNaN(activeVideo.duration) && activeVideo.duration > 45 && !activeVideo.paused) {
+  if (activeVideo && (lowerUrl.includes('netflix.com') || lowerUrl.includes('primevideo.com') || lowerUrl.includes('amazon.') || lowerUrl.includes('crunchyroll.com'))) {
+    const rect = activeVideo.getBoundingClientRect();
+    const isMainPlayer = rect.width > 250 && rect.height > 140;
+    if (isMainPlayer && activeVideo.readyState >= 1 && (!activeVideo.paused || activeVideo.currentTime > 0 || activeVideo.duration > 30)) {
       return true;
     }
   }
@@ -383,10 +387,10 @@ function isWatchPartyEligibleUrl(url: string, video?: HTMLVideoElement | null): 
 }
 
 /**
- * Verifica se o vídeo está realmente reproduzindo
+ * Verifica se o vídeo está reproduzindo ou pronto em página dedicada de episódio/filme
  */
 function isVideoActuallyPlaying(video: HTMLVideoElement): boolean {
-  return !video.paused && video.readyState >= 2 && video.currentTime > 1;
+  return !video.paused && video.readyState >= 1 && video.currentTime >= 0;
 }
 
 function hookVideoElement(video: HTMLVideoElement) {
@@ -460,41 +464,41 @@ function checkPlaybackState() {
       applyPlaybackCommand(target, 0);
     }
 
-    // ── title-started: emitir quando o vídeo está reproduzindo e a URL é válida
+    // ── title-started: emitir quando o vídeo está aberto/reproduzindo e a URL é válida
     const now = Date.now();
     const urlChanged = url !== lastBroadcastUrl;
+    const videoChanged = video !== lastBroadcastVideo;
     const cooldownExpired = (now - lastBroadcastTime) > TITLE_STARTED_COOLDOWN_MS;
 
     if (
       isWatchPartyEligibleUrl(url, video) &&
-      isVideoActuallyPlaying(video) &&
+      (isVideoActuallyPlaying(video) || video.readyState >= 1) &&
+      (urlChanged || videoChanged) &&
       (urlChanged || cooldownExpired)
     ) {
-      if (urlChanged) {
-        lastBroadcastUrl = url;
-        lastBroadcastTime = now;
-        ipcRenderer.send('streaming-playback-event', {
-          type: 'title-started',
-          url,
-          positionSeconds: video.currentTime,
-          isPlaying: true,
-        });
-      }
+      lastBroadcastUrl = url;
+      lastBroadcastVideo = video;
+      lastBroadcastTime = now;
+      ipcRenderer.send('streaming-playback-event', {
+        type: 'title-started',
+        url,
+        positionSeconds: video.currentTime || 0,
+        isPlaying: !video.paused,
+      });
     }
 
-    // ── Heartbeat periódico a cada 3.5 segundos enquanto estiver reproduzindo
+    // ── Heartbeat periódico a cada 3.5 segundos enquanto houver título elegível ativo
     if (
       isWatchPartyEligibleUrl(url, video) &&
       !video.paused &&
-      video.readyState >= 2 &&
-      video.currentTime > 1 &&
+      video.readyState >= 1 &&
       (now - lastHeartbeatTime) >= 3500
     ) {
       lastHeartbeatTime = now;
       ipcRenderer.send('streaming-playback-event', {
         type: 'heartbeat',
         url,
-        positionSeconds: video.currentTime,
+        positionSeconds: video.currentTime || 0,
         isPlaying: true,
       });
     }

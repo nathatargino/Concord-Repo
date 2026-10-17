@@ -46,6 +46,8 @@ export interface ElectronAPI {
     navigateStreamingView?: (service: 'netflix' | 'prime' | 'crunchyroll', url: string) => void;
     /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
     navigateToTitle?: (data: { service: 'netflix' | 'prime' | 'crunchyroll'; url: string; autoPlay?: boolean }) => void;
+    /** Query current URL and playback state of a streaming view (including subframes) */
+    getStreamingState?: (service?: 'netflix' | 'prime' | 'crunchyroll') => Promise<{ ok: boolean; service: 'netflix' | 'prime' | 'crunchyroll' | null; url: string; positionSeconds: number; isPlaying: boolean; hasVideo: boolean }>;
     /** Screen Share Source Picker */
     getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
     selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
@@ -179,6 +181,7 @@ const electronBridge: ElectronAPI = {
     syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' | 'crunchyroll'; autoDrift?: boolean }) => ipcRenderer.send('sync-streaming-playback', data),
     navigateStreamingView: (service: 'netflix' | 'prime' | 'crunchyroll', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
     navigateToTitle: (data: { service: 'netflix' | 'prime' | 'crunchyroll'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
+    getStreamingState: (service?: 'netflix' | 'prime' | 'crunchyroll') => ipcRenderer.invoke('get-streaming-state', service),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) =>

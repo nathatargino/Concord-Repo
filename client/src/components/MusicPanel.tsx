@@ -51,10 +51,11 @@ interface Props {
   onRequestMusic: (url: string, title?: string, playNow?: boolean) => void;
   onRemoveFromQueue: (token: number) => void;
   onReorderQueue: (oldIndex: number, newIndex: number) => void;
+  onWatchSessionStart?: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; titleUrl: string; positionSeconds: number; isPlaying: boolean }) => void;
   inVoice: boolean;
 }
 
-export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue, onReorderQueue, inVoice }) => {
+export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue, onReorderQueue, onWatchSessionStart, inVoice }) => {
   const [url, setUrl] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -121,6 +122,39 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
         });
       }, 800);
     }
+  };
+
+  const handleStartWatchPartyFromSidebar = async (service: 'netflix' | 'prime' | 'crunchyroll') => {
+    if (!inVoice) {
+      notifyInChat('Você precisa estar em uma call de voz para iniciar uma Watch Party.');
+      return;
+    }
+    const electron = (window as any).electron;
+    let state: { url?: string; positionSeconds?: number; isPlaying?: boolean; hasVideo?: boolean } | null = null;
+    if (electron?.getStreamingState) {
+      try {
+        state = await electron.getStreamingState(service);
+      } catch {}
+    }
+    const fallbackUrl =
+      state?.url ||
+      (activeStreaming?.service === service ? activeStreaming.url : undefined) ||
+      (service === 'netflix'
+        ? 'https://www.netflix.com/browse'
+        : service === 'prime'
+        ? 'https://www.primevideo.com'
+        : 'https://www.crunchyroll.com');
+
+    onWatchSessionStart?.({
+      platform: service,
+      titleUrl: fallbackUrl,
+      positionSeconds: state?.positionSeconds || 0,
+      isPlaying: state?.isPlaying ?? true,
+    });
+
+    const label = service === 'netflix' ? 'Netflix' : service === 'prime' ? 'Prime Video' : 'Crunchyroll';
+    notifyInChat(`🎬 Watch Party iniciada na ${label}! Todos na call já podem clicar em Sincronizar.`);
+    setShowVideoPlayer(true);
   };
 
   const handleOpenStreaming = async (service: 'netflix' | 'prime' | 'crunchyroll', targetUrl?: string) => {
@@ -486,6 +520,17 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                       <i className="fa-solid fa-tv"></i>
                       <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : selectedPlatform === 'prime' ? 'PRIME' : 'CRUNCHYROLL'}</span>
                     </button>
+                    {(!watchSession || watchSession.platform !== selectedPlatform) && (
+                      <button
+                        type="button"
+                        className={styles.musicWatchPartyBtn}
+                        onClick={() => handleStartWatchPartyFromSidebar(selectedPlatform as 'netflix' | 'prime' | 'crunchyroll')}
+                        title="Iniciar Watch Party do vídeo aberto agora para todos na call"
+                      >
+                        <i className="fa-solid fa-tower-broadcast"></i>
+                        <span>Iniciar Watch Party</span>
+                      </button>
+                    )}
                     <button
                       type="button"
                       className={styles.closeStreamingBtn}

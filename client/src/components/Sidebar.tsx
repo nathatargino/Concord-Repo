@@ -283,7 +283,10 @@ export const Sidebar: React.FC<Props> = ({
 
   // Carregar canais e membros do servidor se for servidor permanente
   useEffect(() => {
-    if (!room?.id || !isEffectiveServer) return;
+    if (!room?.id || !isEffectiveServer) {
+      setServerMembers([]);
+      return;
+    }
 
     let isMounted = true;
     let memberSub: any = null;
@@ -301,13 +304,14 @@ export const Sidebar: React.FC<Props> = ({
       const mems = await fetchServerMembers(actualServerId);
       if (isMounted && mems) {
         setServerMembers((prev) => {
-          const map = new Map<string, typeof serverMembers[0]>();
+          const prevMap = new Map<string, typeof serverMembers[0]>();
           for (const m of prev) {
-            map.set(m.username.trim().toLowerCase(), m);
+            prevMap.set(m.username.trim().toLowerCase(), m);
           }
+          const map = new Map<string, typeof serverMembers[0]>();
           for (const m of mems) {
             const key = m.username.trim().toLowerCase();
-            const existing = map.get(key);
+            const existing = prevMap.get(key);
             map.set(key, {
               id: m.id || existing?.id || m.username,
               username: m.username,
@@ -315,6 +319,7 @@ export const Sidebar: React.FC<Props> = ({
               isOnline: existing?.isOnline ?? false,
               inVoice: existing?.inVoice ?? false,
               role: (m.role as any) || existing?.role || 'member',
+              customRole: existing?.customRole,
             });
           }
           return Array.from(map.values());
