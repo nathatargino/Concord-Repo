@@ -216,6 +216,192 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     }
   };
 
+  // ── Qualidade Padrão de Transmissão de Tela (Discord-style) ──
+  const screenShareResolution: '720p' | '1080p' | '1440p' =
+    (audioStore as any).screenShareResolution ?? '1080p';
+  const screenShareFps: 30 | 60 =
+    (audioStore as any).screenShareFps ?? 60;
+  const screenShareContentHint: 'motion' | 'detail' =
+    (audioStore as any).screenShareContentHint ?? 'motion';
+
+  const setResolution = (res: '720p' | '1080p' | '1440p') => {
+    if (typeof (audioStore as any).setScreenShareResolution === 'function') {
+      (audioStore as any).setScreenShareResolution(res);
+    }
+    try {
+      localStorage.setItem('concord_screenshare_res', res);
+    } catch {}
+  };
+
+  const setFps = (fps: 30 | 60) => {
+    if (typeof (audioStore as any).setScreenShareFps === 'function') {
+      (audioStore as any).setScreenShareFps(fps);
+    }
+    try {
+      localStorage.setItem('concord_screenshare_fps', String(fps));
+    } catch {}
+  };
+
+  const setContentHint = (hint: 'motion' | 'detail') => {
+    if (typeof (audioStore as any).setScreenShareContentHint === 'function') {
+      (audioStore as any).setScreenShareContentHint(hint);
+    }
+    try {
+      localStorage.setItem('concord_screenshare_hint', hint);
+    } catch {}
+  };
+
+  // ── Teclas de Atalho Globais (Keybinds) ──
+  const keybindsEnabled: boolean = (audioStore as any).keybindsEnabled ?? true;
+  const keybindMicMute: string = (audioStore as any).keybindMicMute || 'CommandOrControl+Shift+M';
+  const keybindDeafen: string = (audioStore as any).keybindDeafen || 'CommandOrControl+Shift+D';
+
+  const [recordingKeybind, setRecordingKeybind] = useState<'mic' | 'deafen' | null>(null);
+
+  const formatKeybindDisplay = (acc: string): string => {
+    if (!acc) return 'Nenhum';
+    return acc
+      .replace(/CommandOrControl/g, 'Ctrl')
+      .replace(/Control/g, 'Ctrl')
+      .split('+')
+      .map((s) => s.trim())
+      .join(' + ');
+  };
+
+  const handleToggleKeybinds = (enabled: boolean) => {
+    if (typeof (audioStore as any).setKeybindsEnabled === 'function') {
+      (audioStore as any).setKeybindsEnabled(enabled);
+    }
+    try {
+      localStorage.setItem('concord_keybinds_enabled', String(enabled));
+    } catch {}
+    if (typeof window !== 'undefined' && (window as any).electron?.setKeybinds) {
+      (window as any).electron.setKeybinds({ keybindsEnabled: enabled });
+    }
+    toast.success(enabled ? 'Atalhos globais ativados.' : 'Atalhos globais desativados.');
+  };
+
+  const handleResetKeybinds = () => {
+    const defaultMic = 'CommandOrControl+Shift+M';
+    const defaultDeafen = 'CommandOrControl+Shift+D';
+
+    if (typeof (audioStore as any).setKeybindMicMute === 'function') {
+      (audioStore as any).setKeybindMicMute(defaultMic);
+    }
+    if (typeof (audioStore as any).setKeybindDeafen === 'function') {
+      (audioStore as any).setKeybindDeafen(defaultDeafen);
+    }
+    try {
+      localStorage.setItem('concord_keybind_mute', defaultMic);
+      localStorage.setItem('concord_keybind_deafen', defaultDeafen);
+    } catch {}
+    if (typeof window !== 'undefined' && (window as any).electron?.setKeybinds) {
+      (window as any).electron.setKeybinds({
+        keybindMicMute: defaultMic,
+        keybindDeafen: defaultDeafen,
+      });
+    }
+    toast.success('Atalhos restaurados para o padrão.');
+  };
+
+  // Carrega atalhos persistidos no Electron no mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && (window as any).electron?.getKeybinds) {
+      (window as any).electron.getKeybinds().then((res: any) => {
+        if (res) {
+          if (res.keybindMicMute && typeof (audioStore as any).setKeybindMicMute === 'function') {
+            (audioStore as any).setKeybindMicMute(res.keybindMicMute);
+          }
+          if (res.keybindDeafen && typeof (audioStore as any).setKeybindDeafen === 'function') {
+            (audioStore as any).setKeybindDeafen(res.keybindDeafen);
+          }
+          if (typeof res.keybindsEnabled === 'boolean' && typeof (audioStore as any).setKeybindsEnabled === 'function') {
+            (audioStore as any).setKeybindsEnabled(res.keybindsEnabled);
+          }
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Gravação de atalhos por teclado
+  useEffect(() => {
+    if (!recordingKeybind) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === 'Escape') {
+        setRecordingKeybind(null);
+        return;
+      }
+
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+        return;
+      }
+
+      const parts: string[] = [];
+      if (e.ctrlKey || e.metaKey) parts.push('CommandOrControl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+
+      let keyName = '';
+      if (e.code.startsWith('Key')) {
+        keyName = e.code.replace('Key', '').toUpperCase();
+      } else if (e.code.startsWith('Digit')) {
+        keyName = e.code.replace('Digit', '');
+      } else if (/^F\d{1,2}$/i.test(e.code)) {
+        keyName = e.code.toUpperCase();
+      } else if (e.code === 'Space') {
+        keyName = 'Space';
+      } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        keyName = e.code.replace('Arrow', '');
+      } else if (['Tab', 'Backspace', 'Delete', 'Insert', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.code)) {
+        keyName = e.code;
+      } else if (e.key.length === 1) {
+        keyName = e.key.toUpperCase();
+      } else {
+        keyName = e.key;
+      }
+
+      if (!keyName) return;
+      parts.push(keyName);
+
+      const accelerator = parts.join('+');
+
+      if (recordingKeybind === 'mic') {
+        if (typeof (audioStore as any).setKeybindMicMute === 'function') {
+          (audioStore as any).setKeybindMicMute(accelerator);
+        }
+        try {
+          localStorage.setItem('concord_keybind_mute', accelerator);
+        } catch {}
+        if (typeof window !== 'undefined' && (window as any).electron?.setKeybinds) {
+          (window as any).electron.setKeybinds({ keybindMicMute: accelerator });
+        }
+        toast.success(`Atalho do Microfone definido: ${formatKeybindDisplay(accelerator)}`);
+      } else if (recordingKeybind === 'deafen') {
+        if (typeof (audioStore as any).setKeybindDeafen === 'function') {
+          (audioStore as any).setKeybindDeafen(accelerator);
+        }
+        try {
+          localStorage.setItem('concord_keybind_deafen', accelerator);
+        } catch {}
+        if (typeof window !== 'undefined' && (window as any).electron?.setKeybinds) {
+          (window as any).electron.setKeybinds({ keybindDeafen: accelerator });
+        }
+        toast.success(`Atalho de Ensurdecer definido: ${formatKeybindDisplay(accelerator)}`);
+      }
+
+      setRecordingKeybind(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [recordingKeybind, audioStore]);
+
   const [inputDevices, setInputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [outputDevices, setOutputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [isTestingMic, setIsTestingMic] = useState(false);
@@ -1402,6 +1588,169 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* ── Teclas de Atalho Globais (Keybinds em Jogos) ── */}
+            <div className={styles.keybindsSection}>
+              <div className={styles.keybindHeaderRow}>
+                <div>
+                  <label className={styles.label} style={{ margin: 0 }}>
+                    <i className="fa-solid fa-keyboard" style={{ color: '#22d3ee', marginRight: '6px' }} />
+                    Teclas de Atalho (Keybinds Globais em Jogos)
+                  </label>
+                  <span className={styles.sectionHelp}>
+                    Controle o microfone e o áudio da chamada mesmo jogando em tela cheia.
+                  </span>
+                </div>
+                <label className={styles.toggleSwitch} title="Ativar ou desativar atalhos globais">
+                  <input
+                    type="checkbox"
+                    checked={keybindsEnabled}
+                    onChange={(e) => handleToggleKeybinds(e.target.checked)}
+                  />
+                  <span className={styles.toggleSlider} />
+                </label>
+              </div>
+
+              {keybindsEnabled && (
+                <div className={styles.keybindList}>
+                  {/* Mutar / Desmutar Microfone */}
+                  <div className={`${styles.keybindItem} ${recordingKeybind === 'mic' ? styles.keybindItemRecording : ''}`}>
+                    <div className={styles.keybindInfo}>
+                      <div className={styles.keybindTitle}>
+                        <i className="fa-solid fa-microphone-slash" style={{ color: '#f43f5e' }} />
+                        <span>Mutar / Desmutar Microfone</span>
+                      </div>
+                      <span className={styles.keybindDesc}>
+                        Alterna o estado do seu microfone globalmente.
+                      </span>
+                    </div>
+                    <div className={styles.keybindRight}>
+                      <span className={`${styles.keybindBadge} ${recordingKeybind === 'mic' ? styles.keybindBadgeRecording : ''}`}>
+                        {recordingKeybind === 'mic' ? 'Pressione as teclas...' : formatKeybindDisplay(keybindMicMute)}
+                      </span>
+                      <button
+                        type="button"
+                        className={`${styles.keybindRecordBtn} ${recordingKeybind === 'mic' ? styles.keybindRecordBtnActive : ''}`}
+                        onClick={() => setRecordingKeybind(recordingKeybind === 'mic' ? null : 'mic')}
+                        title={recordingKeybind === 'mic' ? 'Cancelar gravação (ou pressione Esc)' : 'Gravar nova combinação'}
+                      >
+                        <i className={`fa-solid ${recordingKeybind === 'mic' ? 'fa-xmark' : 'fa-pen-to-square'}`} />
+                        <span>{recordingKeybind === 'mic' ? 'Cancelar' : 'Editar Atalho'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Ensurdecer / Mutar Áudio da Call */}
+                  <div className={`${styles.keybindItem} ${recordingKeybind === 'deafen' ? styles.keybindItemRecording : ''}`}>
+                    <div className={styles.keybindInfo}>
+                      <div className={styles.keybindTitle}>
+                        <i className="fa-solid fa-volume-xmark" style={{ color: '#a855f7' }} />
+                        <span>Ensurdecer / Mutar Áudio da Call</span>
+                      </div>
+                      <span className={styles.keybindDesc}>
+                        Corta todo o som da chamada e muta seu microfone.
+                      </span>
+                    </div>
+                    <div className={styles.keybindRight}>
+                      <span className={`${styles.keybindBadge} ${recordingKeybind === 'deafen' ? styles.keybindBadgeRecording : ''}`}>
+                        {recordingKeybind === 'deafen' ? 'Pressione as teclas...' : formatKeybindDisplay(keybindDeafen)}
+                      </span>
+                      <button
+                        type="button"
+                        className={`${styles.keybindRecordBtn} ${recordingKeybind === 'deafen' ? styles.keybindRecordBtnActive : ''}`}
+                        onClick={() => setRecordingKeybind(recordingKeybind === 'deafen' ? null : 'deafen')}
+                        title={recordingKeybind === 'deafen' ? 'Cancelar gravação (ou pressione Esc)' : 'Gravar nova combinação'}
+                      >
+                        <i className={`fa-solid ${recordingKeybind === 'deafen' ? 'fa-xmark' : 'fa-pen-to-square'}`} />
+                        <span>{recordingKeybind === 'deafen' ? 'Cancelar' : 'Editar Atalho'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={styles.keybindResetRow}>
+                    <button
+                      type="button"
+                      className={styles.keybindResetBtn}
+                      onClick={handleResetKeybinds}
+                      title="Restaurar combinações originais (Ctrl + Shift + M / Ctrl + Shift + D)"
+                    >
+                      <i className="fa-solid fa-rotate-left" style={{ marginRight: '4px' }} />
+                      Restaurar Atalhos Padrão
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Qualidade Padrão de Transmissão de Tela ── */}
+            <div className={styles.screenQualitySection}>
+              <div className={styles.sectionHeader}>
+                <label className={styles.label} style={{ margin: 0 }}>
+                  <i className="fa-solid fa-desktop" style={{ color: '#38bdf8', marginRight: '6px' }} />
+                  Qualidade Padrão de Transmissão de Tela
+                </label>
+                <span className={styles.sectionHelp}>
+                  Configurações padrão aplicadas automaticamente ao compartilhar tela ou jogos.
+                </span>
+              </div>
+
+              {/* Resolução */}
+              <div className={styles.qualityRow}>
+                <span className={styles.qualityRowLabel}>Resolução</span>
+                <div className={styles.pillGroup}>
+                  {(['720p', '1080p', '1440p'] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      className={`${styles.pillBtn} ${screenShareResolution === r ? styles.pillBtnActive : ''}`}
+                      onClick={() => setResolution(r)}
+                    >
+                      {r === '1080p' ? '1080p (Full HD)' : r === '1440p' ? '1440p (Fonte)' : '720p (HD)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Taxa de Quadros */}
+              <div className={styles.qualityRow}>
+                <span className={styles.qualityRowLabel}>Taxa de Quadros</span>
+                <div className={styles.pillGroup}>
+                  {([30, 60] as const).map((fps) => (
+                    <button
+                      key={fps}
+                      type="button"
+                      className={`${styles.pillBtn} ${screenShareFps === fps ? styles.pillBtnActive : ''}`}
+                      onClick={() => setFps(fps)}
+                    >
+                      {fps} FPS
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Otimização */}
+              <div className={styles.qualityRow}>
+                <span className={styles.qualityRowLabel}>Otimização</span>
+                <div className={styles.pillGroup}>
+                  <button
+                    type="button"
+                    className={`${styles.pillBtn} ${screenShareContentHint === 'motion' ? styles.pillBtnActive : ''}`}
+                    onClick={() => setContentHint('motion')}
+                  >
+                    <i className="fa-solid fa-gamepad" />
+                    <span>Fluidez (Jogos/Vídeo)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.pillBtn} ${screenShareContentHint === 'detail' ? styles.pillBtnActive : ''}`}
+                    onClick={() => setContentHint('detail')}
+                  >
+                    <i className="fa-solid fa-font" />
+                    <span>Nitidez (Texto/Trabalho)</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

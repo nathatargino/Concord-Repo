@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, nativeImage, protocol, net, BrowserView, WebContentsView, Tray, Menu, safeStorage } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, session, desktopCapturer, clipboard, Notification, nativeImage, protocol, net, BrowserView, WebContentsView, Tray, Menu, safeStorage, globalShortcut } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 
 protocol.registerSchemesAsPrivileged([
@@ -897,16 +897,23 @@ app.whenReady().then(async () => {
                 return;
             }
 
-            // In Chromium on Windows, system audio loopback is supported for screen sources.
-            // Individual windows do not support system loopback and passing it causes capture to fail.
-            const isScreen = chosen.id.startsWith('screen:');
-            const audioStream = (wantAudio && isScreen) ? 'loopback' : undefined;
-            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), isScreen=${isScreen}, audio=${audioStream}\n`);
-            // @ts-ignore
-            callback({
-                video: chosen,
-                audio: audioStream,
-            });
+            // In Chromium on Windows (WASAPI loopback), 'audio: "loopback"' works even when 'video' is a window ('window:...').
+            // Allow system loopback audio both for screens ('screen:') and windows ('window:').
+            const audioStream = wantAudio ? 'loopback' : undefined;
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), audio=${audioStream}\n`);
+            try {
+                // @ts-ignore
+                callback({
+                    video: chosen,
+                    audio: audioStream,
+                });
+            } catch (cbErr) {
+                fs.appendFileSync(logFile, `[ScreenShare-Main] Callback with audio=${audioStream} failed, falling back to video only: ${cbErr}\n`);
+                try {
+                    // @ts-ignore
+                    callback({ video: chosen });
+                } catch {}
+            }
         } catch (err) {
             console.error('[Main] Error in setDisplayMediaRequestHandler:', err);
             fs.appendFileSync(logFile, `[ScreenShare-Main] Handler exception: ${err}\n`);
@@ -1024,6 +1031,13 @@ app.whenReady().then(async () => {
     createTray();
     setupAutoLaunch();
 
+    try {
+        const initialPrefs = readPrefsFromDisk();
+        registerGlobalKeybinds(initialPrefs);
+    } catch (err) {
+        fs.appendFileSync(logFile, `[Main] Initial keybind registration error: ${err}\n`);
+    }
+
     if (!isDev) {
         startLocalServer().then(port => {
             localServerPort = port;
@@ -1037,6 +1051,12 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
     isQuitting = true;
+});
+
+app.on('will-quit', () => {
+    try {
+        globalShortcut.unregisterAll();
+    } catch {}
 });
 
 app.on('window-all-closed', () => {
@@ -1349,11 +1369,7 @@ ipcMain.on('open-base64-in-browser', (event, base64Data) => {
 });
 
 // ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
-// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
-// because we use a separate folder (not the app install dir or userData)
-
-// ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
-// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
+// Saved to %APPDATA%\ConcordUserData\prefs.json (or user-preferences.json) — survives updates AND reinstalls
 // because we use a separate folder (not the app install dir or userData)
 
 function getPrefsPath(): string {
@@ -1364,6 +1380,8 @@ function getPrefsPath(): string {
             fs.mkdirSync(appDataDir, { recursive: true });
         }
     } catch {}
+    const userPrefs = path.join(appDataDir, 'user-preferences.json');
+    if (fs.existsSync(userPrefs)) return userPrefs;
     return path.join(appDataDir, 'prefs.json');
 }
 
@@ -1433,14 +1451,14 @@ function writeAtomicSync(filePath: string, content: string): void {
 // Fila serializada assíncrona para garantir que múltiplas chamadas concorrentes de savePreferences não colidam
 let prefsWriteQueue: Promise<void> = Promise.resolve();
 
-function readPrefsFromDisk(): Record<string, string> {
+function readPrefsFromDisk(): Record<string, any> {
     const prefsPath = getPrefsPath();
     const bakPath = prefsPath + '.bak';
 
     if (fs.existsSync(prefsPath)) {
         try {
             const raw = fs.readFileSync(prefsPath, 'utf-8');
-            const result = safeParseJsonWithRecovery<Record<string, string>>(raw);
+            const result = safeParseJsonWithRecovery<Record<string, any>>(raw);
             if (result.data) {
                 // Se foi recuperado de corrupção, regravar versão limpa atomicamente de imediato
                 if (result.wasRecovered) {
@@ -1457,7 +1475,7 @@ function readPrefsFromDisk(): Record<string, string> {
     if (fs.existsSync(bakPath)) {
         try {
             const bakRaw = fs.readFileSync(bakPath, 'utf-8');
-            const bakResult = safeParseJsonWithRecovery<Record<string, string>>(bakRaw);
+            const bakResult = safeParseJsonWithRecovery<Record<string, any>>(bakRaw);
             if (bakResult.data) {
                 console.log('[Prefs] Restaurado preferências a partir do backup .bak com sucesso.');
                 writeAtomicSync(prefsPath, JSON.stringify(bakResult.data, null, 2));
@@ -1471,7 +1489,73 @@ function readPrefsFromDisk(): Record<string, string> {
     return {};
 }
 
-ipcMain.on('save-preferences', (_event, prefs: Record<string, string>) => {
+// ─── GLOBAL KEYBINDS MANAGEMENT ──────────────────────────────────────────────
+interface UserKeybinds {
+    keybindMicMute: string;
+    keybindDeafen: string;
+    keybindsEnabled: boolean;
+}
+
+const DEFAULT_KEYBINDS: UserKeybinds = {
+    keybindMicMute: 'CommandOrControl+Shift+M',
+    keybindDeafen: 'CommandOrControl+Shift+D',
+    keybindsEnabled: true,
+};
+
+function getKeybindsFromPrefs(prefs?: Record<string, any>): UserKeybinds {
+    const p = prefs || readPrefsFromDisk();
+    return {
+        keybindMicMute: typeof p.keybindMicMute === 'string' ? p.keybindMicMute : DEFAULT_KEYBINDS.keybindMicMute,
+        keybindDeafen: typeof p.keybindDeafen === 'string' ? p.keybindDeafen : DEFAULT_KEYBINDS.keybindDeafen,
+        keybindsEnabled: p.keybindsEnabled !== undefined ? (p.keybindsEnabled === true || p.keybindsEnabled === 'true') : DEFAULT_KEYBINDS.keybindsEnabled,
+    };
+}
+
+function registerGlobalKeybinds(prefs?: Partial<UserKeybinds> | Record<string, any>): void {
+    try {
+        globalShortcut.unregisterAll();
+    } catch (err) {
+        fs.appendFileSync(logFile, `[GlobalKeybinds] unregisterAll error: ${err}\n`);
+    }
+
+    const keybinds = getKeybindsFromPrefs(prefs);
+    if (keybinds.keybindsEnabled === false) {
+        fs.appendFileSync(logFile, `[GlobalKeybinds] Keybinds are disabled.\n`);
+        return;
+    }
+
+    if (keybinds.keybindMicMute && keybinds.keybindMicMute.trim() !== '') {
+        const accel = keybinds.keybindMicMute.trim();
+        try {
+            const registered = globalShortcut.register(accel, () => {
+                fs.appendFileSync(logFile, `[GlobalKeybinds] Triggered: toggle-mic (${accel})\n`);
+                if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+                    mainWindow.webContents.send('global-shortcut-triggered', 'toggle-mic');
+                }
+            });
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Registered mic mute (${accel}): ${registered}\n`);
+        } catch (err: any) {
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Failed to register mic mute (${accel}): ${err?.message || err}\n`);
+        }
+    }
+
+    if (keybinds.keybindDeafen && keybinds.keybindDeafen.trim() !== '') {
+        const accel = keybinds.keybindDeafen.trim();
+        try {
+            const registered = globalShortcut.register(accel, () => {
+                fs.appendFileSync(logFile, `[GlobalKeybinds] Triggered: toggle-deafen (${accel})\n`);
+                if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+                    mainWindow.webContents.send('global-shortcut-triggered', 'toggle-deafen');
+                }
+            });
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Registered deafen (${accel}): ${registered}\n`);
+        } catch (err: any) {
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Failed to register deafen (${accel}): ${err?.message || err}\n`);
+        }
+    }
+}
+
+ipcMain.on('save-preferences', (_event, prefs: Record<string, any>) => {
     if (!prefs || typeof prefs !== 'object') return;
     prefsWriteQueue = prefsWriteQueue.then(async () => {
         try {
@@ -1479,6 +1563,9 @@ ipcMain.on('save-preferences', (_event, prefs: Record<string, string>) => {
             const existing = readPrefsFromDisk();
             const merged = { ...existing, ...prefs };
             writeAtomicSync(prefsPath, JSON.stringify(merged, null, 2));
+            if ('keybindMicMute' in prefs || 'keybindDeafen' in prefs || 'keybindsEnabled' in prefs) {
+                registerGlobalKeybinds(merged);
+            }
         } catch (e) {
             console.error('Failed to save preferences:', e);
         }
@@ -1493,6 +1580,39 @@ ipcMain.handle('load-preferences', () => {
     } catch (e) {
         console.error('Failed to load preferences:', e);
         return {};
+    }
+});
+
+ipcMain.handle('get-keybinds', () => {
+    try {
+        const prefs = readPrefsFromDisk();
+        return getKeybindsFromPrefs(prefs);
+    } catch (err) {
+        console.error('[Main] get-keybinds error:', err);
+        return DEFAULT_KEYBINDS;
+    }
+});
+
+ipcMain.handle('set-keybinds', (_event, data: { keybindMicMute?: string; keybindDeafen?: string; keybindsEnabled?: boolean }) => {
+    try {
+        const existing = readPrefsFromDisk();
+        const current = getKeybindsFromPrefs(existing);
+        const updated: UserKeybinds = {
+            keybindMicMute: typeof data?.keybindMicMute === 'string' ? data.keybindMicMute : current.keybindMicMute,
+            keybindDeafen: typeof data?.keybindDeafen === 'string' ? data.keybindDeafen : current.keybindDeafen,
+            keybindsEnabled: data?.keybindsEnabled !== undefined ? Boolean(data.keybindsEnabled) : current.keybindsEnabled,
+        };
+
+        const merged = { ...existing, ...updated };
+        const prefsPath = getPrefsPath();
+        writeAtomicSync(prefsPath, JSON.stringify(merged, null, 2));
+
+        registerGlobalKeybinds(updated);
+
+        return { ok: true, keybinds: updated };
+    } catch (err: any) {
+        console.error('[Main] set-keybinds error:', err);
+        return { ok: false, error: err?.message || String(err) };
     }
 });
 

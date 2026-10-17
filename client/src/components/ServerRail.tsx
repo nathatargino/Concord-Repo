@@ -62,7 +62,11 @@ export const ServerRail: React.FC<ServerRailProps> = ({ onOpenProfile }) => {
 
   useEffect(() => {
     refreshServers();
-    const interval = setInterval(refreshServers, 15000);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshServers();
+      }
+    }, 60000);
     const handleServersUpdated = (e: any) => {
       if (e.detail?.servers) {
         setServers(e.detail.servers);

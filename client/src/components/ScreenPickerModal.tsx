@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAudioStore } from '../stores/useAudioStore';
 import styles from './ScreenPickerModal.module.css';
 
 export interface ScreenSource {
@@ -20,11 +21,73 @@ export const ScreenPickerModal: React.FC<ScreenPickerModalProps> = ({
   onClose,
   onConfirm,
 }) => {
+  const audioStore = useAudioStore();
   const [sources, setSources] = useState<ScreenSource[]>([]);
   const [activeTab, setActiveTab] = useState<'screens' | 'windows'>('screens');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [withAudio, setWithAudio] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Qualidade de Transmissão (Discord-style)
+  const [localRes, setLocalRes] = useState<'720p' | '1080p' | '1440p'>(() => {
+    try {
+      return ((localStorage.getItem('concord_screenshare_res') as any) || '1080p');
+    } catch {
+      return '1080p';
+    }
+  });
+  const [localFps, setLocalFps] = useState<30 | 60>(() => {
+    try {
+      const saved = localStorage.getItem('concord_screenshare_fps');
+      return saved === '30' ? 30 : 60;
+    } catch {
+      return 60;
+    }
+  });
+  const [localHint, setLocalHint] = useState<'motion' | 'detail'>(() => {
+    try {
+      return ((localStorage.getItem('concord_screenshare_hint') as any) || 'motion');
+    } catch {
+      return 'motion';
+    }
+  });
+
+  const screenShareResolution: '720p' | '1080p' | '1440p' =
+    (audioStore as any).screenShareResolution ?? localRes;
+  const screenShareFps: 30 | 60 =
+    (audioStore as any).screenShareFps ?? localFps;
+  const screenShareContentHint: 'motion' | 'detail' =
+    (audioStore as any).screenShareContentHint ?? localHint;
+
+  const setResolution = (res: '720p' | '1080p' | '1440p') => {
+    if (typeof (audioStore as any).setScreenShareResolution === 'function') {
+      (audioStore as any).setScreenShareResolution(res);
+    }
+    setLocalRes(res);
+    try {
+      localStorage.setItem('concord_screenshare_res', res);
+    } catch {}
+  };
+
+  const setFps = (fps: 30 | 60) => {
+    if (typeof (audioStore as any).setScreenShareFps === 'function') {
+      (audioStore as any).setScreenShareFps(fps);
+    }
+    setLocalFps(fps);
+    try {
+      localStorage.setItem('concord_screenshare_fps', String(fps));
+    } catch {}
+  };
+
+  const setContentHint = (hint: 'motion' | 'detail') => {
+    if (typeof (audioStore as any).setScreenShareContentHint === 'function') {
+      (audioStore as any).setScreenShareContentHint(hint);
+    }
+    setLocalHint(hint);
+    try {
+      localStorage.setItem('concord_screenshare_hint', hint);
+    } catch {}
+  };
 
   // Fetch sources from Electron desktopCapturer
   const loadSources = useCallback(async () => {
@@ -80,8 +143,7 @@ export const ScreenPickerModal: React.FC<ScreenPickerModalProps> = ({
   const handleConfirm = (idToShare?: string) => {
     const finalId = idToShare || selectedSourceId;
     if (!finalId) return;
-    const isScreenSource = sources.find((s) => s.id === finalId)?.isScreen ?? (activeTab === 'screens');
-    onConfirm(finalId, isScreenSource ? withAudio : false);
+    onConfirm(finalId, withAudio);
   };
 
   return (
@@ -197,29 +259,95 @@ export const ScreenPickerModal: React.FC<ScreenPickerModalProps> = ({
           )}
         </div>
 
+        {/* Barra de Configurações de Qualidade Estilo Discord */}
+        <div className={styles.qualityBar}>
+          <div className={styles.qualitySection}>
+            <span className={styles.qualityLabel}>RESOLUÇÃO</span>
+            <div className={styles.pillGroup}>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareResolution === '720p' ? styles.pillBtnActive : ''}`}
+                onClick={() => setResolution('720p')}
+              >
+                720p
+              </button>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareResolution === '1080p' ? styles.pillBtnActive : ''}`}
+                onClick={() => setResolution('1080p')}
+              >
+                1080p (Full HD)
+              </button>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareResolution === '1440p' ? styles.pillBtnActive : ''}`}
+                onClick={() => setResolution('1440p')}
+              >
+                1440p (Fonte)
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.qualitySection}>
+            <span className={styles.qualityLabel}>TAXA DE QUADROS</span>
+            <div className={styles.pillGroup}>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareFps === 30 ? styles.pillBtnActive : ''}`}
+                onClick={() => setFps(30)}
+              >
+                30 FPS
+              </button>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareFps === 60 ? styles.pillBtnActive : ''}`}
+                onClick={() => setFps(60)}
+              >
+                60 FPS
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.qualitySection}>
+            <span className={styles.qualityLabel}>OTIMIZAÇÃO</span>
+            <div className={styles.pillGroup}>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareContentHint === 'motion' ? styles.pillBtnActive : ''}`}
+                onClick={() => setContentHint('motion')}
+                title="Fluidez para jogos, vídeos e animações rápidas"
+              >
+                <i className="fa-solid fa-gamepad" style={{ marginRight: '5px' }}></i>
+                Fluidez (Jogos/Vídeo)
+              </button>
+              <button
+                type="button"
+                className={`${styles.pillBtn} ${screenShareContentHint === 'detail' ? styles.pillBtnActive : ''}`}
+                onClick={() => setContentHint('detail')}
+                title="Nitidez para textos, código e navegadores"
+              >
+                <i className="fa-solid fa-file-lines" style={{ marginRight: '5px' }}></i>
+                Nitidez (Texto)
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* Footer */}
         <div className={styles.footer}>
           <div className={styles.audioOption}>
-            {activeTab === 'screens' ? (
-              <>
-                <label className={styles.checkboxLabel}>
-                  <input
-                    type="checkbox"
-                    checked={withAudio}
-                    onChange={(e) => setWithAudio(e.target.checked)}
-                    className={styles.checkbox}
-                  />
-                  <span>Compartilhar áudio do sistema</span>
-                </label>
-                <span className={styles.audioHint}>
-                  Transmite o som do computador para a chamada
-                </span>
-              </>
-            ) : (
-              <div className={styles.audioHintDisabled}>
-                <span>ℹ️ Áudio do sistema disponível apenas na transmissão de tela inteira</span>
-              </div>
-            )}
+            <label className={styles.checkboxLabel}>
+              <input
+                type="checkbox"
+                checked={withAudio}
+                onChange={(e) => setWithAudio(e.target.checked)}
+                className={styles.checkbox}
+              />
+              <span>Compartilhar áudio do sistema (Jogos, Vídeos e Aplicativos)</span>
+            </label>
+            <span className={styles.audioHint}>
+              Transmite o áudio de jogos, filmes e janelas via WASAPI no Windows
+            </span>
           </div>
 
           <div className={styles.actions}>

@@ -168,6 +168,7 @@ export interface SocketCallbacks {
   onKickedFromVoice?: () => void;
   onKickedFromRoom?: () => void;
   onScreenViewerJoined?: (viewer: { id: string; name: string }) => void;
+  onScreenShareStarted?: (userId: string, userName: string) => void;
   onScreenShareStopped?: (userId: string) => void;
 }
 
@@ -721,7 +722,8 @@ export function useSocket(callbacks: SocketCallbacks) {
       callbacksRef.current.onReceiveIce(senderId, candidate);
     });
 
-    socket.on('user_started_screen_share', (_userId, userName) => {
+    socket.on('user_started_screen_share', (userId, userName) => {
+      callbacksRef.current.onScreenShareStarted?.(userId, userName);
       playScreenShareStartSound();
       store.addSystemMessage(`🖥️ ${userName} começou a compartilhar tela`);
     });

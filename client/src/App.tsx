@@ -4,6 +4,7 @@ import { notifyInChat } from './utils/systemMessage';
 import { useSocket } from './hooks/useSocket';
 import { useWebRTC } from './hooks/useWebRTC';
 import { useAudio, monitorSpeaking, stopSpeaking, playChimeSound } from './hooks/useAudio';
+import { playMuteSound, playUnmuteSound } from './utils/soundEffects';
 import { useYouTube } from './hooks/useYouTube';
 import { useScreenShare } from './hooks/useScreenShare';
 import { useAppStore } from './stores/useAppStore';
@@ -327,6 +328,9 @@ export default function App() {
       playChimeSound();
       notifyInChat(`👁️ ${viewer.name} começou a assistir sua transmissão!`);
     },
+    onScreenShareStarted: (userId) => {
+      rtc.ensureRemoteScreenStream(userId);
+    },
     onScreenShareStopped: (userId) => {
       rtc.clearRemoteScreen(userId);
     },
@@ -341,6 +345,47 @@ export default function App() {
       navigate('/');
     }
   });
+
+  // ─── GLOBAL SHORTCUTS (ELECTRON) ─────────────────────────────────
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (!electron) return;
+
+    electron.getKeybinds?.().then((kb: any) => {
+      if (kb) {
+        if (kb.keybindMicMute) useAudioStore.getState().setKeybindMicMute(kb.keybindMicMute);
+        if (kb.keybindDeafen) useAudioStore.getState().setKeybindDeafen(kb.keybindDeafen);
+        if (typeof kb.keybindsEnabled === 'boolean') useAudioStore.getState().setKeybindsEnabled(kb.keybindsEnabled);
+      }
+    }).catch(() => {});
+
+    if (electron.onGlobalShortcut) {
+      const unsub = electron.onGlobalShortcut((action: 'toggle-mic' | 'toggle-deafen') => {
+        if (action === 'toggle-mic') {
+          const currentMuted = useAudioStore.getState().micMuted;
+          const nextMuted = !currentMuted;
+          useAudioStore.getState().setMicMuted(nextMuted);
+          if (nextMuted) {
+            playMuteSound();
+          } else {
+            playUnmuteSound();
+          }
+          socket.emit('update_media_state', nextMuted, useAudioStore.getState().callMuted);
+        } else if (action === 'toggle-deafen') {
+          const currentCallMuted = useAudioStore.getState().callMuted;
+          const nextCallMuted = !currentCallMuted;
+          useAudioStore.getState().setCallMuted(nextCallMuted);
+          if (nextCallMuted) {
+            playMuteSound();
+          } else {
+            playUnmuteSound();
+          }
+          socket.emit('update_media_state', useAudioStore.getState().micMuted, nextCallMuted);
+        }
+      });
+      return unsub;
+    }
+  }, [socket]);
 
   // ─── SCREEN SHARE SYSTEM ─────────────────────────────────────────
   const screenShare = useScreenShare(
@@ -748,7 +793,9 @@ export default function App() {
         <Sidebar
           onScreenShareClick={(id) => {
             const u = store.users.find(x => x.id === id);
+            rtc.ensureRemoteScreenStream(id);
             store.setScreenShare(id, u?.name);
+            audio.applyRemoteSettings();
             setTimeout(() => {
               document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
                 a.play().catch(() => {});
@@ -854,7 +901,7 @@ export default function App() {
 
       <ScreenSharePanel
         onClose={() => store.setScreenShare(null)}
-        screenStream={store.screenShareUserId ? rtc.remoteScreenStreams.get(store.screenShareUserId) : null}
+        screenStream={store.screenShareUserId ? (rtc.remoteScreenStreams.get(store.screenShareUserId) || rtc.ensureRemoteScreenStream(store.screenShareUserId)) : null}
         onStartWatching={(broadcasterId) => socket.emit('start_watching_screen', broadcasterId)}
         onStopWatching={(broadcasterId) => socket.emit('stop_watching_screen', broadcasterId)}
       />

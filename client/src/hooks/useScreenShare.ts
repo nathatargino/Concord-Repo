@@ -1,61 +1,109 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
+import { useAudioStore } from '../stores/useAudioStore';
 import { playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { EchoFilter } from '../utils/echoFilter';
 
 type EmitFn = (event: string, ...args: unknown[]) => void;
 type GetRemoteStreamsFn = () => Map<string, MediaStream>;
 
-/** Helper function to request display media (opens picker once with video-only fallback if audio fails) */
+/** Helper function to request display media with resolution, FPS, and contentHint */
 async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStream> {
   const isElectron = typeof window !== 'undefined' && (/electron/i.test(navigator.userAgent) || !!(window as any).electron);
+  const { screenShareResolution, screenShareFps, screenShareContentHint } = useAudioStore.getState();
+
+  let widthConstraints = { ideal: 1920, max: 1920 };
+  let heightConstraints = { ideal: 1080, max: 1080 };
+  if (screenShareResolution === '720p') {
+    widthConstraints = { ideal: 1280, max: 1280 };
+    heightConstraints = { ideal: 720, max: 720 };
+  } else if (screenShareResolution === '1440p') {
+    widthConstraints = { ideal: 2560, max: 2560 };
+    heightConstraints = { ideal: 1440, max: 1440 };
+  }
+
+  const videoConstraintsWithRes: MediaTrackConstraints = {
+    width: widthConstraints,
+    height: heightConstraints,
+    frameRate: { ideal: screenShareFps, max: screenShareFps },
+  };
+
+  const videoConstraintsFallback: MediaTrackConstraints = {
+    frameRate: { ideal: screenShareFps, max: screenShareFps },
+  };
+
+  const applyHints = (stream: MediaStream): MediaStream => {
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack) {
+      // @ts-ignore
+      videoTrack.contentHint = screenShareContentHint;
+    }
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      // @ts-ignore
+      audioTrack.contentHint = 'music';
+    }
+    return stream;
+  };
 
   if (isElectron) {
     if (withAudio) {
-      // In Electron on Windows, system audio loopback requires disabling AEC, NS and AGC,
-      // because WASAPI loopback is not a microphone and will fail if audio processing is applied.
       try {
-        return await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            frameRate: { ideal: 30, max: 60 },
-          },
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: videoConstraintsWithRes,
           audio: {
             autoGainControl: false,
             echoCancellation: false,
             noiseSuppression: false,
           },
         });
+        return applyHints(stream);
       } catch (err: any) {
         if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
           throw err;
         }
-        console.warn(`[ScreenShare] Electron screen share with audio failed (name=${err?.name}, msg=${err?.message}):`, err);
-        const fallbackStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            frameRate: { ideal: 30, max: 60 },
-          },
-          audio: false,
-        });
-        notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
-        return fallbackStream;
+        console.warn(`[ScreenShare] Electron screen share with resolution constraints failed, trying fallback:`, err);
+        try {
+          const fallbackWithAudio = await navigator.mediaDevices.getDisplayMedia({
+            video: videoConstraintsFallback,
+            audio: {
+              autoGainControl: false,
+              echoCancellation: false,
+              noiseSuppression: false,
+            },
+          });
+          return applyHints(fallbackWithAudio);
+        } catch {
+          const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
+            video: videoConstraintsFallback,
+            audio: false,
+          });
+          notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
+          return applyHints(fallbackVideoOnly);
+        }
       }
     } else {
-      return await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          frameRate: { ideal: 30, max: 60 },
-        },
-        audio: false,
-      });
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: videoConstraintsWithRes,
+          audio: false,
+        });
+        return applyHints(stream);
+      } catch {
+        const stream = await navigator.mediaDevices.getDisplayMedia({
+          video: videoConstraintsFallback,
+          audio: false,
+        });
+        return applyHints(stream);
+      }
     }
   }
 
   // Browser capture
   try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        frameRate: { ideal: 30, max: 60 },
-      },
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: videoConstraintsWithRes,
       audio: withAudio ? {
         autoGainControl: false,
         echoCancellation: false,
@@ -66,27 +114,29 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
       surfaceSwitching: 'include',
       monitorTypeSurfaces: 'include',
     } as any);
+    return applyHints(stream);
   } catch (err: any) {
     if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
       throw err;
     }
-    // If browser audio capture failed with NotReadableError (e.g. system audio blocked by Windows)
-    if (err?.name === 'NotReadableError') {
-      console.warn(`[ScreenShare] Browser audio capture failed with NotReadableError (name=${err?.name}, msg=${err?.message}):`, err);
-      try {
-        const fallbackStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            frameRate: { ideal: 30, max: 60 },
-          },
-          audio: false,
-        });
-        notifyInChat('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.');
-        return fallbackStream;
-      } catch {
-        throw err;
-      }
+    try {
+      const fallbackStream = await navigator.mediaDevices.getDisplayMedia({
+        video: videoConstraintsFallback,
+        audio: withAudio ? {
+          autoGainControl: false,
+          echoCancellation: false,
+          noiseSuppression: false,
+        } : false,
+      } as any);
+      return applyHints(fallbackStream);
+    } catch {
+      const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
+        video: videoConstraintsFallback,
+        audio: false,
+      });
+      notifyInChat('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.');
+      return applyHints(fallbackVideoOnly);
     }
-    throw err;
   }
 }
 

@@ -46,3 +46,6 @@ export const playJoinSound = () => playTone([440, 554], 'sine', 0.15, 0.15, 0.1)
 export const playLeaveSound = () => playTone([554, 440], 'sine', 0.15, 0.15, 0.1); // Dó#, Lá (Descendo)
 export const playScreenShareStartSound = () => playTone([523.25, 659.25], 'triangle', 0.1, 0.1, 0.05); // Dó, Mi (rápido)
 export const playScreenShareStopSound = () => playTone([659.25, 523.25], 'triangle', 0.1, 0.1, 0.05); // Mi, Dó (rápido)
+export const playMuteSound = () => playTone([440, 330], 'sine', 0.12, 0.1, 0.08); // Mudo (Descendo)
+export const playUnmuteSound = () => playTone([330, 440], 'sine', 0.12, 0.1, 0.08); // Desmudo (Subindo)
+

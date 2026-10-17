@@ -25,6 +25,7 @@ export class EchoFilter {
   private loopbackSource: MediaStreamAudioSourceNode | null = null;
   private remoteSources: Map<string, RemoteSource> = new Map();
   private processedTrack: MediaStreamTrack | null = null;
+  private keepAliveAudio: HTMLAudioElement | null = null;
 
   /**
    * Build the filter graph and return a *processed* audio track that has the
@@ -55,6 +56,22 @@ export class EchoFilter {
 
       // ── 1. Loopback passthrough ────────────────────────────────────
       const loopbackOnly = new MediaStream([loopbackTrack]);
+
+      // No Chromium/Electron no Windows, passar um MediaStreamTrack de loopback ('getDisplayMedia')
+      // para AudioContext.createMediaStreamSource() SEM que esteja conectado a um elemento HTML <audio muted>
+      // faz o Chromium não bombear amostras de áudio para o WebAudio.
+      // O elemento keepAliveAudio força o Chromium/Electron a bombear os frames WASAPI continuamente.
+      try {
+        this.keepAliveAudio = document.createElement('audio');
+        this.keepAliveAudio.muted = true;
+        this.keepAliveAudio.autoplay = true;
+        (this.keepAliveAudio as any).playsInline = true;
+        this.keepAliveAudio.srcObject = loopbackOnly;
+        this.keepAliveAudio.play().catch(() => {});
+      } catch (elErr) {
+        console.debug('[EchoFilter] keepAliveAudio init error:', elErr);
+      }
+
       this.loopbackSource = this.ctx.createMediaStreamSource(loopbackOnly);
       this.loopbackSource.connect(this.dest);
 
@@ -62,6 +79,11 @@ export class EchoFilter {
 
       if (remoteStreams && remoteStreams.size > 0) {
         this.updateRemoteStreams(remoteStreams, remoteGainValues);
+      }
+
+      // Garante que o AudioContext esteja ativo mesmo se remoteStreams estiver vazio
+      if (this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
       }
 
       return this.processedTrack;
@@ -81,6 +103,10 @@ export class EchoFilter {
     remoteGainValues?: Map<string, number>,
   ): void {
     if (!this.ctx || !this.dest || this.ctx.state === 'closed') return;
+
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
+    }
 
     const rawDelay = (this.ctx as any).outputLatency as number | undefined;
     const estimatedDelay = Math.max(rawDelay ?? 0.03, 0.015);
@@ -145,6 +171,14 @@ export class EchoFilter {
 
   /** Tear down the entire filter graph and release resources. */
   dispose(): void {
+    if (this.keepAliveAudio) {
+      try {
+        this.keepAliveAudio.pause();
+        this.keepAliveAudio.srcObject = null;
+      } catch {}
+      this.keepAliveAudio = null;
+    }
+
     for (const r of this.remoteSources.values()) {
       try { r.source.disconnect(); } catch {}
       try { r.delay.disconnect(); } catch {}

@@ -40,6 +40,37 @@ export default defineConfig({
       }
     }) : null,
   ],
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (
+            id.includes('emoji-picker-react') ||
+            id.includes('@giphy') ||
+            id.includes('plyr') ||
+            id.includes('plyr-react')
+          ) {
+            return 'vendor-media';
+          }
+          if (id.includes('@supabase')) {
+            return 'vendor-supabase';
+          }
+          if (
+            id.includes('react-router-dom') ||
+            id.includes('react-router') ||
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('\\react\\') ||
+            id.includes('\\react-dom\\')
+          ) {
+            return 'vendor-react';
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

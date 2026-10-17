@@ -8,15 +8,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     username TEXT NOT NULL,
     email TEXT,
-    encrypted_password TEXT,
     avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Ensure profile columns exist
+-- Ensure profile columns exist and secure sensitive data
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS encrypted_password TEXT;
+ALTER TABLE public.profiles DROP COLUMN IF EXISTS encrypted_password;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS display_name TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS custom_tag TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'online';
@@ -41,28 +40,25 @@ CREATE POLICY "Users can update their own profile."
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.profiles (id, username, email, encrypted_password, avatar_url)
+    INSERT INTO public.profiles (id, username, email, avatar_url)
     VALUES (
         NEW.id,
         COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
         NEW.email,
-        NEW.encrypted_password,
         NEW.raw_user_meta_data->>'avatar_url'
     )
     ON CONFLICT (id) DO UPDATE
     SET email = EXCLUDED.email,
-        encrypted_password = EXCLUDED.encrypted_password,
         username = COALESCE(EXCLUDED.username, public.profiles.username);
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Backfill email and encrypted_password for existing profiles
+-- Backfill email for existing profiles if missing
 UPDATE public.profiles p
-SET email = u.email,
-    encrypted_password = u.encrypted_password
+SET email = u.email
 FROM auth.users u
-WHERE p.id = u.id;
+WHERE p.id = u.id AND p.email IS NULL;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -103,8 +99,26 @@ CREATE POLICY "Anyone can create a room or server."
 CREATE POLICY "Room creators can update their rooms."
     ON public.rooms FOR UPDATE USING (auth.uid() = created_by);
 
-CREATE POLICY "Anyone can delete rooms."
-    ON public.rooms FOR DELETE USING (true);
+DROP POLICY IF EXISTS "Anyone can delete rooms." ON public.rooms;
+CREATE POLICY "Authorized users can delete rooms or servers."
+    ON public.rooms FOR DELETE
+    USING (
+        -- 1. Fallback compatível para salas temporárias (14h) ou sem criador atribuído
+        (is_server = false OR is_server IS NULL OR created_by IS NULL)
+        OR
+        -- 2. Criador autenticado da sala/servidor
+        (auth.uid() IS NOT NULL AND auth.uid() = created_by)
+        OR
+        -- 3. Membro owner ou admin no servidor
+        (
+            auth.uid() IS NOT NULL AND EXISTS (
+                SELECT 1 FROM public.server_members sm
+                WHERE sm.server_id = public.rooms.id
+                AND sm.user_id = auth.uid()
+                AND sm.role IN ('owner', 'admin')
+            )
+        )
+    );
 
 
 -- 3. SERVER CHANNELS TABLE (Multiple text channels per server)
@@ -123,8 +137,32 @@ CREATE POLICY "Anyone can view server channels."
 CREATE POLICY "Anyone can create server channels."
     ON public.server_channels FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Anyone can delete server channels."
-    ON public.server_channels FOR DELETE USING (true);
+DROP POLICY IF EXISTS "Anyone can delete server channels." ON public.server_channels;
+CREATE POLICY "Authorized users can delete server channels."
+    ON public.server_channels FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM public.rooms r
+            WHERE r.id = public.server_channels.server_id
+            AND (
+                -- 1. Servidor sem criador registrado (fallback de migração)
+                (r.created_by IS NULL)
+                OR
+                -- 2. Criador original do servidor
+                (auth.uid() IS NOT NULL AND auth.uid() = r.created_by)
+                OR
+                -- 3. Membro owner ou admin no servidor correspondente
+                (
+                    auth.uid() IS NOT NULL AND EXISTS (
+                        SELECT 1 FROM public.server_members sm
+                        WHERE sm.server_id = r.id
+                        AND sm.user_id = auth.uid()
+                        AND sm.role IN ('owner', 'admin')
+                    )
+                )
+            )
+        )
+    );
 
 
 -- 4. SERVER MEMBERS TABLE (Track offline, online and permanent server members)

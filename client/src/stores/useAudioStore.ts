@@ -4,6 +4,9 @@ import { persist } from 'zustand/middleware';
 const STORAGE_KEY = 'concord_audio_v2';
 
 export type NoiseSuppressionMode = 'rnnoise' | 'standard' | 'off';
+export type ScreenShareResolution = '720p' | '1080p' | '1440p';
+export type ScreenShareFps = 30 | 60;
+export type ScreenShareContentHint = 'motion' | 'detail';
 
 interface AudioState {
   ytVol: number;
@@ -21,6 +24,14 @@ interface AudioState {
   noiseGateThreshold: number; // dBFS, range -80 to 0
   localMutedUsers: string[];
   userVolumes: Record<string, number>;
+
+  // Screen share & global keybind settings
+  screenShareResolution: ScreenShareResolution;
+  screenShareFps: ScreenShareFps;
+  screenShareContentHint: ScreenShareContentHint;
+  keybindMicMute: string;
+  keybindDeafen: string;
+  keybindsEnabled: boolean;
 
   setYtVol: (v: number) => void;
   setMicVol: (v: number) => void;
@@ -40,6 +51,14 @@ interface AudioState {
   toggleCallMute: () => void;
   toggleLocalMuteUser: (userId: string) => void;
   setUserVolume: (userId: string, vol: number) => void;
+
+  setScreenShareResolution: (res: ScreenShareResolution) => void;
+  setScreenShareFps: (fps: ScreenShareFps) => void;
+  setScreenShareContentHint: (hint: ScreenShareContentHint) => void;
+  setKeybindMicMute: (key: string) => void;
+  setKeybindDeafen: (key: string) => void;
+  setKeybindsEnabled: (enabled: boolean) => void;
+
   resetAll: () => void;
 }
 
@@ -59,6 +78,13 @@ const defaults = {
   noiseGateThreshold: -45, // Calibrated Discord-style default (-45 dBFS)
   localMutedUsers: [],
   userVolumes: {},
+
+  screenShareResolution: '1080p' as ScreenShareResolution,
+  screenShareFps: 60 as ScreenShareFps,
+  screenShareContentHint: 'motion' as ScreenShareContentHint,
+  keybindMicMute: 'CommandOrControl+Shift+M',
+  keybindDeafen: 'CommandOrControl+Shift+D',
+  keybindsEnabled: true,
 };
 
 function getInitialState() {
@@ -189,6 +215,14 @@ export const useAudioStore = create<AudioState>()(
         set((state) => ({
           userVolumes: { ...state.userVolumes, [userId]: vol },
         })),
+
+      setScreenShareResolution: (screenShareResolution) => set({ screenShareResolution }),
+      setScreenShareFps: (screenShareFps) => set({ screenShareFps }),
+      setScreenShareContentHint: (screenShareContentHint) => set({ screenShareContentHint }),
+      setKeybindMicMute: (keybindMicMute) => set({ keybindMicMute }),
+      setKeybindDeafen: (keybindDeafen) => set({ keybindDeafen }),
+      setKeybindsEnabled: (keybindsEnabled) => set({ keybindsEnabled }),
+
       resetAll: () => set(defaults),
     }),
     {

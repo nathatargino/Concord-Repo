@@ -17,9 +17,11 @@ export const ScreenSharePanel: React.FC<Props> = ({
   onStartWatching,
   onStopWatching
 }) => {
-  const { screenShareUserId, screenShareUserName, myId } = useAppStore();
+  const { screenShareUserId, screenShareUserName, myId, users, setScreenShare } = useAppStore();
   const { screenShareVol, setScreenShareVol } = useAudioStore();
   const prevScreenVolRef = useRef<number>(screenShareVol > 0 ? screenShareVol : 100);
+
+  const otherBroadcasters = users.filter((u) => u.screenSharing && u.id !== myId);
 
   const handleToggleScreenMute = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -69,6 +71,48 @@ export const ScreenSharePanel: React.FC<Props> = ({
       }
     }
   }, [screenStream]);
+
+  // Escutar 'addtrack' e 'unmute' nas tracks do screenStream para forçar play imediato (elimina tela preta)
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl || !screenStream) return;
+
+    const playVideo = () => {
+      if (videoEl.paused) {
+        videoEl.play().catch(() => {});
+      }
+    };
+
+    screenStream.addEventListener('addtrack', playVideo);
+    const tracks = screenStream.getTracks();
+    tracks.forEach((track) => {
+      track.addEventListener('unmute', playVideo);
+    });
+
+    return () => {
+      screenStream.removeEventListener('addtrack', playVideo);
+      tracks.forEach((track) => {
+        track.removeEventListener('unmute', playVideo);
+      });
+    };
+  }, [screenStream]);
+
+  // Recarregar Vídeo e Desbloquear Áudio manualmente
+  const handleReloadVideo = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const videoEl = videoRef.current;
+    if (videoEl && screenStream) {
+      videoEl.srcObject = screenStream;
+      videoEl.play().catch((err) => {
+        console.debug('[ScreenSharePanel] video reload play error:', err);
+      });
+    }
+    document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
+      if (a.paused) {
+        a.play().catch(() => {});
+      }
+    });
+  };
 
   // Toggle fullscreen mode
   const toggleFullscreen = () => {
@@ -130,6 +174,28 @@ export const ScreenSharePanel: React.FC<Props> = ({
                 Tela de {screenShareUserName}
               </span>
               <span className={styles.liveBadge}>AO VIVO</span>
+
+              {/* Pílulas para alternar entre transmissões ativas */}
+              {otherBroadcasters.length > 1 && (
+                <div 
+                  className={styles.multiStreamSwitcher}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  {otherBroadcasters.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      className={`${styles.streamPillBtn} ${u.id === screenShareUserId ? styles.streamPillBtnActive : ''}`}
+                      onClick={() => setScreenShare(u.id, u.name)}
+                      title={`Assistir transmissão de ${u.name}`}
+                    >
+                      <span>📺</span>
+                      <span>{u.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div 
               className={styles.actions}
@@ -137,6 +203,14 @@ export const ScreenSharePanel: React.FC<Props> = ({
               onPointerDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
+              <button
+                type="button"
+                className={styles.actionBtn}
+                onClick={handleReloadVideo}
+                title="Recarregar Vídeo e Desbloquear Áudio (resolve tela preta)"
+              >
+                🔄
+              </button>
               <div 
                 className={styles.volControl} 
                 title="Volume da Transmissão"
@@ -186,6 +260,7 @@ export const ScreenSharePanel: React.FC<Props> = ({
               autoPlay
               playsInline
               muted
+              onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
               className={styles.video}
             />
           </div>

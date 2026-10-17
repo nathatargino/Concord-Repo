@@ -8,9 +8,11 @@ interface Props {
 }
 
 export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
-  const { amSharing, screenViewers } = useAppStore();
+  const { amSharing, screenViewers, users, myId, screenShareUserId, setScreenShare } = useAppStore();
 
   if (!amSharing) return null;
+
+  const otherBroadcasters = users.filter((u) => u.screenSharing && u.id !== myId);
 
   return (
     <div className={styles.panel}>
@@ -56,6 +58,39 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChang
           <span className={styles.placeholderSubtitle}>Prévia desativada para economia de desempenho</span>
         </div>
       </div>
+
+      {otherBroadcasters.length > 0 && (
+        <div className={styles.otherStreamsSection}>
+          <span className={styles.otherStreamsLabel}>
+            Outras transmissões na chamada ({otherBroadcasters.length}):
+          </span>
+          <div className={styles.otherStreamsList}>
+            {otherBroadcasters.map((u) => {
+              const isWatching = screenShareUserId === u.id;
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  className={`${styles.watchOtherBtn} ${isWatching ? styles.watchOtherBtnActive : ''}`}
+                  onClick={() => {
+                    if (isWatching) {
+                      setScreenShare(null);
+                    } else {
+                      setScreenShare(u.id, u.name);
+                    }
+                  }}
+                  title={isWatching ? `Parar de assistir ${u.name}` : `Assistir tela de ${u.name}`}
+                >
+                  <span className={styles.watchOtherIcon}>📺</span>
+                  <span className={styles.watchOtherName}>
+                    {isWatching ? `Assistindo ${u.name}` : `Assistir tela de ${u.name}`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className={styles.footer}>
         {onChangeSharing && (

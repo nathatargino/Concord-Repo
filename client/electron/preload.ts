@@ -53,6 +53,10 @@ export interface ElectronAPI {
     showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) => void;
     openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
     cancelGoogleAuth?: () => void;
+    /** Global Keyboard Shortcuts (Keybinds) */
+    getKeybinds?: () => Promise<{ keybindMicMute: string; keybindDeafen: string; keybindsEnabled: boolean }>;
+    setKeybinds?: (data: { keybindMicMute?: string; keybindDeafen?: string; keybindsEnabled?: boolean }) => Promise<{ ok: boolean; keybinds?: { keybindMicMute: string; keybindDeafen: string; keybindsEnabled: boolean }; error?: string }>;
+    onGlobalShortcut?: (callback: (action: 'toggle-mic' | 'toggle-deafen') => void) => () => void;
 }
 
 declare global {
@@ -181,6 +185,15 @@ const electronBridge: ElectronAPI = {
         ipcRenderer.send('show-chat-notification', options),
     openGoogleAuth: (url: string) => ipcRenderer.invoke('open-google-auth', url),
     cancelGoogleAuth: () => ipcRenderer.send('cancel-google-auth'),
+    getKeybinds: () => ipcRenderer.invoke('get-keybinds'),
+    setKeybinds: (data: any) => ipcRenderer.invoke('set-keybinds', data),
+    onGlobalShortcut: (cb: (action: 'toggle-mic' | 'toggle-deafen') => void) => {
+        const subscription = (_event: any, action: 'toggle-mic' | 'toggle-deafen') => cb(action);
+        ipcRenderer.on('global-shortcut-triggered', subscription);
+        return () => {
+            ipcRenderer.removeListener('global-shortcut-triggered', subscription);
+        };
+    },
 };
 
 contextBridge.exposeInMainWorld('electron', electronBridge);

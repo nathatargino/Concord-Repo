@@ -15,6 +15,8 @@ interface PeerConnection {
   ignoreOffer: boolean;
   screenSender?: RTCRtpSender;
   screenAudioSender?: RTCRtpSender;
+  screenVideoTransceiver?: RTCRtpTransceiver;
+  screenAudioTransceiver?: RTCRtpTransceiver;
   /** Set when a renegotiation was requested while the connection was not stable. */
   renegotiateQueued?: boolean;
   /** Queue-aware offer trigger (perfect-negotiation). */
@@ -22,6 +24,56 @@ interface PeerConnection {
 }
 
 type AttachRemoteFn = (audioEl: HTMLAudioElement, stream: MediaStream, userId: string) => void;
+
+/**
+ * Helper to dynamically calibrate sender bitrate and encoding parameters
+ * according to resolution, FPS, content hint and total peers on the call.
+ */
+function applySenderBitrate(sender: RTCRtpSender, isVideo: boolean, peerCount: number) {
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}];
+    }
+    const { screenShareResolution, screenShareFps, screenShareContentHint } = useAudioStore.getState();
+
+    if (isVideo) {
+      let baseBitrate = 5_000_000; // 1080p 60fps standard
+      if (screenShareResolution === '1440p' && screenShareFps === 60) {
+        baseBitrate = 7_500_000; // 7.5 Mbps
+      } else if (screenShareResolution === '1440p' && screenShareFps === 30) {
+        baseBitrate = 5_500_000;
+      } else if (screenShareResolution === '1080p' && screenShareFps === 60) {
+        baseBitrate = 5_000_000; // 5.0 Mbps
+      } else if (
+        (screenShareResolution === '1080p' && screenShareFps === 30) ||
+        (screenShareResolution === '720p' && screenShareFps === 60)
+      ) {
+        baseBitrate = 3_500_000; // 3.5 Mbps
+      } else if (screenShareResolution === '720p' && screenShareFps === 30) {
+        baseBitrate = 2_500_000; // 2.5 Mbps
+      }
+
+      // If more than 4 peers, adjust proportionally to avoid saturating upstream, keeping >= 2 Mbps
+      let adjustedBitrate = baseBitrate;
+      if (peerCount > 4) {
+        adjustedBitrate = Math.max(2_000_000, Math.round(baseBitrate * (4 / peerCount)));
+      }
+
+      params.encodings[0].maxBitrate = adjustedBitrate;
+      params.encodings[0].maxFramerate = screenShareFps;
+      // @ts-ignore
+      params.degradationPreference =
+        screenShareContentHint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
+    } else {
+      params.encodings[0].maxBitrate = 96_000; // 96 kbps for screen audio
+    }
+
+    sender.setParameters(params).catch(() => {});
+  } catch (err) {
+    console.debug('[WebRTC] applySenderBitrate error:', err);
+  }
+}
 
 export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, attachRemoteScreenAudio?: AttachRemoteFn) {
   const peersRef = useRef<Map<string, PeerConnection>>(new Map());
@@ -38,7 +90,6 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
   ]);
 
   const myIdRef = useRef('');
-
 
   // Fetch ICE servers from server
   const fetchIceServers = useCallback(async () => {
@@ -91,18 +142,34 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         }
       }
 
-      // Add screen share tracks if active
+      // Add screen share tracks if active using dedicated transceivers
       if (screenStreamRef.current) {
-        for (const track of screenStreamRef.current.getTracks()) {
+        const videoTrack = screenStreamRef.current.getVideoTracks()[0];
+        const audioTrack = screenStreamRef.current.getAudioTracks()[0];
+
+        if (videoTrack) {
           try {
-            const sender = pc.addTrack(track, screenStreamRef.current);
-            if (track.kind === 'video') {
-              peerData.screenSender = sender;
-            } else if (track.kind === 'audio') {
-              peerData.screenAudioSender = sender;
-            }
+            peerData.screenVideoTransceiver = pc.addTransceiver(videoTrack, {
+              direction: 'sendonly',
+              streams: [screenStreamRef.current],
+            });
+            peerData.screenSender = peerData.screenVideoTransceiver.sender;
+            applySenderBitrate(peerData.screenSender, true, peersRef.current.size);
           } catch (err) {
-            console.warn('[WebRTC] Error adding initial screen track:', err);
+            console.warn('[WebRTC] Error adding initial screen video transceiver:', err);
+          }
+        }
+
+        if (audioTrack) {
+          try {
+            peerData.screenAudioTransceiver = pc.addTransceiver(audioTrack, {
+              direction: 'sendonly',
+              streams: [screenStreamRef.current],
+            });
+            peerData.screenAudioSender = peerData.screenAudioTransceiver.sender;
+            applySenderBitrate(peerData.screenAudioSender, false, peersRef.current.size);
+          } catch (err) {
+            console.warn('[WebRTC] Error adding initial screen audio transceiver:', err);
           }
         }
       }
@@ -116,8 +183,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // Queue-aware (re)negotiation. If the connection isn't stable yet
       // (e.g. a screen track was added mid-handshake), remember that an offer
-      // is owed and fire it once we return to `stable` — otherwise the new
-      // track would never reach the remote peer.
+      // is owed and fire it once we return to `stable`.
       const negotiate = async () => {
         try {
           if (peerData.makingOffer || pc.signalingState !== 'stable') {
@@ -146,11 +212,70 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
       // Remote tracks
       pc.ontrack = ({ track, streams }) => {
-        const stream = streams[0] || new MediaStream([track]);
+        if (track.kind === 'video') {
+          // This is a screen share stream: ALWAYS isolate to a pure video-only MediaStream
+          const videoOnlyStream = new MediaStream([track]);
+          remoteScreenStreamsRef.current.set(peerId, videoOnlyStream);
+          setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
 
-        if (track.kind === 'audio') {
+          // If streams[0] also contains a screen audio track, connect it to screen audio element
+          const sAudio = streams[0]?.getAudioTracks()[0];
+          if (sAudio) {
+            let screenAudioEl = peerData.screenAudioEl;
+            if (!screenAudioEl) {
+              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
+              if (!screenAudioEl) {
+                screenAudioEl = document.createElement('audio');
+                screenAudioEl.id = `remote-screen-audio-${peerId}`;
+                screenAudioEl.autoplay = true;
+                (screenAudioEl as any).playsInline = true;
+
+                const container = document.getElementById('remote-audios') || document.body;
+                container.appendChild(screenAudioEl);
+              }
+              peerData.screenAudioEl = screenAudioEl;
+            }
+
+            const audioOnlyStream = new MediaStream([sAudio]);
+            screenAudioEl.srcObject = audioOnlyStream;
+            const outputId = useAudioStore.getState().selectedAudioOutputId;
+            if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
+              (screenAudioEl as any).setSinkId(outputId).catch(() => {});
+            }
+            screenAudioEl.play().catch((err) => {
+              console.warn('[WebRTC] Screen audio autoplay blocked:', err);
+            });
+
+            if (attachRemoteScreenAudio) {
+              attachRemoteScreenAudio(screenAudioEl, audioOnlyStream, peerId);
+            }
+          }
+
+          track.onended = () => {
+            remoteScreenStreamsRef.current.delete(peerId);
+            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+            if (peerData.screenAudioEl) {
+              peerData.screenAudioEl.pause();
+              peerData.screenAudioEl.srcObject = null;
+            }
+            if (useAppStore.getState().screenShareUserId === peerId) {
+              useAppStore.getState().setScreenShare(null, null);
+            }
+          };
+
+          track.onunmute = () => {
+            if (!remoteScreenStreamsRef.current.has(peerId)) {
+              remoteScreenStreamsRef.current.set(peerId, new MediaStream([track]));
+            }
+            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+          };
+        } else if (track.kind === 'audio') {
+          // Diferencie microfone vs áudio da tela de forma infalível:
+          // A primeira trilha de áudio sem vídeo (quando !peerData.micTrack || peerData.micTrack.id === track.id) é o microfone.
+          // Qualquer segunda trilha de áudio (peerData.micTrack && peerData.micTrack.id !== track.id)
+          // OU trilha cujo streams[0] tenha vídeo é ÁUDIO DE TELA!
           const hasVideoInStream = (streams[0]?.getVideoTracks().length ?? 0) > 0;
-          const isSecondAudio = peerData.micTrack && peerData.micTrack !== track;
+          const isSecondAudio = Boolean(peerData.micTrack && peerData.micTrack.id !== track.id);
           const isScreenAudio = hasVideoInStream || isSecondAudio;
 
           if (isScreenAudio) {
@@ -169,7 +294,8 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
               peerData.screenAudioEl = screenAudioEl;
             }
 
-            screenAudioEl.srcObject = stream;
+            const audioOnlyStream = new MediaStream([track]);
+            screenAudioEl.srcObject = audioOnlyStream;
             const outputId = useAudioStore.getState().selectedAudioOutputId;
             if (outputId && outputId !== 'default' && typeof (screenAudioEl as any).setSinkId === 'function') {
               (screenAudioEl as any).setSinkId(outputId).catch(() => {});
@@ -179,7 +305,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             });
 
             if (attachRemoteScreenAudio) {
-              attachRemoteScreenAudio(screenAudioEl, stream, peerId);
+              attachRemoteScreenAudio(screenAudioEl, audioOnlyStream, peerId);
             }
           } else {
             peerData.micTrack = track;
@@ -198,7 +324,8 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
               peerData.audioEl = audioEl;
             }
 
-            audioEl.srcObject = stream;
+            const micStream = new MediaStream([track]);
+            audioEl.srcObject = micStream;
             const outputId = useAudioStore.getState().selectedAudioOutputId;
             if (outputId && outputId !== 'default' && typeof (audioEl as any).setSinkId === 'function') {
               (audioEl as any).setSinkId(outputId).catch(() => {});
@@ -208,60 +335,9 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             });
 
             if (attachRemoteStream) {
-              attachRemoteStream(audioEl, stream, peerId);
+              attachRemoteStream(audioEl, micStream, peerId);
             }
           }
-        }
-
-        if (track.kind === 'video') {
-          // This is a screen share stream
-          remoteScreenStreamsRef.current.set(peerId, stream);
-          setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
-
-          // If stream also contains screen audio track, connect it to screen audio
-          const screenAudioTrack = stream.getAudioTracks()[0];
-          if (screenAudioTrack) {
-            let screenAudioEl = peerData.screenAudioEl;
-            if (!screenAudioEl) {
-              screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
-              if (!screenAudioEl) {
-                screenAudioEl = document.createElement('audio');
-                screenAudioEl.id = `remote-screen-audio-${peerId}`;
-                screenAudioEl.autoplay = true;
-                (screenAudioEl as any).playsInline = true;
-
-                const container = document.getElementById('remote-audios') || document.body;
-                container.appendChild(screenAudioEl);
-              }
-              peerData.screenAudioEl = screenAudioEl;
-            }
-
-            screenAudioEl.srcObject = stream;
-            screenAudioEl.play().catch((err) => {
-              console.warn('[WebRTC] Screen audio autoplay blocked:', err);
-            });
-
-            if (attachRemoteScreenAudio) {
-              attachRemoteScreenAudio(screenAudioEl, stream, peerId);
-            }
-          }
-
-          // Stream salvo para exibicao sob demanda ao clicar no botao de ver transmissao
-          track.onended = () => {
-            remoteScreenStreamsRef.current.delete(peerId);
-            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
-            if (peerData.screenAudioEl) {
-              peerData.screenAudioEl.pause();
-              peerData.screenAudioEl.srcObject = null;
-            }
-            if (useAppStore.getState().screenShareUserId === peerId) {
-              useAppStore.getState().setScreenShare(null, null);
-            }
-          };
-
-          track.onunmute = () => {
-            setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
-          };
         }
       };
 
@@ -369,10 +445,6 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
             pc.setLocalDescription({ type: 'rollback' }),
             pc.setRemoteDescription(offer),
           ]);
-          // The rollback discarded our pending local offer. If it carried a
-          // freshly-added track (e.g. screen-share audio), that track is still
-          // attached to the connection but no longer advertised — we owe the
-          // remote a new offer once we're back to `stable`.
           peerData.renegotiateQueued = true;
         } else {
           await pc.setRemoteDescription(offer);
@@ -381,7 +453,6 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         emit('send_answer', senderId, pc.localDescription!);
         await flushPendingIce(senderId);
 
-        // Answering brought us back to `stable`; send any offer we still owe.
         if (peerData.renegotiateQueued && pc.signalingState === 'stable') {
           peerData.renegotiateQueued = false;
           peerData.makeOffer?.();
@@ -482,51 +553,53 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     const audioTrack = stream.getAudioTracks()[0];
 
     peersRef.current.forEach(async (peer) => {
-      let addedTrack = false;
-
       try {
         if (videoTrack) {
-          const videoSender = peer.screenSender || peer.pc.getSenders().find((s) => s.track && s.track.kind === 'video');
-          if (videoSender) {
-            await videoSender.replaceTrack(videoTrack);
-            peer.screenSender = videoSender;
+          if (peer.screenVideoTransceiver) {
+            await peer.screenVideoTransceiver.sender.replaceTrack(videoTrack);
+            peer.screenVideoTransceiver.direction = 'sendonly';
           } else {
-            peer.screenSender = peer.pc.addTrack(videoTrack, stream);
-            addedTrack = true;
+            peer.screenVideoTransceiver = peer.pc.addTransceiver(videoTrack, {
+              direction: 'sendonly',
+              streams: [stream],
+            });
+            peer.screenSender = peer.screenVideoTransceiver.sender;
+          }
+          if (peer.screenVideoTransceiver.sender) {
+            applySenderBitrate(peer.screenVideoTransceiver.sender, true, peersRef.current.size);
           }
         }
       } catch (err) {
-        console.warn('[WebRTC] Error adding screen video track:', err);
+        console.warn('[WebRTC] Error adding screen video transceiver:', err);
       }
 
       try {
         if (audioTrack) {
-          const audioSender = peer.screenAudioSender;
-          if (audioSender) {
-            await audioSender.replaceTrack(audioTrack);
+          if (peer.screenAudioTransceiver) {
+            await peer.screenAudioTransceiver.sender.replaceTrack(audioTrack);
+            peer.screenAudioTransceiver.direction = 'sendonly';
           } else {
-            peer.screenAudioSender = peer.pc.addTrack(audioTrack, stream);
-            addedTrack = true;
+            peer.screenAudioTransceiver = peer.pc.addTransceiver(audioTrack, {
+              direction: 'sendonly',
+              streams: [stream],
+            });
+            peer.screenAudioSender = peer.screenAudioTransceiver.sender;
           }
-        } else if (peer.screenAudioSender) {
-          await peer.screenAudioSender.replaceTrack(null);
+          if (peer.screenAudioTransceiver.sender) {
+            applySenderBitrate(peer.screenAudioTransceiver.sender, false, peersRef.current.size);
+          }
+        } else if (peer.screenAudioTransceiver) {
+          await peer.screenAudioTransceiver.sender.replaceTrack(null);
+          peer.screenAudioTransceiver.direction = 'inactive';
         }
       } catch (err) {
-        console.warn('[WebRTC] Error adding screen audio track:', err);
+        console.warn('[WebRTC] Error adding screen audio transceiver:', err);
       }
 
-      // New transceivers require an SDP round-trip. Route through the
-      // queue-aware negotiator so the offer is still sent even if the
-      // connection is mid-handshake right now. Also renegotiate if a previous
-      // attempt's offer was stranded by glare (renegotiateQueued still set).
-      if (addedTrack || peer.renegotiateQueued) {
-        await peer.makeOffer?.();
-      }
+      // SEMPRE dispara makeOffer para TODOS os peers para garantir troca SDP e disparo de ontrack
+      await peer.makeOffer?.();
     });
 
-    // Belt-and-suspenders: with several browser peers, the first offer can lose
-    // a glare race and get rolled back. Re-check shortly after and re-offer for
-    // any peer that still owes an offer (renegotiateQueued never cleared).
     if (audioTrack) {
       setTimeout(() => {
         peersRef.current.forEach((peer) => {
@@ -545,22 +618,28 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
     peersRef.current.forEach(async (peer) => {
       try {
-        if (peer.screenSender) {
+        if (peer.screenVideoTransceiver) {
+          await peer.screenVideoTransceiver.sender.replaceTrack(null);
+          peer.screenVideoTransceiver.direction = 'inactive';
+        } else if (peer.screenSender) {
           await peer.screenSender.replaceTrack(null);
         }
-        if (peer.screenAudioSender) {
+
+        if (peer.screenAudioTransceiver) {
+          await peer.screenAudioTransceiver.sender.replaceTrack(null);
+          peer.screenAudioTransceiver.direction = 'inactive';
+        } else if (peer.screenAudioSender) {
           await peer.screenAudioSender.replaceTrack(null);
         }
+
+        await peer.makeOffer?.();
       } catch (err) {
         console.warn('[WebRTC] Error removing screen track:', err);
       }
     });
   }, []);
 
-  // Viewer-side teardown when a broadcaster stops sharing. The broadcaster
-  // stops via `replaceTrack(null)`, which fires `mute` (not `ended`) on the
-  // receiver, so `track.onended` never runs and the last frame would stay
-  // frozen. Driven explicitly by the `user_stopped_screen_share` signal.
+  // Viewer-side teardown when a broadcaster stops sharing. Driven explicitly by user_stopped_screen_share.
   const clearRemoteScreen = useCallback((userId: string) => {
     remoteScreenStreamsRef.current.delete(userId);
     setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
@@ -580,8 +659,36 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     }
   }, []);
 
-  // Collect remote voice MediaStreams so the echo filter can subtract them
-  // from the screen-share loopback audio.
+  /**
+   * Recovers or ensures an active MediaStream for the remote broadcaster
+   * by inspecting receivers if the stream was missed or unmounted.
+   */
+  const ensureRemoteScreenStream = useCallback((userId: string): MediaStream | null => {
+    const existing = remoteScreenStreamsRef.current.get(userId);
+    const liveVideoTrack = existing?.getVideoTracks().find((t) => t.readyState === 'live');
+    if (existing && liveVideoTrack) {
+      return existing;
+    }
+
+    const peer = peersRef.current.get(userId);
+    if (!peer) return null;
+
+    const receivers = peer.pc.getReceivers();
+    const liveVideoReceiver = receivers.find(
+      (r) => r.track && r.track.kind === 'video' && r.track.readyState === 'live'
+    );
+
+    if (liveVideoReceiver?.track) {
+      const recovered = new MediaStream([liveVideoReceiver.track]);
+      remoteScreenStreamsRef.current.set(userId, recovered);
+      setRemoteScreenStreams(new Map(remoteScreenStreamsRef.current));
+      return recovered;
+    }
+
+    return null;
+  }, []);
+
+  // Collect remote voice MediaStreams so the echo filter can subtract them from loopback
   const getRemoteAudioStreams = useCallback((): Map<string, MediaStream> => {
     const streams = new Map<string, MediaStream>();
     peersRef.current.forEach((peer, peerId) => {
@@ -599,6 +706,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
     addScreenShareTrack,
     removeScreenShareTrack,
     clearRemoteScreen,
+    ensureRemoteScreenStream,
     remoteScreenStreams,
     getRemoteAudioStreams,
     onExistingVoiceUsers,
