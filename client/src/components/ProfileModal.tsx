@@ -62,6 +62,19 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     );
   };
 
+  const handleToggleAutoLaunch = async (enabled: boolean) => {
+    setAutoLaunch(enabled);
+    if (typeof window !== 'undefined' && (window as any).electron?.setAutoLaunch) {
+      try {
+        await (window as any).electron.setAutoLaunch(enabled);
+      } catch {}
+    }
+    toast.success(
+      enabled ? 'Inicialização automática com o Windows ativada.' : 'Inicialização automática com o Windows desativada.',
+      { icon: enabled ? '🚀' : '⏸️' }
+    );
+  };
+
   const cleanMyName = (myName || '').trim().toLowerCase();
   const myMember = serverMembers.find(m => (m.username || '').trim().toLowerCase() === cleanMyName);
   const isOwner = 
@@ -103,6 +116,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [updateDownloaded, setUpdateDownloaded] = useState(false);
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [autoLaunch, setAutoLaunch] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Autenticação & Feedback de Convite
@@ -130,6 +144,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       }
       (window as any).electron.getAppVersion?.().then((v: string) => setAppVersion(v));
       (window as any).electron.isWindowsStore?.().then((isStore: boolean) => setIsWindowsStore(Boolean(isStore)));
+      (window as any).electron.getAutoLaunch?.().then((enabled: boolean) => setAutoLaunch(Boolean(enabled))).catch(() => {});
       const unsub = (window as any).electron.onUpdateMessage?.((msg: string) => {
         setUpdateMessage(msg);
         setIsCheckingUpdates(false);
@@ -1356,6 +1371,32 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
               </div>
             </div>
 
+            {/* Inicialização com o Windows (Desktop) */}
+            {appVersion && (
+              <div className={styles.notificationSection}>
+                <label className={styles.label}>Inicialização do Sistema</label>
+                <div
+                  className={`${styles.checkboxCard} ${autoLaunch ? styles.checkboxCardActive : ''}`}
+                  onClick={() => handleToggleAutoLaunch(!autoLaunch)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className={styles.checkboxInfo}>
+                    <div className={styles.checkboxTitleRow}>
+                      <i className={`fa-brands fa-windows ${styles.notificationIcon}`} />
+                      <span className={styles.checkboxTitle}>Iniciar com o Windows</span>
+                    </div>
+                    <span className={styles.checkboxDescription}>
+                      Abrir o Concord automaticamente em segundo plano ao ligar o computador.
+                    </span>
+                  </div>
+                  <div className={`${styles.switch} ${autoLaunch ? styles.switchOn : ''}`}>
+                    <div className={styles.switchHandle} />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <button type="submit" className={styles.saveBtn} disabled={saving || !username.trim()}>
               {saving ? 'Salvando...' : 'Salvar Alterações'}
             </button>
@@ -1377,7 +1418,11 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                     type="button"
                     className={styles.updateAppBtn}
                     onClick={() => {
-                      (window as any).electron?.installUpdate?.();
+                      useAppStore.getState().setIsApplyingUpdate(true);
+                      handleClose();
+                      setTimeout(() => {
+                        (window as any).electron?.installUpdate?.();
+                      }, 500);
                     }}
                     title="Reiniciar o Concord e aplicar a nova versão"
                   >

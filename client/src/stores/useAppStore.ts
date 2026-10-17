@@ -223,6 +223,10 @@ interface AppState {
   screenViewers: Array<{ id: string; name: string }>;
   setScreenViewers: (viewers: Array<{ id: string; name: string }>) => void;
 
+  // Modern Update Screen
+  isApplyingUpdate: boolean;
+  setIsApplyingUpdate: (v: boolean) => void;
+
   // Full Room Cleanup
   resetRoomState: () => void;
 }
@@ -580,4 +584,7 @@ export const useAppStore = create<AppState>((set) => ({
       isScreenSharing: false,
       screenViewers: [],
     }),
+
+  isApplyingUpdate: false,
+  setIsApplyingUpdate: (isApplyingUpdate) => set({ isApplyingUpdate }),
 }));

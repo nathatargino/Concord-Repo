@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import toast from 'react-hot-toast';
 import { notifyInChat } from '../utils/systemMessage';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
@@ -78,18 +79,47 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
           video: true,
           audio: true,
         });
-        return await applyHintsAndConstraints(stream);
+        if (stream.getAudioTracks().length > 0) {
+          return await applyHintsAndConstraints(stream);
+        }
+        console.warn('[ScreenShare] getDisplayMedia returned stream with no audio tracks, attempting desktop audio capture...');
       } catch (err: any) {
         if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
           throw err;
         }
-        console.warn(`[ScreenShare] Electron screen share with audio failed, trying video-only fallback:`, err);
-        const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
+        console.warn(`[ScreenShare] Electron screen share with audio failed (${err?.name}: ${err?.message}), attempting getUserMedia fallback...`);
+      }
+
+      // Secondary fallback: attempt to capture loopback desktop audio via getUserMedia
+      try {
+        const videoStream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
           audio: false,
         });
-        notifyInChat('⚠️ Áudio do sistema indisponível no dispositivo de som. Transmitindo apenas vídeo.');
-        return await applyHintsAndConstraints(fallbackVideoOnly);
+        try {
+          const audioStream = await (navigator.mediaDevices as any).getUserMedia({
+            audio: {
+              mandatory: {
+                chromeMediaSource: 'desktop',
+              },
+            },
+            video: false,
+          });
+          const aTrack = audioStream.getAudioTracks()[0];
+          if (aTrack) {
+            videoStream.addTrack(aTrack);
+            return await applyHintsAndConstraints(videoStream);
+          }
+        } catch (audioErr) {
+          console.warn('[ScreenShare] getUserMedia desktop audio capture failed:', audioErr);
+        }
+        toast('⚠️ Áudio do sistema não pôde ser iniciado. Transmitindo apenas vídeo.', { icon: '⚠️', duration: 4000 });
+        return await applyHintsAndConstraints(videoStream);
+      } catch (videoErr: any) {
+        if (videoErr?.name === 'NotAllowedError' || videoErr?.name === 'AbortError') {
+          throw videoErr;
+        }
+        throw videoErr;
       }
     } else {
       const stream = await navigator.mediaDevices.getDisplayMedia({
@@ -136,7 +166,7 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
         video: true,
         audio: false,
       });
-      notifyInChat('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.');
+      toast('⚠️ Áudio do sistema indisponível no navegador. Transmitindo apenas vídeo.', { icon: '⚠️', duration: 4000 });
       return await applyHintsAndConstraints(fallbackVideoOnly);
     }
   }

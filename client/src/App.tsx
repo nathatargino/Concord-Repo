@@ -33,6 +33,7 @@ import { ServerActionModal } from './components/ServerActionModal';
 import { FloatingCallBar } from './components/FloatingCallBar';
 import { DiscordLoadingScreen } from './components/DiscordLoadingScreen';
 import { ConfirmModal } from './components/ConfirmModal';
+import { ModernUpdateOverlay } from './components/ModernUpdateOverlay';
 
 import styles from './App.module.css';
 
@@ -937,6 +938,7 @@ export default function App() {
       />
 
       <ConfirmModal />
+      {store.isApplyingUpdate && <ModernUpdateOverlay />}
 
       {/* ── 3. FLOATING CALL OVERLAY BAR (PERSISTENTE NA NAVEGAÇÃO FORA DA SALA DA CALL) ── */}
       {store.inVoice && (isHome || store.activeRailContext === 'home' || (store.activeCallInfo && store.activeCallInfo.roomId !== roomId && store.activeCallInfo.roomId !== store.room?.id && (!store.room?.code || store.activeCallInfo.code?.toUpperCase() !== store.room.code.toUpperCase()))) && (
