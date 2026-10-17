@@ -23,7 +23,6 @@ import {
 } from '../lib/supabase';
 import { playChimeSound } from '../hooks/useAudio';
 import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
-import { StreamingComingSoon } from './StreamingComingSoon';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -410,26 +409,29 @@ export function ChatPanel({
           if (event.service && event.url) {
             setPendingWatchUrl({ service: event.service, url: event.url });
           }
-        } else if (event.type === 'playback-event' && inVoice) {
-          if (event.playbackType === 'title-started') {
-            onWatchSessionStart?.({
-              platform: event.service,
-              titleUrl: event.url,
-              positionSeconds: event.positionSeconds || 0,
-              isPlaying: event.isPlaying ?? true,
-            });
-          } else if (event.playbackType === 'heartbeat') {
-            onWatchSessionHeartbeat?.({
-              platform: event.service,
-              positionSeconds: event.positionSeconds,
-              isPlaying: event.isPlaying ?? true,
-              url: event.url,
-            });
-          } else if (event.playbackType === 'play' || event.playbackType === 'pause' || event.playbackType === 'seek') {
-            onWatchSessionAction?.({
-              action: event.playbackType,
-              positionSeconds: event.positionSeconds,
-            });
+        } else if (event.type === 'playback-event') {
+          const effectiveInVoice = inVoice || Boolean(useAppStore.getState().inVoice);
+          if (effectiveInVoice) {
+            if (event.playbackType === 'title-started') {
+              onWatchSessionStart?.({
+                platform: event.service,
+                titleUrl: event.url,
+                positionSeconds: event.positionSeconds || 0,
+                isPlaying: event.isPlaying ?? true,
+              });
+            } else if (event.playbackType === 'heartbeat') {
+              onWatchSessionHeartbeat?.({
+                platform: event.service,
+                positionSeconds: event.positionSeconds,
+                isPlaying: event.isPlaying ?? true,
+                url: event.url,
+              });
+            } else if (event.playbackType === 'play' || event.playbackType === 'pause' || event.playbackType === 'seek') {
+              onWatchSessionAction?.({
+                action: event.playbackType,
+                positionSeconds: event.positionSeconds,
+              });
+            }
           }
         }
       });
@@ -2617,10 +2619,35 @@ export function ChatPanel({
 
                   if (!isSessionActive) {
                     return (
-                      <StreamingComingSoon
-                        platform={currentService}
-                        onBack={() => setActiveMediaTab('youtube')}
-                      />
+                      <div className={styles.streamingLauncherCard}>
+                        <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : styles.streamingLauncherPrime}`}>
+                          {currentService === 'netflix' ? <NetflixIcon /> : <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i>}
+                        </div>
+                        <h3 className={styles.streamingLauncherTitle}>
+                          Sessão da {platformLabel} não iniciada
+                        </h3>
+                        <p className={styles.streamingLauncherDesc}>
+                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus filmes e séries sem sair do app.
+                        </p>
+                        <button
+                          className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : styles.streamingLauncherBtnPrime}`}
+                          onClick={() => {
+                            if (!inVoice) {
+                              toast.error(`Você precisa estar em uma call de voz para assistir ${platformLabel}.`);
+                              return;
+                            }
+                            setActiveStreaming({ service: currentService });
+                            setActiveMediaTab(currentService);
+                            setStreamingSession(currentService, true);
+                            const electron = (window as any).electron;
+                            if (electron?.setActiveMediaTab) {
+                              electron.setActiveMediaTab(currentService);
+                            }
+                          }}
+                        >
+                          <span>▶</span> Abrir {platformLabel} no Concord
+                        </button>
+                      </div>
                     );
                   }
 
@@ -2910,6 +2937,10 @@ export function ChatPanel({
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('play', { service: currentService });
                               else if (electron?.streamingCommand) electron.streamingCommand('play', { service: currentService });
+                              const currentSession = useAppStore.getState().watchSession || watchSession;
+                              if (currentSession && currentSession.platform === currentService) {
+                                onWatchSessionAction?.({ action: 'play' });
+                              }
                             }}
                             title="Reproduzir vídeo"
                           >
@@ -2923,6 +2954,10 @@ export function ChatPanel({
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('pause', { service: currentService });
                               else if (electron?.streamingCommand) electron.streamingCommand('pause', { service: currentService });
+                              const currentSession = useAppStore.getState().watchSession || watchSession;
+                              if (currentSession && currentSession.platform === currentService) {
+                                onWatchSessionAction?.({ action: 'pause' });
+                              }
                             }}
                             title="Pausar vídeo"
                           >
@@ -2936,6 +2971,12 @@ export function ChatPanel({
                               const electron = (window as any).electron;
                               if (electron?.sendStreamingCommand) electron.sendStreamingCommand('skip', { service: currentService });
                               else if (electron?.streamingCommand) electron.streamingCommand('skip', { service: currentService });
+                              const currentSession = useAppStore.getState().watchSession || watchSession;
+                              if (currentSession && currentSession.platform === currentService) {
+                                const elapsed = currentSession.isPlaying ? Math.max(0, (Date.now() - currentSession.lastUpdated) / 1000) : 0;
+                                const newPos = (currentSession.positionSeconds || 0) + elapsed + 10;
+                                onWatchSessionAction?.({ action: 'seek', positionSeconds: newPos });
+                              }
                             }}
                             title="Pular 10 segundos para frente"
                           >

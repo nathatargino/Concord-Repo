@@ -2285,81 +2285,115 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             applyStreamingVolumeToView(inst.view, currentStreamingVolume);
         }
     } else if (command === 'play') {
-        wc.focus();
-        // 1. Hardware Space key event
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
-        // 2. DOM selectors for Prime Video & Netflix
+        wc.send('apply-streaming-playback', { action: 'play' });
+        // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
-                const v = document.querySelector('video');
-                if (v && v.paused) {
-                    v.play().catch(() => {});
-                }
-                const playBtn = document.querySelector('[data-uia="control-play-pause-play"]') ||
-                                document.querySelector('.button-nfplayerPlay') ||
-                                document.querySelector('.atvwebplayersdk-playpause-button') ||
-                                document.querySelector('[data-automation-id="playback-play-pause"]') ||
-                                document.querySelector('.pausedOverlayButton') ||
-                                document.querySelector('button[aria-label*="Reproduzir"]') ||
-                                document.querySelector('button[aria-label*="Play"]');
-                if (playBtn) playBtn.click();
+                var v = (typeof window.__concord_get_active_video === 'function')
+                    ? window.__concord_get_active_video()
+                    : document.querySelector('video');
+                return {
+                    currentTime: v ? v.currentTime : 0,
+                    url: window.location.href
+                };
             })()
-        `).catch(() => {});
+        `).then((res: any) => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'play',
+                    service: inst.service,
+                    url: res?.url || inst.currentUrl || '',
+                    positionSeconds: res?.currentTime || 0,
+                    isPlaying: true,
+                });
+            }
+        }).catch(() => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'play',
+                    service: inst.service,
+                    url: inst.currentUrl || '',
+                    isPlaying: true,
+                });
+            }
+        });
     } else if (command === 'pause') {
-        wc.focus();
-        // 1. Hardware Space key event
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
-        // 2. DOM selectors for Prime Video & Netflix
+        wc.send('apply-streaming-playback', { action: 'pause' });
+        // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
-                const v = document.querySelector('video');
-                if (v && !v.paused) {
-                    v.pause();
-                }
-                const pauseBtn = document.querySelector('[data-uia="control-play-pause-pause"]') ||
-                                 document.querySelector('.button-nfplayerPause') ||
-                                 document.querySelector('.atvwebplayersdk-playpause-button') ||
-                                 document.querySelector('[data-automation-id="playback-play-pause"]') ||
-                                 document.querySelector('button[aria-label*="Pausar"]') ||
-                                 document.querySelector('button[aria-label*="Pause"]');
-                if (pauseBtn) pauseBtn.click();
+                var v = (typeof window.__concord_get_active_video === 'function')
+                    ? window.__concord_get_active_video()
+                    : document.querySelector('video');
+                return {
+                    currentTime: v ? v.currentTime : 0,
+                    url: window.location.href
+                };
             })()
-        `).catch(() => {});
+        `).then((res: any) => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'pause',
+                    service: inst.service,
+                    url: res?.url || inst.currentUrl || '',
+                    positionSeconds: res?.currentTime || 0,
+                    isPlaying: false,
+                });
+            }
+        }).catch(() => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'pause',
+                    service: inst.service,
+                    url: inst.currentUrl || '',
+                    isPlaying: false,
+                });
+            }
+        });
     } else if (command === 'skip') {
-        wc.focus();
-        // 1. Hardware Right arrow key event (10 seconds fast forward on both Netflix and Prime Video)
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Right' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Right' });
-        // 2. DOM selectors for 10-second fast forward button + currentTime advance
-        wc.executeJavaScript(`
-            (function() {
-                const ff = document.querySelector('[data-uia="control-fastforward-10"]') ||
-                           document.querySelector('.button-nfplayerFastForward10') ||
-                           document.querySelector('.atvwebplayersdk-fastforward-button') ||
-                           document.querySelector('[data-automation-id="fast-forward-button"]') ||
-                           document.querySelector('button[aria-label*="Avançar 10"]') ||
-                           document.querySelector('button[aria-label*="Fast forward"]') ||
-                           document.querySelector('button[aria-label*="10s"]') ||
-                           document.querySelector('button[aria-label*="10 s"]');
-                if (ff) {
-                    ff.click();
-                    return;
+        wc.send('apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
+        // Sincronizar evento de seek com a Watch Party no Concord
+        setTimeout(() => {
+            wc.executeJavaScript(`
+                (function() {
+                    var v = (typeof window.__concord_get_active_video === 'function')
+                        ? window.__concord_get_active_video()
+                        : document.querySelector('video');
+                    return {
+                        currentTime: v ? v.currentTime : 0,
+                        isPlaying: v ? !v.paused : true,
+                        url: window.location.href
+                    };
+                })()
+            `).then((res: any) => {
+                if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                    mainWindow.webContents.send('streaming-event', {
+                        type: 'playback-event',
+                        playbackType: 'seek',
+                        service: inst.service,
+                        url: res?.url || inst.currentUrl || '',
+                        positionSeconds: res?.currentTime || 0,
+                        isPlaying: res?.isPlaying ?? true,
+                    });
                 }
-                const v = document.querySelector('video');
-                if (v) {
-                    v.currentTime = Math.min((v.duration || Infinity), v.currentTime + 10);
-                }
-            })()
-        `).catch(() => {});
+            }).catch(() => {});
+        }, 250);
     } else if (command === 'seek' && typeof payload?.time === 'number') {
-        wc.executeJavaScript(`
-            (function() {
-                const v = document.querySelector('video');
-                if (v) v.currentTime = ${payload.time};
-            })()
-        `).catch(() => {});
+        wc.send('apply-streaming-playback', { action: 'seek', positionSeconds: payload.time });
+        if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+            mainWindow.webContents.send('streaming-event', {
+                type: 'playback-event',
+                playbackType: 'seek',
+                service: inst.service,
+                url: inst.currentUrl || '',
+                positionSeconds: payload.time,
+                isPlaying: true,
+            });
+        }
     } else if (command === 'fullscreen') {
         if (isStreamingFullscreen) {
             leaveStreamingFullscreen(inst);

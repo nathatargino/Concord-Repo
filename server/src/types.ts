@@ -36,6 +36,7 @@ export interface WatchSession {
   lastUpdated: number;
   startedBy: string;
   startedByName?: string;
+  lastActionAt?: number;
 }
 
 export interface ServerChannel {
@@ -238,7 +239,7 @@ export interface ServerToClientEvents {
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
   watch_session_sync: (session: WatchSession | null) => void;
-  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; senderName?: string; timestamp: number }) => void;
   watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' }) => void;
   // Room events
   room_joined: (room: RoomInfo) => void;

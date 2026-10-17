@@ -49,7 +49,7 @@ interface ServerToClientEvents {
   music_queue_update: (queue: MusicItem[]) => void;
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
   watch_session_sync: (session: WatchSession | null) => void;
-  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; timestamp: number }) => void;
+  watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; senderName?: string; timestamp: number }) => void;
   watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' }) => void;
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;
@@ -569,16 +569,28 @@ export function useSocket(callbacks: SocketCallbacks) {
 
       // Verificar se a view de streaming já está aberta para este serviço
       const streamingSessions = useAppStore.getState().streamingSessions;
-      const isViewOpen = streamingSessions[session.platform];
+      const isViewOpen = Boolean(
+        streamingSessions[session.platform] ||
+        useAppStore.getState().activeStreaming?.service === session.platform
+      );
 
       if (isViewOpen && electron) {
-        // View já aberta → navegar para o título correto se necessário
-        if (electron.navigateStreamingView) {
+        const isNewTitle = Boolean(prevSession && prevSession.titleUrl !== session.titleUrl);
+
+        // Se watch_session_sync trouxer um novo titleUrl diferente do anterior com a view aberta,
+        // navega diretamente para o título
+        if (isNewTitle && electron.navigateToTitle) {
+          electron.navigateToTitle({
+            service: session.platform,
+            url: session.titleUrl,
+            autoPlay: session.isPlaying,
+          });
+        } else if (electron.navigateStreamingView && (!prevSession || prevSession.titleUrl !== session.titleUrl)) {
           electron.navigateStreamingView(session.platform, session.titleUrl);
         }
 
         // Sincronizar posição após delay (DRM/carregamento de página)
-        const syncDelay = prevSession ? 800 : 3000; // reconexão = menos delay
+        const syncDelay = isNewTitle ? 2000 : (prevSession ? 600 : 2500);
         const elapsedSinceUpdate = session.isPlaying
           ? Math.max(0, (Date.now() - session.lastUpdated) / 1000)
           : 0;
@@ -591,6 +603,7 @@ export function useSocket(callbacks: SocketCallbacks) {
             action: session.isPlaying ? 'play' : 'pause',
             positionSeconds: estimatedPosition + (session.isPlaying ? syncDelay / 1000 : 0),
             service: session.platform,
+            autoDrift: false,
           });
         }, syncDelay);
       }
@@ -611,23 +624,29 @@ export function useSocket(callbacks: SocketCallbacks) {
         isPlaying: data.action === 'play' ? true : data.action === 'pause' ? false : currentSession.isPlaying,
         positionSeconds: typeof data.positionSeconds === 'number' ? data.positionSeconds : currentSession.positionSeconds,
         lastUpdated: data.timestamp || Date.now(),
+        startedBy: data.senderId,
+        startedByName: data.senderName || currentSession.startedByName,
       };
       store.setWatchSession(updated);
 
       // Só aplicar sincronização se a view de streaming estiver aberta
       const streamingSessions = useAppStore.getState().streamingSessions;
-      const isViewOpen = streamingSessions[currentSession.platform];
+      const isViewOpen = Boolean(
+        streamingSessions[currentSession.platform] ||
+        useAppStore.getState().activeStreaming?.service === currentSession.platform
+      );
       if (!isViewOpen || !electron?.syncStreamingPlayback) return;
 
-      // Debounce de 200ms para evitar loops de seek entre participantes
+      // Debounce reduzido para 80ms para que o play/pause/seek de qualquer membro reflita instantaneamente
       if (watchActionDebounceTimer) clearTimeout(watchActionDebounceTimer);
       watchActionDebounceTimer = setTimeout(() => {
         electron.syncStreamingPlayback?.({
           action: data.action,
           positionSeconds: data.positionSeconds,
           service: currentSession.platform,
+          autoDrift: false,
         });
-      }, 200);
+      }, 80);
     });
 
     socket.on('watch_session_heartbeat', (data) => {
@@ -645,7 +664,10 @@ export function useSocket(callbacks: SocketCallbacks) {
 
       // Se a view de streaming estiver aberta, enviar para alinhamento suave de drift (> 3.0s)
       const streamingSessions = useAppStore.getState().streamingSessions;
-      const isViewOpen = streamingSessions[currentSession.platform];
+      const isViewOpen = Boolean(
+        streamingSessions[currentSession.platform] ||
+        useAppStore.getState().activeStreaming?.service === currentSession.platform
+      );
       if (isViewOpen && electron?.syncStreamingPlayback) {
         electron.syncStreamingPlayback({
           action: data.isPlaying ? 'play' : 'pause',

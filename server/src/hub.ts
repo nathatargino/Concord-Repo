@@ -1436,6 +1436,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         lastUpdated: now,
         startedBy: socket.id,
         startedByName: user.name,
+        lastActionAt: now,
       };
 
       room.watchSession = session;
@@ -1455,25 +1456,28 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (typeof data.positionSeconds === 'number') {
           room.watchSession.positionSeconds = data.positionSeconds;
         }
-        room.watchSession.lastUpdated = now;
       } else if (data.action === 'pause') {
         room.watchSession.isPlaying = false;
         if (typeof data.positionSeconds === 'number') {
           room.watchSession.positionSeconds = data.positionSeconds;
         }
-        room.watchSession.lastUpdated = now;
       } else if (data.action === 'seek') {
         if (typeof data.positionSeconds === 'number') {
           room.watchSession.positionSeconds = data.positionSeconds;
         }
-        room.watchSession.lastUpdated = now;
       }
+
+      room.watchSession.lastUpdated = now;
+      room.watchSession.startedBy = socket.id;
+      room.watchSession.startedByName = user.name;
+      room.watchSession.lastActionAt = now;
 
       // Broadcast to other participants in the room
       socket.to(room.id).emit('watch_session_action', {
         action: data.action,
-        positionSeconds: data.positionSeconds,
+        positionSeconds: room.watchSession.positionSeconds,
         senderId: socket.id,
+        senderName: user.name,
         timestamp: now,
       });
     });
@@ -1494,10 +1498,65 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
     socket.on('watch_session_heartbeat', (data) => {
       const room = getCurrentRoom();
-      if (!room || !room.watchSession) return;
+      if (!room) return;
       if (!room.voiceUsers.has(socket.id)) return;
 
       const now = Date.now();
+
+      // b) Se room.watchSession for null e o usuário estiver em voz enviando um heartbeat válido: auto-start!
+      if (!room.watchSession) {
+        if (data.url && (data.platform === 'netflix' || data.platform === 'prime')) {
+          const session: WatchSession = {
+            roomId: room.id,
+            platform: data.platform,
+            titleUrl: data.url,
+            positionSeconds: typeof data.positionSeconds === 'number' ? data.positionSeconds : 0,
+            isPlaying: Boolean(data.isPlaying),
+            lastUpdated: now,
+            startedBy: socket.id,
+            startedByName: user.name,
+            lastActionAt: 0,
+          };
+          room.watchSession = session;
+          io.to(room.id).emit('watch_session_sync', session);
+          const platLabel = data.platform === 'netflix' ? 'Netflix' : 'Prime Video';
+          io.to(room.id).emit('toast_notification', `🎉 ${user.name} iniciou uma Watch Party de ${platLabel}!`, 'info');
+        }
+        return;
+      }
+
+      // Se room.watchSession já existir:
+      // Ignore heartbeats durante 4000ms após qualquer watch_session_action explícito
+      const timeSinceLastAction = now - (room.watchSession.lastActionAt || 0);
+      if (timeSinceLastAction < 4000) {
+        return;
+      }
+
+      // Só aceite atualizações contínuas de positionSeconds/isPlaying do heartbeat se vierem do líder atual da sessão
+      // OU se o líder atual não estiver mais em room.voiceUsers (promova o remetente a startedBy)
+      const isLeader = socket.id === room.watchSession.startedBy;
+      const leaderInVoice = room.voiceUsers.has(room.watchSession.startedBy);
+
+      if (!isLeader) {
+        if (!leaderInVoice) {
+          room.watchSession.startedBy = socket.id;
+          room.watchSession.startedByName = user.name;
+        } else {
+          // Não é o líder e o líder está ativo na call de voz: ignore o heartbeat deste espectador
+          return;
+        }
+      }
+
+      // Se o líder mudou de episódio/filme (data.url && data.url !== room.watchSession.titleUrl)
+      if (data.url && data.url !== room.watchSession.titleUrl) {
+        room.watchSession.titleUrl = data.url;
+        room.watchSession.positionSeconds = typeof data.positionSeconds === 'number' ? data.positionSeconds : 0;
+        room.watchSession.isPlaying = Boolean(data.isPlaying);
+        room.watchSession.lastUpdated = now;
+        io.to(room.id).emit('watch_session_sync', room.watchSession);
+        return;
+      }
+
       if (typeof data.positionSeconds === 'number') {
         room.watchSession.positionSeconds = data.positionSeconds;
       }
@@ -1506,7 +1565,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       room.watchSession.lastUpdated = now;
 
-      // Broadcast heartbeat to other room participants for drift correction
+      // Broadcast heartbeat para os outros participantes da sala para alinhamento suave de drift
       socket.to(room.id).emit('watch_session_heartbeat', {
         positionSeconds: room.watchSession.positionSeconds,
         isPlaying: room.watchSession.isPlaying,
