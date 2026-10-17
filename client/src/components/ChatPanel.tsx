@@ -22,7 +22,7 @@ import {
   deleteDmMessage,
 } from '../lib/supabase';
 import { playChimeSound } from '../hooks/useAudio';
-import { NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
+import { CrunchyrollIcon, NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
 
 const EmojiPicker = lazy(() => import('emoji-picker-react'));
 
@@ -172,9 +172,9 @@ interface ChatPanelProps {
   onSetQuality?: (quality: string) => void;
   getYtAvailableQualities?: () => string[];
   getYtQuality?: () => string;
-  onWatchSessionStart?: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
+  onWatchSessionStart?: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
   onWatchSessionAction?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
-  onWatchSessionHeartbeat?: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
+  onWatchSessionHeartbeat?: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   onWatchSessionEnd?: () => void;
 }
 
@@ -366,7 +366,7 @@ export function ChatPanel({
   }, []);
 
   // URL pendente de navegação de Watch Party (recebida via streaming-event 'navigate-pending')
-  const [pendingWatchUrl, setPendingWatchUrl] = useState<{ service: 'netflix' | 'prime'; url: string } | null>(null);
+  const [pendingWatchUrl, setPendingWatchUrl] = useState<{ service: 'netflix' | 'prime' | 'crunchyroll'; url: string } | null>(null);
   // Estado de sincronização para o botão "Assistir Junto"
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -509,7 +509,7 @@ export function ChatPanel({
     const electron = (window as any).electron;
     if (!electron) return;
 
-    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime';
+    const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll';
 
     if (!showVideoPlayer || !isStreamingTab || !renderMedia) {
       if (electron.setActiveMediaTab) {
@@ -548,7 +548,7 @@ export function ChatPanel({
           borderRadius: 16,
         });
         if (!isCancelled) {
-          setStreamingSession(activeMediaTab, true);
+          setStreamingSession(activeMediaTab as 'netflix' | 'prime' | 'crunchyroll', true);
         }
       }
     };
@@ -1878,7 +1878,7 @@ export function ChatPanel({
           )}
 
           {/* Botão de alternar entre Chat e Streaming quando há streaming ativo ou player aberto */}
-          {((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || currentVideoId)) || showVideoPlayer) && (
+          {((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || (streamingSessions as any).crunchyroll || currentVideoId)) || showVideoPlayer) && (
             <button
               className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
@@ -2600,12 +2600,33 @@ export function ChatPanel({
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
                   ) : null}
                 </button>
+
+                {/* Crunchyroll Tab */}
+                <button
+                  className={`${styles.mediaTab} ${styles.mediaTabCrunchyroll} ${(activeMediaTab as any) === 'crunchyroll' ? styles.mediaTabActive : ''}`}
+                  onClick={() => {
+                    (setActiveMediaTab as any)('crunchyroll');
+                    setActiveStreaming({ service: 'crunchyroll' as any });
+                    (setStreamingSession as any)('crunchyroll', true);
+                    const electron = (window as any).electron;
+                    if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('crunchyroll');
+                  }}
+                  title="Crunchyroll"
+                >
+                  <CrunchyrollIcon />
+                  <span className={styles.mediaTabTitle}>Crunchyroll</span>
+                  {watchSession?.platform === 'crunchyroll' ? (
+                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
+                  ) : (streamingSessions as any).crunchyroll ? (
+                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
+                  ) : null}
+                </button>
               </div>
 
-              {/* ── Conteúdo: Streaming (Netflix ou Prime Video) ── */}
+              {/* ── Conteúdo: Streaming (Netflix, Prime Video ou Crunchyroll) ── */}
               <div
                 style={{
-                  display: (activeMediaTab === 'netflix' || activeMediaTab === 'prime') ? 'flex' : 'none',
+                  display: (activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll') ? 'flex' : 'none',
                   flexDirection: 'column',
                   flex: 1,
                   minHeight: 0,
@@ -2613,32 +2634,32 @@ export function ChatPanel({
                 }}
               >
                 {(() => {
-                  const currentService = activeMediaTab === 'netflix' || activeMediaTab === 'prime' ? activeMediaTab : 'prime';
-                  const isSessionActive = Boolean(streamingSessions[currentService] || activeStreaming?.service === currentService || (watchSession?.platform === currentService));
-                  const platformLabel = currentService === 'netflix' ? 'Netflix' : 'Prime Video';
+                  const currentService: 'netflix' | 'prime' | 'crunchyroll' = (activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll') ? (activeMediaTab as any) : 'prime';
+                  const isSessionActive = Boolean((streamingSessions as any)[currentService] || activeStreaming?.service === currentService || (watchSession?.platform === currentService));
+                  const platformLabel = currentService === 'netflix' ? 'Netflix' : currentService === 'prime' ? 'Prime Video' : 'Crunchyroll';
 
                   if (!isSessionActive) {
                     return (
                       <div className={styles.streamingLauncherCard}>
-                        <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : styles.streamingLauncherPrime}`}>
-                          {currentService === 'netflix' ? <NetflixIcon /> : <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i>}
+                        <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : currentService === 'prime' ? styles.streamingLauncherPrime : styles.streamingLauncherCrunchyroll}`}>
+                          {currentService === 'netflix' ? <NetflixIcon /> : currentService === 'prime' ? <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i> : <CrunchyrollIcon />}
                         </div>
                         <h3 className={styles.streamingLauncherTitle}>
                           Sessão da {platformLabel} não iniciada
                         </h3>
                         <p className={styles.streamingLauncherDesc}>
-                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus filmes e séries sem sair do app.
+                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus animes, filmes e séries sem sair do app.
                         </p>
                         <button
-                          className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : styles.streamingLauncherBtnPrime}`}
+                          className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : currentService === 'prime' ? styles.streamingLauncherBtnPrime : styles.streamingLauncherBtnCrunchyroll}`}
                           onClick={() => {
                             if (!inVoice) {
                               toast.error(`Você precisa estar em uma call de voz para assistir ${platformLabel}.`);
                               return;
                             }
-                            setActiveStreaming({ service: currentService });
-                            setActiveMediaTab(currentService);
-                            setStreamingSession(currentService, true);
+                            setActiveStreaming({ service: currentService as any });
+                            (setActiveMediaTab as any)(currentService);
+                            (setStreamingSession as any)(currentService, true);
                             const electron = (window as any).electron;
                             if (electron?.setActiveMediaTab) {
                               electron.setActiveMediaTab(currentService);
@@ -2667,13 +2688,13 @@ export function ChatPanel({
                               <span className={styles.watchPartyState}>
                                 {watchSession.isPlaying ? '▶ Reproduzindo' : '⏸ Pausado'}
                                 {' · '}
-                                {currentService === 'netflix' ? 'Netflix' : 'Prime Video'}
+                                {currentService === 'netflix' ? 'Netflix' : currentService === 'prime' ? 'Prime Video' : 'Crunchyroll'}
                               </span>
                             </div>
                           </div>
                           <div className={styles.watchPartyActions}>
                             {/* Botão principal: "Assistir Junto" — abre direto no título do líder */}
-                            {!streamingSessions[currentService] ? (
+                            {!(streamingSessions as any)[currentService] ? (
                               <>
                                 <button
                                   className={`${styles.watchPartyJoinBtn} ${isSyncing ? styles.watchPartyJoinBtnSyncing : ''}`}
@@ -2696,8 +2717,8 @@ export function ChatPanel({
                                         ? pendingWatchUrl.url
                                         : watchSession.titleUrl;
 
-                                      setActiveStreaming({ service: currentService, url: targetUrl });
-                                      setActiveMediaTab(currentService);
+                                      setActiveStreaming({ service: currentService as any, url: targetUrl });
+                                      (setActiveMediaTab as any)(currentService);
                                       setShowVideoPlayer(true);
                                       if (electron.setActiveMediaTab) electron.setActiveMediaTab(currentService);
 
@@ -2769,9 +2790,9 @@ export function ChatPanel({
                                       toast.error('Entre na call de voz para acessar o streaming.');
                                       return;
                                     }
-                                    setActiveStreaming({ service: currentService });
-                                    setActiveMediaTab(currentService);
-                                    setStreamingSession(currentService, true);
+                                    setActiveStreaming({ service: currentService as any });
+                                    (setActiveMediaTab as any)(currentService);
+                                    (setStreamingSession as any)(currentService, true);
                                     const electron = (window as any).electron;
                                     if (electron?.setActiveMediaTab) electron.setActiveMediaTab(currentService);
                                   }}
@@ -2859,7 +2880,7 @@ export function ChatPanel({
                         >
                           {!isElectron && renderMedia ? (
                             <iframe
-                              src={activeStreaming?.url || (currentService === 'netflix' ? 'https://www.netflix.com/browse' : 'https://www.primevideo.com')}
+                              src={activeStreaming?.url || (currentService === 'netflix' ? 'https://www.netflix.com/browse' : currentService === 'prime' ? 'https://www.primevideo.com' : 'https://www.crunchyroll.com')}
                               title={platformLabel}
                               className={styles.streamingIframe}
                               allow="autoplay; encrypted-media; fullscreen"
@@ -2869,7 +2890,7 @@ export function ChatPanel({
                               <div
                                 key="streaming-skeleton-spinner"
                                 className={styles.skeletonSpinner}
-                                style={{ borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1' }}
+                                style={{ borderTopColor: currentService === 'netflix' ? '#E50914' : currentService === 'prime' ? '#00A8E1' : '#F47521' }}
                               />
                               <p className={styles.skeletonLabel}>
                                 {platformLabel}
@@ -2886,13 +2907,13 @@ export function ChatPanel({
                                   borderWidth: '3px',
                                   borderStyle: 'solid',
                                   borderColor: 'rgba(255, 255, 255, 0.1)',
-                                  borderTopColor: currentService === 'netflix' ? '#E50914' : '#00A8E1',
+                                  borderTopColor: currentService === 'netflix' ? '#E50914' : currentService === 'prime' ? '#00A8E1' : '#F47521',
                                   margin: '0 auto 14px',
                                   animation: 'spin 1s linear infinite',
                                 }}
                               />
                               <p style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#fff' }}>
-                                Conectando ao {platformLabel}...
+                                Conectando {currentService === 'prime' ? 'ao' : 'à'} {platformLabel}...
                               </p>
                               <p style={{ margin: 0, fontSize: '12px', color: '#71717a' }}>
                                 Navegador com Widevine DRM ativo

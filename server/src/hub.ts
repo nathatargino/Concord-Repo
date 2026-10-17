@@ -1441,7 +1441,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       room.watchSession = session;
       io.to(room.id).emit('watch_session_sync', session);
-      const platLabel = data.platform === 'netflix' ? 'Netflix' : 'Prime Video';
+      const platLabel = data.platform === 'netflix' ? 'Netflix' : data.platform === 'crunchyroll' ? 'Crunchyroll' : 'Prime Video';
       io.to(room.id).emit('toast_notification', `🎉 ${user.name} iniciou uma Watch Party de ${platLabel}!`, 'info');
     });
 
@@ -1505,7 +1505,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       // b) Se room.watchSession for null e o usuário estiver em voz enviando um heartbeat válido: auto-start!
       if (!room.watchSession) {
-        if (data.url && (data.platform === 'netflix' || data.platform === 'prime')) {
+        if (data.url && (data.platform === 'netflix' || data.platform === 'prime' || data.platform === 'crunchyroll')) {
           const session: WatchSession = {
             roomId: room.id,
             platform: data.platform,
@@ -1519,7 +1519,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           };
           room.watchSession = session;
           io.to(room.id).emit('watch_session_sync', session);
-          const platLabel = data.platform === 'netflix' ? 'Netflix' : 'Prime Video';
+          const platLabel = data.platform === 'netflix' ? 'Netflix' : data.platform === 'crunchyroll' ? 'Crunchyroll' : 'Prime Video';
           io.to(room.id).emit('toast_notification', `🎉 ${user.name} iniciou uma Watch Party de ${platLabel}!`, 'info');
         }
         return;

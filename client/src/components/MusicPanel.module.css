@@ -77,37 +77,58 @@
   font-weight: 700;
 }
 
-/* ── Platform Tabs (Dimensões e Proporções da 1ª Imagem) ── */
+/* ── Platform Tabs (Layout Grade Bento 2x2) ── */
 .platformTabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  padding: 4px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  padding: 6px;
   background: #111319;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  gap: 4px;
 }
 
 .platformTab {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 4px;
-  border-radius: 8px;
-  font-size: 11px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: #9ca3af;
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  position: relative;
 }
 
 .platformTab:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.platformTabLiveDot {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px #22c55e;
+  animation: pulseLiveDot 1.6s infinite ease-in-out;
+}
+
+@keyframes pulseLiveDot {
+  0%, 100% { opacity: 1; transform: translateY(-50%) scale(1); }
+  50% { opacity: 0.5; transform: translateY(-50%) scale(1.2); }
 }
 
 .platformTabIcon {
@@ -120,7 +141,7 @@
   display: block;
 }
 
-/* ── Cores das Abas Ativas (Padrão da 2ª Imagem) ── */
+/* ── Cores das Abas Ativas ── */
 .platformTabActive_youtube {
   background: linear-gradient(135deg, rgba(255, 0, 0, 0.25), rgba(200, 0, 0, 0.15)) !important;
   border: 1px solid rgba(255, 60, 60, 0.45) !important;
@@ -140,6 +161,13 @@
   border: 1px solid rgba(0, 168, 225, 0.45) !important;
   color: #00A8E1 !important;
   box-shadow: 0 2px 12px rgba(0, 168, 225, 0.2);
+}
+
+.platformTabActive_crunchyroll {
+  background: linear-gradient(135deg, rgba(244, 117, 33, 0.25), rgba(200, 80, 10, 0.12)) !important;
+  border: 1px solid rgba(244, 117, 33, 0.5) !important;
+  color: #F47521 !important;
+  box-shadow: 0 2px 12px rgba(244, 117, 33, 0.25);
 }
 
 /* ── Content Section ── */
@@ -217,6 +245,28 @@
 
 .actionButtonPrime:hover {
   background: #0369a1;
+}
+
+.actionButtonCrunchyroll {
+  width: 100%;
+  padding: 10px;
+  border-radius: 12px;
+  background: #F47521;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(244, 117, 33, 0.3);
+  transition: all 0.2s ease;
+}
+
+.actionButtonCrunchyroll:hover {
+  background: #d85f12;
 }
 
 .actionButtonYoutube {

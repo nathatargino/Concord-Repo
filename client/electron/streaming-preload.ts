@@ -287,10 +287,23 @@ function clickPlayButton() {
     return;
   }
 
+  const crunchyPlayBtn = document.querySelector<HTMLElement>(
+    "[data-testid='vilos-play_pause_button']"
+  );
+  if (crunchyPlayBtn) {
+    crunchyPlayBtn.click();
+    return;
+  }
+
   const playBtn = document.querySelector<HTMLElement>(
     '.atvwebplayersdk-playpause-button, [data-automation-id="playback-play-pause"], button[aria-label*="Reproduzir"], button[aria-label*="Play"], button[aria-label*="Assistir"]'
   );
   if (playBtn) playBtn.click();
+
+  const vilosVideo = document.querySelector<HTMLVideoElement>('#vilosRoot video');
+  if (vilosVideo && vilosVideo.paused) {
+    vilosVideo.play().catch(() => {});
+  }
 }
 
 /**
@@ -309,15 +322,27 @@ function clickPauseButton() {
     return;
   }
 
+  const crunchyPauseBtn = document.querySelector<HTMLElement>(
+    "[data-testid='vilos-play_pause_button']"
+  );
+  if (crunchyPauseBtn) {
+    crunchyPauseBtn.click();
+    return;
+  }
+
   const pauseBtn = document.querySelector<HTMLElement>(
     '.atvwebplayersdk-playpause-button, [data-automation-id="playback-play-pause"], button[aria-label*="Pausar"], button[aria-label*="Pause"]'
   );
   if (pauseBtn) pauseBtn.click();
+
+  const vilosVideo = document.querySelector<HTMLVideoElement>('#vilosRoot video');
+  if (vilosVideo && !vilosVideo.paused) {
+    vilosVideo.pause();
+  }
 }
 
 /**
- * PROBLEMA 5: Aceita netflix.com/watch/, primevideo.com com qualquer rota (/watch, /detail,
- * /gp/video, /dp, /region), ou qualquer URL da netflix / primevideo com vídeo ativo > 45s reproduzindo.
+ * Suporte a URLs da Netflix, Prime Video e Crunchyroll.
  */
 function isWatchPartyEligibleUrl(url: string, video?: HTMLVideoElement | null): boolean {
   if (!url) return false;
@@ -337,9 +362,18 @@ function isWatchPartyEligibleUrl(url: string, video?: HTMLVideoElement | null): 
     return true;
   }
 
-  // Fallback: qualquer URL Netflix ou Prime Video se houver vídeo ativo em reprodução com duration > 45s
+  // Crunchyroll — rotas de reprodução direta, player Vilos ou CDN estático
+  if (lowerUrl.includes('crunchyroll.com') && (
+    lowerUrl.includes('/watch/') ||
+    lowerUrl.includes('vilos/player.html') ||
+    lowerUrl.includes('static.crunchyroll.com')
+  )) {
+    return true;
+  }
+
+  // Fallback: qualquer URL Netflix, Prime Video ou Crunchyroll se houver vídeo ativo em reprodução com duration > 45s
   const activeVideo = video || getActiveVideo();
-  if (activeVideo && (lowerUrl.includes('netflix.com') || lowerUrl.includes('primevideo.com'))) {
+  if (activeVideo && (lowerUrl.includes('netflix.com') || lowerUrl.includes('primevideo.com') || lowerUrl.includes('crunchyroll.com'))) {
     if (!isNaN(activeVideo.duration) && activeVideo.duration > 45 && !activeVideo.paused) {
       return true;
     }
@@ -665,6 +699,10 @@ function applyPlaybackCommand(data: { action: 'play' | 'pause' | 'seek' | 'skip'
 // ── Sinalizar ao Electron quando a view deve navegar automaticamente para um título
 // (usado pelo Watch Party quando o receptor clica "Assistir Junto" ou "Sincronizar")
 ipcRenderer.on('navigate-to-title', (_event, data: { url: string; autoPlay?: boolean }) => {
+  // Ignora o redirecionamento de location.href se estiver em subframes (ex: iframe do player Vilos)
+  if (window !== window.top) {
+    return;
+  }
   if (data.autoPlay) {
     try {
       sessionStorage.setItem('__concord_auto_play', '1');

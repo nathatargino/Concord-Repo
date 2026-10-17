@@ -57,6 +57,12 @@
   color: #00a8e1;
 }
 
+.crunchyrollTheme {
+  background: linear-gradient(135deg, rgba(244, 117, 33, 0.25), rgba(244, 117, 33, 0.08));
+  border: 1px solid rgba(244, 117, 33, 0.45);
+  color: #f47521;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -80,6 +86,12 @@
   background: rgba(0, 168, 225, 0.15);
   border: 1px solid rgba(0, 168, 225, 0.3);
   color: #38bdf8;
+}
+
+.crunchyrollBadge {
+  background: rgba(244, 117, 33, 0.15);
+  border: 1px solid rgba(244, 117, 33, 0.3);
+  color: #f47521;
 }
 
 .title {

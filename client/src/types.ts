@@ -46,7 +46,7 @@ export interface MusicItem {
 
 export interface WatchSession {
   roomId: string;
-  platform: 'netflix' | 'prime';
+  platform: 'netflix' | 'prime' | 'crunchyroll';
   titleUrl: string;
   positionSeconds: number;
   isPlaying: boolean;

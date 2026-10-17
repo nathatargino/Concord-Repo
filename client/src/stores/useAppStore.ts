@@ -200,12 +200,12 @@ interface AppState {
   setYtAvailableQualities: (qualities: string[]) => void;
 
   // Streaming & Multi-Platform Media
-  activeMediaTab: 'youtube' | 'netflix' | 'prime';
-  setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime') => void;
-  streamingSessions: { netflix: boolean; prime: boolean };
-  setStreamingSession: (service: 'netflix' | 'prime', active: boolean) => void;
-  activeStreaming: { service: 'netflix' | 'prime'; url?: string } | null;
-  setActiveStreaming: (s: { service: 'netflix' | 'prime'; url?: string } | null) => void;
+  activeMediaTab: 'youtube' | 'netflix' | 'prime' | 'crunchyroll';
+  setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime' | 'crunchyroll') => void;
+  streamingSessions: { netflix: boolean; prime: boolean; crunchyroll: boolean };
+  setStreamingSession: (service: 'netflix' | 'prime' | 'crunchyroll', active: boolean) => void;
+  activeStreaming: { service: 'netflix' | 'prime' | 'crunchyroll'; url?: string } | null;
+  setActiveStreaming: (s: { service: 'netflix' | 'prime' | 'crunchyroll'; url?: string } | null) => void;
   showVideoPlayer: boolean;
   setShowVideoPlayer: (v: boolean | ((prev: boolean) => boolean)) => void;
   isYouTubeSearchOpen: boolean;
@@ -509,7 +509,7 @@ export const useAppStore = create<AppState>((set) => ({
   // Streaming & Multi-Platform Media
   activeMediaTab: 'youtube',
   setActiveMediaTab: (activeMediaTab) => set({ activeMediaTab }),
-  streamingSessions: { netflix: false, prime: false },
+  streamingSessions: { netflix: false, prime: false, crunchyroll: false },
   setStreamingSession: (service, active) =>
     set((state) => ({
       streamingSessions: { ...state.streamingSessions, [service]: active },
@@ -567,7 +567,7 @@ export const useAppStore = create<AppState>((set) => ({
       isPlaying: false,
       visualizerActive: false,
       activeMediaTab: 'youtube',
-      streamingSessions: { netflix: false, prime: false },
+      streamingSessions: { netflix: false, prime: false, crunchyroll: false },
       activeStreaming: null,
       showVideoPlayer: false,
       watchSession: null,

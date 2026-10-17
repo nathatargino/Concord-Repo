@@ -226,18 +226,20 @@ let isQuitting = false;
 const appStartTime = Date.now();
 
 // Streaming Instances & Fullscreen State (Must be declared before createWindow event listeners)
+type StreamingService = 'netflix' | 'prime' | 'crunchyroll';
+
 interface StreamingInstance {
-    service: 'netflix' | 'prime';
+    service: StreamingService;
     view: any;
     currentUrl?: string;
 }
 
-const streamingInstances = new Map<'netflix' | 'prime', StreamingInstance>();
-let activeStreamingService: 'netflix' | 'prime' | null = null;
+const streamingInstances = new Map<StreamingService, StreamingInstance>();
+let activeStreamingService: StreamingService | null = null;
 let activeStreamingBounds: { x: number; y: number; width: number; height: number } | null = null;
 let isStreamingFullscreen = false;
 let isModalActive = false;
-let modalHiddenStreamingService: 'netflix' | 'prime' | null = null;
+let modalHiddenStreamingService: StreamingService | null = null;
 
 const startHidden = !isDev && process.argv.includes('--hidden');
 
@@ -1846,6 +1848,23 @@ function getActiveStreamingInstance(): StreamingInstance | undefined {
 
 let currentStreamingVolume = 50; // 0 to 100
 
+function broadcastToStreamingFrames(wc: any, channel: string, ...args: any[]) {
+    try {
+        wc.send(channel, ...args);
+    } catch {}
+    try {
+        if (wc.mainFrame && Array.isArray(wc.mainFrame.framesInSubtree)) {
+            for (const frame of wc.mainFrame.framesInSubtree) {
+                if (frame !== wc.mainFrame) {
+                    try {
+                        frame.send(channel, ...args);
+                    } catch {}
+                }
+            }
+        }
+    } catch {}
+}
+
 function applyStreamingVolumeToView(view: any, volume: number) {
     if (!view || view.webContents.isDestroyed()) return;
     const fraction = Math.max(0, Math.min(1, volume / 100));
@@ -1853,7 +1872,7 @@ function applyStreamingVolumeToView(view: any, volume: number) {
     try {
         view.webContents.setAudioMuted(isMuted);
     } catch (e) {}
-    view.webContents.executeJavaScript(`
+    const volScript = `
         (function() {
             try {
                 var mediaEls = document.querySelectorAll('video, audio');
@@ -1863,10 +1882,22 @@ function applyStreamingVolumeToView(view: any, volume: number) {
                 });
             } catch(e) {}
         })();
-    `).catch(() => {});
+    `;
+    view.webContents.executeJavaScript(volScript).catch(() => {});
+    try {
+        if (view.webContents.mainFrame && Array.isArray(view.webContents.mainFrame.framesInSubtree)) {
+            for (const frame of view.webContents.mainFrame.framesInSubtree) {
+                if (frame !== view.webContents.mainFrame) {
+                    try {
+                        frame.executeJavaScript(volScript).catch(() => {});
+                    } catch {}
+                }
+            }
+        }
+    } catch {}
 }
 
-function hideStreamingView(service: 'netflix' | 'prime') {
+function hideStreamingView(service: StreamingService) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const inst = streamingInstances.get(service);
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
@@ -1889,7 +1920,7 @@ function hideStreamingView(service: 'netflix' | 'prime') {
     }
 }
 
-function showStreamingView(service: 'netflix' | 'prime') {
+function showStreamingView(service: StreamingService) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     activeStreamingService = service;
     if (isModalActive) {
@@ -1982,19 +2013,34 @@ function enterStreamingFullscreen(inst?: StreamingInstance) {
     setTimeout(updateBounds, 300);
 
     // Trigger platform DOM fullscreen button only if not already in HTML5 fullscreen
-    target.view.webContents.executeJavaScript(`
+    const fsScript = `
         (function() {
             if (!document.fullscreenElement) {
                 const fsBtn = document.querySelector('[data-uia="control-fullscreen-enter"]') ||
                               document.querySelector('.button-nfplayerFullscreen') ||
                               document.querySelector('.atvwebplayersdk-fullscreen-button') ||
-                              document.querySelector('[data-automation-id="fullscreen-button"]');
+                              document.querySelector('[data-automation-id="fullscreen-button"]') ||
+                              document.querySelector("[data-testid='vilos-fullscreen_button']") ||
+                              document.querySelector("[aria-label*='Fullscreen']") ||
+                              document.querySelector("[aria-label*='Tela cheia']");
                 if (fsBtn) {
                     fsBtn.click();
                 }
             }
         })()
-    `).catch(() => {});
+    `;
+    target.view.webContents.executeJavaScript(fsScript).catch(() => {});
+    try {
+        if (target.view.webContents.mainFrame && Array.isArray(target.view.webContents.mainFrame.framesInSubtree)) {
+            for (const frame of target.view.webContents.mainFrame.framesInSubtree) {
+                if (frame !== target.view.webContents.mainFrame) {
+                    try {
+                        frame.executeJavaScript(fsScript).catch(() => {});
+                    } catch {}
+                }
+            }
+        }
+    } catch {}
 }
 
 function leaveStreamingFullscreen(inst?: StreamingInstance) {
@@ -2021,7 +2067,7 @@ function leaveStreamingFullscreen(inst?: StreamingInstance) {
     }
 }
 
-function closeStreamingInstance(targetService?: 'netflix' | 'prime') {
+function closeStreamingInstance(targetService?: StreamingService) {
     const s = targetService || activeStreamingService;
     if (!s) return;
     const inst = streamingInstances.get(s);
@@ -2047,7 +2093,7 @@ function closeStreamingInstance(targetService?: 'netflix' | 'prime') {
     }
 }
 
-ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => {
+ipcMain.handle('open-streaming-view', async (_event, options: { service: StreamingService; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
 
     const safeBounds = {
@@ -2060,9 +2106,15 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
 
     let targetUrl = options.url?.trim();
     if (!targetUrl) {
-        targetUrl = options.service === 'netflix'
-            ? 'https://www.netflix.com/browse'
-            : 'https://www.primevideo.com';
+        if (options.service === 'netflix') {
+            targetUrl = 'https://www.netflix.com/browse';
+        } else if (options.service === 'prime') {
+            targetUrl = 'https://www.primevideo.com';
+        } else if (options.service === 'crunchyroll') {
+            targetUrl = 'https://www.crunchyroll.com/';
+        } else {
+            targetUrl = 'https://www.crunchyroll.com/';
+        }
     }
 
     // Se já existe uma sessão em memória para este serviço, apenas reexiba e foque
@@ -2116,6 +2168,7 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
         session: streamingSession,
         partition,
         nodeIntegration: false,
+        nodeIntegrationInSubFrames: true,
         contextIsolation: true,
         plugins: true,
         webSecurity: true,
@@ -2326,14 +2379,15 @@ ipcMain.handle('open-streaming-view', async (_event, options: { service: 'netfli
     });
 });
 
-ipcMain.on('set-active-media-tab', (_event, tab: 'youtube' | 'netflix' | 'prime') => {
+ipcMain.on('set-active-media-tab', (_event, tab: 'youtube' | 'netflix' | 'prime' | 'crunchyroll') => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     if (tab === 'youtube') {
         hideStreamingView('netflix');
         hideStreamingView('prime');
+        hideStreamingView('crunchyroll');
         activeStreamingService = null;
         modalHiddenStreamingService = null;
-    } else if (tab === 'netflix' || tab === 'prime') {
+    } else if (tab === 'netflix' || tab === 'prime' || tab === 'crunchyroll') {
         if (!isModalActive) {
             showStreamingView(tab);
         } else {
@@ -2351,6 +2405,7 @@ ipcMain.on('set-modal-active', (_event, active: boolean) => {
         }
         hideStreamingView('netflix');
         hideStreamingView('prime');
+        hideStreamingView('crunchyroll');
     } else {
         const toRestore = modalHiddenStreamingService || activeStreamingService;
         if (toRestore && streamingInstances.has(toRestore)) {
@@ -2379,7 +2434,7 @@ ipcMain.on('resize-streaming-view', (_event, bounds: { x: number; y: number; wid
     }
 });
 
-ipcMain.on('close-streaming-view', (_event, service?: 'netflix' | 'prime') => {
+ipcMain.on('close-streaming-view', (_event, service?: StreamingService) => {
     closeStreamingInstance(service);
 });
 
@@ -2405,7 +2460,7 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             applyStreamingVolumeToView(inst.view, currentStreamingVolume);
         }
     } else if (command === 'play') {
-        wc.send('apply-streaming-playback', { action: 'play' });
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'play' });
         // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
@@ -2440,7 +2495,7 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             }
         });
     } else if (command === 'pause') {
-        wc.send('apply-streaming-playback', { action: 'pause' });
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'pause' });
         // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
@@ -2475,7 +2530,7 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             }
         });
     } else if (command === 'skip') {
-        wc.send('apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
         // Sincronizar evento de seek com a Watch Party no Concord
         setTimeout(() => {
             wc.executeJavaScript(`
@@ -2503,7 +2558,7 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
             }).catch(() => {});
         }, 250);
     } else if (command === 'seek' && typeof payload?.time === 'number') {
-        wc.send('apply-streaming-playback', { action: 'seek', positionSeconds: payload.time });
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'seek', positionSeconds: payload.time });
         if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
             mainWindow.webContents.send('streaming-event', {
                 type: 'playback-event',
@@ -2526,15 +2581,19 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
                 const href = window.location.href;
                 const isNetflixWatch = href.includes('netflix.com/watch');
                 const isPrimeWatch = href.includes('/player') || href.includes('/gp/video/detail') || href.includes('/detail');
+                const isCrunchyWatch = href.includes('crunchyroll.com') && href.includes('/watch/');
                 const hasBackBtn = !!(
                     document.querySelector('[data-uia="control-back"]') ||
                     document.querySelector('.button-nfplayerBack') ||
                     document.querySelector('.atvwebplayersdk-back-button') ||
                     document.querySelector('[data-automation-id="back-button"]') ||
-                    document.querySelector('.backButton')
+                    document.querySelector('.backButton') ||
+                    document.querySelector("[data-testid='vilos-back_button']") ||
+                    document.querySelector("[aria-label*='Back']") ||
+                    document.querySelector("[aria-label*='Voltar']")
                 );
                 return {
-                    isWatching: isNetflixWatch || isPrimeWatch || hasBackBtn,
+                    isWatching: isNetflixWatch || isPrimeWatch || isCrunchyWatch || hasBackBtn,
                     href: href
                 };
             })()
@@ -2553,11 +2612,19 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
                                           document.querySelector('[data-automation-id="back-button"]') ||
                                           document.querySelector('.backButton');
                         if (primeBack) { primeBack.click(); return; }
+                        const crunchyBack = document.querySelector("[data-testid='vilos-back_button']") ||
+                                            document.querySelector("[aria-label*='Back']") ||
+                                            document.querySelector("[aria-label*='Voltar']");
+                        if (crunchyBack) { crunchyBack.click(); return; }
                         const href = window.location.href;
                         if (href.includes('netflix.com')) {
                             window.location.href = 'https://www.netflix.com/browse';
-                        } else {
+                        } else if (href.includes('primevideo.com') || href.includes('amazon.')) {
                             window.location.href = 'https://www.primevideo.com';
+                        } else if (href.includes('crunchyroll.com')) {
+                            window.location.href = 'https://www.crunchyroll.com/';
+                        } else {
+                            window.location.href = 'https://www.crunchyroll.com/';
                         }
                     })()
                 `).catch(() => {});
@@ -2571,41 +2638,49 @@ ipcMain.on('streaming-command', (_event, command: string, payload?: any) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// ── WATCH PARTY SYNC IPC (NETFLIX & PRIME VIDEO) ──
+// ── WATCH PARTY SYNC IPC (NETFLIX, PRIME VIDEO & CRUNCHYROLL) ──
 // ═══════════════════════════════════════════════════════════════════
 
 ipcMain.on('streaming-playback-event', (event, data: any) => {
-    let service: 'netflix' | 'prime' | null = null;
+    let service: StreamingService | null = null;
+    let matchingInst: StreamingInstance | null = null;
     for (const [srv, inst] of streamingInstances.entries()) {
         if (inst.view && !inst.view.webContents.isDestroyed() && inst.view.webContents.id === event.sender.id) {
             service = srv;
+            matchingInst = inst;
             break;
         }
     }
-    if (!service) service = activeStreamingService;
+    if (!service) {
+        service = activeStreamingService;
+        matchingInst = service ? streamingInstances.get(service) || null : null;
+    }
     if (mainWindow && !mainWindow.isDestroyed() && service) {
+        let finalUrl = data.url;
+        if (service === 'crunchyroll' || (data.url && (data.url.includes('static.crunchyroll.com') || data.url.includes('vilos') || !data.url.includes('www.crunchyroll.com')))) {
+            finalUrl = matchingInst?.view?.webContents?.getURL?.() || matchingInst?.currentUrl || data.url;
+        }
         mainWindow.webContents.send('streaming-event', {
             type: 'playback-event',
             playbackType: data.type,
             service,
-            url: data.url,
+            url: finalUrl,
             positionSeconds: data.positionSeconds,
             isPlaying: data.isPlaying,
         });
     }
 });
 
-ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => {
+ipcMain.on('sync-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: StreamingService; autoDrift?: boolean }) => {
     const targetService = data.service || activeStreamingService;
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
     if (!inst || !inst.view || inst.view.webContents.isDestroyed()) return;
-    // Send command to streaming preload — the preload has its own retry logic
-    // if the video element isn't available yet
-    inst.view.webContents.send('apply-streaming-playback', data);
+    // Send command to streaming preload and all subframes
+    broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', data);
     fs.appendFileSync(logFile, `[WatchParty] sync-streaming-playback sent: action=${data.action} pos=${data.positionSeconds} service=${targetService}\n`);
 });
 
-ipcMain.on('navigate-streaming-view', (_event, { service, url }: { service: 'netflix' | 'prime'; url: string }) => {
+ipcMain.on('navigate-streaming-view', (_event, { service, url }: { service: StreamingService; url: string }) => {
     const inst = streamingInstances.get(service);
     if (inst && !inst.view.webContents.isDestroyed()) {
         // Instance already exists — navigate within it
@@ -2630,7 +2705,7 @@ ipcMain.on('navigate-streaming-view', (_event, { service, url }: { service: 'net
 
 // ── Navigate to specific title inside an already-open streaming view ──
 // Used by Watch Party "Assistir Junto" to deep-link directly to a title URL
-ipcMain.on('navigate-to-title', (_event, { service, url, autoPlay }: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => {
+ipcMain.on('navigate-to-title', (_event, { service, url, autoPlay }: { service: StreamingService; url: string; autoPlay?: boolean }) => {
     const inst = streamingInstances.get(service);
     if (!inst || inst.view.webContents.isDestroyed()) return;
     if (inst.currentUrl !== url) {
@@ -2640,7 +2715,7 @@ ipcMain.on('navigate-to-title', (_event, { service, url, autoPlay }: { service: 
     } else {
         // Same URL — just trigger autoPlay signal
         if (autoPlay) {
-            inst.view.webContents.send('navigate-to-title', { url, autoPlay: true });
+            broadcastToStreamingFrames(inst.view.webContents, 'navigate-to-title', { url, autoPlay: true });
         }
     }
 });

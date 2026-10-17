@@ -2178,6 +2178,14 @@
   box-shadow: 0 2px 12px rgba(0, 168, 225, 0.2);
 }
 
+/* Crunchyroll Active Tab */
+.mediaTabCrunchyroll.mediaTabActive {
+  background: linear-gradient(135deg, rgba(244, 117, 33, 0.3), rgba(200, 80, 10, 0.15)) !important;
+  border: 1px solid rgba(244, 117, 33, 0.5) !important;
+  color: #F47521 !important;
+  box-shadow: 0 2px 12px rgba(244, 117, 33, 0.25);
+}
+
 .mediaTabTitle {
   font-size: 12px;
   font-weight: 600;
@@ -2245,6 +2253,12 @@
   color: #00A8E1;
 }
 
+.streamingLauncherCrunchyroll {
+  background: rgba(244, 117, 33, 0.15);
+  border: 1px solid rgba(244, 117, 33, 0.3);
+  color: #F47521;
+}
+
 .streamingLauncherTitle {
   font-size: 15px;
   font-weight: 700;
@@ -2291,6 +2305,16 @@
 
 .streamingLauncherBtnPrime:hover {
   background: #008ebd;
+  transform: translateY(-1px);
+}
+
+.streamingLauncherBtnCrunchyroll {
+  background: #F47521;
+  box-shadow: 0 4px 16px rgba(244, 117, 33, 0.35);
+}
+
+.streamingLauncherBtnCrunchyroll:hover {
+  background: #d85f12;
   transform: translateY(-1px);
 }
 

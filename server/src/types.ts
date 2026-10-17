@@ -29,7 +29,7 @@ export interface MusicItem {
 
 export interface WatchSession {
   roomId: string;
-  platform: 'netflix' | 'prime';
+  platform: 'netflix' | 'prime' | 'crunchyroll';
   titleUrl: string;
   positionSeconds: number;
   isPlaying: boolean;
@@ -113,11 +113,11 @@ export interface ClientToServerEvents {
     customRole: CustomRole | null;
   }) => void;
   destroy_empty_server: (serverId: string) => void;
-  watch_session_start: (data: { platform: 'netflix' | 'prime'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
+  watch_session_start: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; titleUrl: string; positionSeconds?: number; isPlaying?: boolean }) => void;
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number }) => void;
   watch_session_end: () => void;
   watch_session_query: () => void;
-  watch_session_heartbeat: (data: { platform: 'netflix' | 'prime'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
+  watch_session_heartbeat: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   message_reaction: (messageId: string, emoji: string) => void;
   send_friend_request: (data: {
     id?: string;
@@ -240,7 +240,7 @@ export interface ServerToClientEvents {
   toast_notification: (message: string, type: 'success' | 'error' | 'info') => void;
   watch_session_sync: (session: WatchSession | null) => void;
   watch_session_action: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; senderId: string; senderName?: string; timestamp: number }) => void;
-  watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' }) => void;
+  watch_session_heartbeat: (data: { positionSeconds: number; isPlaying: boolean; timestamp: number; platform?: 'netflix' | 'prime' | 'crunchyroll' }) => void;
   // Room events
   room_joined: (room: RoomInfo) => void;
   room_error: (message: string) => void;

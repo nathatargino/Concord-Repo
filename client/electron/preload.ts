@@ -32,20 +32,20 @@ export interface ElectronAPI {
     /** Force YouTube stream quality via Electron main process (bypasses cross-origin) */
     setYouTubeQuality?: (quality: string) => Promise<boolean>;
     getYouTubeQualities?: () => Promise<string[]>;
-    /** Widevine Streaming (Netflix / Prime Video) */
-    openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
+    /** Widevine Streaming (Netflix / Prime Video / Crunchyroll) */
+    openStreamingView?: (options: { service: 'netflix' | 'prime' | 'crunchyroll'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
     resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
-    closeStreamingView?: (service?: 'netflix' | 'prime') => void;
-    setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime') => void;
+    closeStreamingView?: (service?: 'netflix' | 'prime' | 'crunchyroll') => void;
+    setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime' | 'crunchyroll') => void;
     sendStreamingCommand?: (command: string, payload?: any) => void;
     streamingCommand?: (command: string, payload?: any) => void;
     setStreamingVolume?: (volume: number) => void;
     setModalActive?: (active: boolean) => void;
     onStreamingEvent?: (callback: (event: any) => void) => () => void;
-    syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => void;
-    navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
+    syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' | 'crunchyroll'; autoDrift?: boolean }) => void;
+    navigateStreamingView?: (service: 'netflix' | 'prime' | 'crunchyroll', url: string) => void;
     /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
-    navigateToTitle?: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => void;
+    navigateToTitle?: (data: { service: 'netflix' | 'prime' | 'crunchyroll'; url: string; autoPlay?: boolean }) => void;
     /** Screen Share Source Picker */
     getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
     selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
@@ -163,10 +163,10 @@ const electronBridge: ElectronAPI = {
     },
     setYouTubeQuality: (quality: string) => ipcRenderer.invoke('yt-set-quality', quality),
     getYouTubeQualities: () => ipcRenderer.invoke('yt-get-qualities'),
-    openStreamingView: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => ipcRenderer.invoke('open-streaming-view', options),
+    openStreamingView: (options: { service: 'netflix' | 'prime' | 'crunchyroll'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => ipcRenderer.invoke('open-streaming-view', options),
     resizeStreamingView: (bounds: { x: number; y: number; width: number; height: number }) => ipcRenderer.send('resize-streaming-view', bounds),
-    closeStreamingView: (service?: 'netflix' | 'prime') => ipcRenderer.send('close-streaming-view', service),
-    setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime') => ipcRenderer.send('set-active-media-tab', tab),
+    closeStreamingView: (service?: 'netflix' | 'prime' | 'crunchyroll') => ipcRenderer.send('close-streaming-view', service),
+    setActiveMediaTab: (tab: 'youtube' | 'netflix' | 'prime' | 'crunchyroll') => ipcRenderer.send('set-active-media-tab', tab),
     sendStreamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
     streamingCommand: (command: string, payload?: any) => ipcRenderer.send('streaming-command', command, payload),
     setStreamingVolume: (volume: number) => ipcRenderer.send('set-streaming-volume', volume),
@@ -176,9 +176,9 @@ const electronBridge: ElectronAPI = {
         ipcRenderer.on('streaming-event', subscription);
         return () => ipcRenderer.removeListener('streaming-event', subscription);
     },
-    syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => ipcRenderer.send('sync-streaming-playback', data),
-    navigateStreamingView: (service: 'netflix' | 'prime', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
-    navigateToTitle: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
+    syncStreamingPlayback: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime' | 'crunchyroll'; autoDrift?: boolean }) => ipcRenderer.send('sync-streaming-playback', data),
+    navigateStreamingView: (service: 'netflix' | 'prime' | 'crunchyroll', url: string) => ipcRenderer.send('navigate-streaming-view', { service, url }),
+    navigateToTitle: (data: { service: 'netflix' | 'prime' | 'crunchyroll'; url: string; autoPlay?: boolean }) => ipcRenderer.send('navigate-to-title', data),
     getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
     selectScreenSource: (data: { sourceId: string; withAudio: boolean }) => ipcRenderer.invoke('select-screen-source', data),
     showNotification: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) =>

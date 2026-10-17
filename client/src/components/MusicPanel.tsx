@@ -6,7 +6,7 @@ import styles from './MusicPanel.module.css';
 
 const DESKTOP_DOWNLOAD_URL = 'https://concord-repo.pages.dev/Concord-Setup.exe';
 
-type Platform = 'youtube' | 'netflix' | 'prime';
+type Platform = 'youtube' | 'netflix' | 'prime' | 'crunchyroll';
 
 // Netflix "N" icon (uses currentColor to match active/inactive tab color)
 export const NetflixIcon = () => (
@@ -25,6 +25,13 @@ export const PrimeIcon = () => (
   </svg>
 );
 
+// Crunchyroll icon (official Crunchyroll eye/spiral in currentColor, 15x15)
+export const CrunchyrollIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style={{ flexShrink: 0 }}>
+    <path d="M2.933 13.467a10.55 10.55 0 1 1 21.067-.8V12c0-6.627-5.373-12-12-12S0 5.373 0 12s5.373 12 12 12h.8a10.617 10.617 0 0 1-9.867-10.533zM19.2 14a3.85 3.85 0 0 1-1.333-7.467A7.89 7.89 0 0 0 14 5.6a8.4 8.4 0 1 0 8.4 8.4 6.492 6.492 0 0 0-.133-1.6A3.415 3.415 0 0 1 19.2 14z" />
+  </svg>
+);
+
 // YouTube icon
 export const YouTubeIcon = ({ active }: { active?: boolean }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill={active ? '#FF5252' : '#9ca3af'} aria-hidden="true" style={{ flexShrink: 0 }}>
@@ -36,7 +43,8 @@ export const YouTubeIcon = ({ active }: { active?: boolean }) => (
 export const PLATFORMS: { id: Platform; label: string }[] = [
   { id: 'youtube', label: 'YouTube' },
   { id: 'netflix', label: 'Netflix' },
-  { id: 'prime',   label: 'Prime' },
+  { id: 'prime', label: 'Prime Video' },
+  { id: 'crunchyroll', label: 'Crunchyroll' },
 ];
 
 interface Props {
@@ -70,9 +78,9 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     watchSession,
   } = useAppStore();
 
-  const selectedPlatform = activeMediaTab;
+  const selectedPlatform: Platform = (activeMediaTab as any) || 'youtube';
   const setSelectedPlatform = (p: Platform) => {
-    setActiveMediaTab(p);
+    (setActiveMediaTab as any)(p);
     const electron = (window as any).electron;
     if (electron?.setActiveMediaTab) {
       electron.setActiveMediaTab(p);
@@ -88,9 +96,9 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       return;
     }
     const electron = (window as any).electron;
-    setActiveStreaming({ service: session.platform, url: session.titleUrl });
-    setActiveMediaTab(session.platform);
-    setStreamingSession(session.platform, true);
+    setActiveStreaming({ service: session.platform as any, url: session.titleUrl });
+    (setActiveMediaTab as any)(session.platform);
+    (setStreamingSession as any)(session.platform, true);
     setShowVideoPlayer(true);
 
     const elapsed = session.isPlaying
@@ -115,16 +123,16 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     }
   };
 
-  const handleOpenStreaming = async (service: 'netflix' | 'prime', targetUrl?: string) => {
+  const handleOpenStreaming = async (service: 'netflix' | 'prime' | 'crunchyroll', targetUrl?: string) => {
     if (!inVoice) {
-      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : 'o Prime Video'}.`);
+      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : service === 'prime' ? 'o Prime Video' : 'a Crunchyroll'}.`);
       return;
     }
     setIsOpeningStreaming(true);
     try {
-      setActiveStreaming({ service, url: targetUrl });
-      setActiveMediaTab(service);
-      setStreamingSession(service, true);
+      setActiveStreaming({ service: service as any, url: targetUrl });
+      (setActiveMediaTab as any)(service);
+      (setStreamingSession as any)(service, true);
       setShowVideoPlayer(true);
     } finally {
       setIsOpeningStreaming(false);
@@ -133,16 +141,17 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
 
   const handleCloseStreaming = () => {
     const electron = (window as any).electron;
-    const currentService = selectedPlatform === 'netflix' || selectedPlatform === 'prime' ? selectedPlatform : activeStreaming?.service;
+    const currentService = (selectedPlatform === 'netflix' || selectedPlatform === 'prime' || selectedPlatform === 'crunchyroll') ? selectedPlatform : activeStreaming?.service;
     if (currentService) {
       if (electron?.closeStreamingView) {
         electron.closeStreamingView(currentService);
       }
-      setStreamingSession(currentService, false);
-      const otherService: 'netflix' | 'prime' = currentService === 'netflix' ? 'prime' : 'netflix';
-      if (streamingSessions[otherService]) {
-        setActiveStreaming({ service: otherService });
-        setActiveMediaTab(otherService);
+      (setStreamingSession as any)(currentService, false);
+      const streamingList: ('netflix' | 'prime' | 'crunchyroll')[] = ['netflix', 'prime', 'crunchyroll'];
+      const otherService = streamingList.find((s) => s !== currentService && (streamingSessions as any)?.[s]);
+      if (otherService) {
+        setActiveStreaming({ service: otherService as any });
+        (setActiveMediaTab as any)(otherService);
         if (electron?.setActiveMediaTab) electron.setActiveMediaTab(otherService);
       } else {
         setActiveStreaming(null);
@@ -224,8 +233,8 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
   const activeTitle = trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
 
-  const isStreamingPlatform = selectedPlatform === 'netflix' || selectedPlatform === 'prime';
-  const platformName = selectedPlatform === 'netflix' ? 'Netflix' : 'Prime Video';
+  const isStreamingPlatform = selectedPlatform === 'netflix' || selectedPlatform === 'prime' || selectedPlatform === 'crunchyroll';
+  const platformName = selectedPlatform === 'netflix' ? 'Netflix' : selectedPlatform === 'prime' ? 'Prime Video' : 'Crunchyroll';
 
   return (
     <div className={styles.panel}>
@@ -247,10 +256,14 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
         )}
       </div>
 
-      {/* Platform Tabs matching 1st image dimensions with 2nd image brand colors */}
+      {/* Platform Tabs com Layout Grade Bento 2x2 e indicador de status ao vivo */}
       <div className={styles.platformTabs} role="tablist" aria-label="Selecionar plataforma">
         {PLATFORMS.map((p) => {
           const isActive = selectedPlatform === p.id;
+          const isLive = p.id === 'youtube'
+            ? Boolean(currentVideoId && isPlaying)
+            : Boolean((streamingSessions as any)?.[p.id] || activeStreaming?.service === p.id || (watchSession && watchSession.platform === p.id));
+
           return (
             <button
               key={p.id}
@@ -258,7 +271,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
               type="button"
               role="tab"
               aria-selected={isActive}
-              className={`${styles.platformTab} ${styles[`platformTab_${p.id}`]} ${isActive ? styles[`platformTabActive_${p.id}`] : ''}`}
+              className={`${styles.platformTab} ${styles[`platformTab_${p.id}`] || ''} ${isActive ? (styles[`platformTabActive_${p.id}`] || styles.platformTabActive) : ''}`}
               onClick={() => setSelectedPlatform(p.id)}
               title={p.label}
             >
@@ -267,11 +280,14 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                   <YouTubeIcon active={isActive} />
                 ) : p.id === 'netflix' ? (
                   <NetflixIcon />
-                ) : (
+                ) : p.id === 'prime' ? (
                   <PrimeIcon />
+                ) : (
+                  <CrunchyrollIcon />
                 )}
               </span>
               <span className={styles.platformTabLabel}>{p.label}</span>
+              {isLive && <span className={styles.platformTabLiveDot} title="Ativo / Watch Party" />}
             </button>
           );
         })}
@@ -448,11 +464,17 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                   </div>
                 )}
 
-                {(streamingSessions[selectedPlatform as 'netflix' | 'prime'] || activeStreaming?.service === selectedPlatform) ? (
+                {((streamingSessions as any)?.[selectedPlatform] || activeStreaming?.service === selectedPlatform) ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
                       type="button"
-                      className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
+                      className={
+                        selectedPlatform === 'netflix'
+                          ? styles.actionButtonNetflix
+                          : selectedPlatform === 'prime'
+                          ? styles.actionButtonPrime
+                          : styles.actionButtonCrunchyroll
+                      }
                       onClick={() => {
                         if (watchSession && watchSession.platform === selectedPlatform) {
                           handleSyncAndWatch(watchSession);
@@ -462,7 +484,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                       }}
                     >
                       <i className="fa-solid fa-tv"></i>
-                      <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : 'PRIME'}</span>
+                      <span>Assistir {selectedPlatform === 'netflix' ? 'NETFLIX' : selectedPlatform === 'prime' ? 'PRIME' : 'CRUNCHYROLL'}</span>
                     </button>
                     <button
                       type="button"
@@ -477,7 +499,13 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                   <button
                     id={`btn-open-${selectedPlatform}`}
                     type="button"
-                    className={selectedPlatform === 'netflix' ? styles.actionButtonNetflix : styles.actionButtonPrime}
+                    className={
+                      selectedPlatform === 'netflix'
+                        ? styles.actionButtonNetflix
+                        : selectedPlatform === 'prime'
+                        ? styles.actionButtonPrime
+                        : styles.actionButtonCrunchyroll
+                    }
                     onClick={() => {
                       if (watchSession && watchSession.platform === selectedPlatform) {
                         handleSyncAndWatch(watchSession);
@@ -494,7 +522,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                         ? 'Iniciando...'
                         : (watchSession && watchSession.platform === selectedPlatform
                             ? `Sincronizar e Assistir ${platformName}`
-                            : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : 'Abrir Prime'))}
+                            : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : selectedPlatform === 'prime' ? 'Abrir Prime Video' : 'Abrir Crunchyroll'))}
                     </span>
                   </button>
                 )}
