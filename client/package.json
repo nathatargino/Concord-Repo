@@ -7,7 +7,7 @@
     "email": "nathatargino@users.noreply.github.com"
   },
   "private": true,
-  "version": "1.0.114",
+  "version": "1.0.115",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -83,6 +83,8 @@
       ]
     },
     "nsis": {
+      "oneClick": true,
+      "perMachine": false,
       "artifactName": "Concord-Setup.exe",
       "include": "build/installer.nsh",
       "shortcutName": "Concord",

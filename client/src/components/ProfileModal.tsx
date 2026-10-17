@@ -1422,7 +1422,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
                       handleClose();
                       setTimeout(() => {
                         (window as any).electron?.installUpdate?.();
-                      }, 500);
+                      }, 1200);
                     }}
                     title="Reiniciar o Concord e aplicar a nova versão"
                   >

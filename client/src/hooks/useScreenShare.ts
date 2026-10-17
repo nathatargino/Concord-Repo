@@ -79,47 +79,22 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
           video: true,
           audio: true,
         });
-        if (stream.getAudioTracks().length > 0) {
-          return await applyHintsAndConstraints(stream);
-        }
-        console.warn('[ScreenShare] getDisplayMedia returned stream with no audio tracks, attempting desktop audio capture...');
+        return await applyHintsAndConstraints(stream);
       } catch (err: any) {
         if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
           throw err;
         }
-        console.warn(`[ScreenShare] Electron screen share with audio failed (${err?.name}: ${err?.message}), attempting getUserMedia fallback...`);
-      }
-
-      // Secondary fallback: attempt to capture loopback desktop audio via getUserMedia
-      try {
-        const videoStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: false,
-        });
+        console.warn(`[ScreenShare] Electron screen share with audio failed (${err?.name}: ${err?.message}), attempting video-only fallback...`);
         try {
-          const audioStream = await (navigator.mediaDevices as any).getUserMedia({
-            audio: {
-              mandatory: {
-                chromeMediaSource: 'desktop',
-              },
-            },
-            video: false,
+          const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: false,
           });
-          const aTrack = audioStream.getAudioTracks()[0];
-          if (aTrack) {
-            videoStream.addTrack(aTrack);
-            return await applyHintsAndConstraints(videoStream);
-          }
-        } catch (audioErr) {
-          console.warn('[ScreenShare] getUserMedia desktop audio capture failed:', audioErr);
+          toast('⚠️ Áudio do sistema indisponível no dispositivo. Transmitindo apenas vídeo.', { icon: '⚠️', duration: 4000 });
+          return await applyHintsAndConstraints(fallbackVideoOnly);
+        } catch (fbErr: any) {
+          throw fbErr;
         }
-        toast('⚠️ Áudio do sistema não pôde ser iniciado. Transmitindo apenas vídeo.', { icon: '⚠️', duration: 4000 });
-        return await applyHintsAndConstraints(videoStream);
-      } catch (videoErr: any) {
-        if (videoErr?.name === 'NotAllowedError' || videoErr?.name === 'AbortError') {
-          throw videoErr;
-        }
-        throw videoErr;
       }
     } else {
       const stream = await navigator.mediaDevices.getDisplayMedia({

@@ -5,10 +5,22 @@ import styles from './BroadcasterScreenPanel.module.css';
 interface Props {
   onStopSharing: () => void;
   onChangeSharing?: () => void;
+  localStream?: MediaStream | null;
 }
 
-export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
+export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing, localStream }) => {
   const { amSharing, screenViewers, users, myId, screenShareUserId, setScreenShare } = useAppStore();
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  React.useEffect(() => {
+    const videoEl = videoRef.current;
+    if (videoEl && localStream) {
+      if (videoEl.srcObject !== localStream) {
+        videoEl.srcObject = localStream;
+      }
+      videoEl.play().catch(() => {});
+    }
+  }, [localStream]);
 
   if (!amSharing) return null;
 
@@ -52,11 +64,21 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChang
       </div>
 
       <div className={styles.videoWrapper}>
-        <div className={styles.placeholderContainer}>
-          <div className={styles.pulseIcon}>📡</div>
-          <span className={styles.placeholderTitle}>Sua tela está sendo transmitida</span>
-          <span className={styles.placeholderSubtitle}>Prévia desativada para economia de desempenho</span>
-        </div>
+        {localStream ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={styles.previewVideo}
+          />
+        ) : (
+          <div className={styles.placeholderContainer}>
+            <div className={styles.pulseIcon}>📡</div>
+            <span className={styles.placeholderTitle}>Sua tela está sendo transmitida</span>
+            <span className={styles.placeholderSubtitle}>Transmissão ativa</span>
+          </div>
+        )}
       </div>
 
       {otherBroadcasters.length > 0 && (

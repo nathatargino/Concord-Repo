@@ -10,7 +10,9 @@ import * as os from 'os';
 import * as http from 'http';
 
 const logFile = `${os.tmpdir()}/concord-debug.log`;
-fs.writeFileSync(logFile, 'Electron Started!\n');
+try {
+    fs.appendFileSync(logFile, `\n--- [PID ${process.pid}] Electron Started at ${new Date().toISOString()} ---\n`);
+} catch {}
 
 import { autoUpdater } from 'electron-updater';
 // removed url import
@@ -200,13 +202,11 @@ function ensureWidevineCdm(): void {
 // Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
-// Desativa recursos conflitantes e sandbox/out-of-process do Audio Service para garantir captura WASAPI Loopback no Windows (telas e janelas) sem DOMException
+// Desativa recursos conflitantes que interceptam teclas de mídia e autenticação WebAuthn
 app.commandLine.appendSwitch(
     'disable-features',
-    'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi,AudioServiceOutOfProcess,AudioServiceSandbox'
+    'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi'
 );
-// Desativa o sandbox do Audio Service do Chromium para permitir captura WASAPI loopback de áudio do sistema
-app.commandLine.appendSwitch('disable-audio-service-sandbox');
 
 // Disable web security restrictions that block YouTube iframe audio and media streaming
 app.commandLine.appendSwitch('disable-web-security');
@@ -482,6 +482,18 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
 
     mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
         fs.appendFileSync(logFile, `[Renderer] ${message}\n`);
+    });
+
+    mainWindow.webContents.on('render-process-gone', (event, details) => {
+        fs.appendFileSync(logFile, `[Main] render-process-gone: reason=${details.reason}, exitCode=${details.exitCode}\n`);
+        console.error('[Main] render-process-gone:', details);
+        if (details.reason !== 'clean-exit' && mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.reload();
+        }
+    });
+
+    mainWindow.webContents.on('unresponsive', () => {
+        fs.appendFileSync(logFile, `[Main] mainWindow became unresponsive\n`);
     });
 
     // Handle auto-updates
@@ -826,7 +838,11 @@ function startAuthLoopbackServer() {
 
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
+  try {
+    fs.appendFileSync(logFile, `[PID ${process.pid}] Secondary instance detected. Exiting immediately.\n`);
+  } catch {}
   app.quit();
+  process.exit(0);
 }
 
 app.on('second-instance', (_event, commandLine, _workingDirectory) => {
@@ -874,6 +890,7 @@ app.whenReady().then(async () => {
     });
 
     let selectedScreenSource: { sourceId: string; withAudio: boolean; timestamp: number } | null = null;
+    let latestCapturerSources: Electron.DesktopCapturerSource[] = [];
 
     ipcMain.handle('get-screen-sources', async () => {
         try {
@@ -893,6 +910,7 @@ app.whenReady().then(async () => {
                 thumbnailSize: { width: 320, height: 180 },
                 fetchWindowIcons: true,
             });
+            latestCapturerSources = sources;
             return sources.map((s) => ({
                 id: s.id,
                 name: s.name,
@@ -921,14 +939,20 @@ app.whenReady().then(async () => {
             const wantAudio = (isRecent && selectedScreenSource ? selectedScreenSource.withAudio : true) && request.audioRequested;
             fs.appendFileSync(logFile, `[ScreenShare-Main] Handler invoked: audioRequested=${request.audioRequested}, isRecent=${isRecent}, targetId=${targetId}, wantAudio=${wantAudio}\n`);
 
-            const sources = await desktopCapturer.getSources({
-                types: ['screen', 'window'],
-                thumbnailSize: { width: 0, height: 0 },
-            });
-            let chosen = targetId ? sources.find((s) => s.id === targetId) : null;
+            let chosen: Electron.DesktopCapturerSource | undefined;
+            if (targetId && latestCapturerSources.length > 0) {
+                chosen = latestCapturerSources.find((s) => s.id === targetId);
+            }
+
             if (!chosen) {
-                // Fallback to screen if not found or not specified
-                chosen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
+                const freshSources = await desktopCapturer.getSources({
+                    types: ['screen', 'window'],
+                    thumbnailSize: { width: 150, height: 150 },
+                });
+                latestCapturerSources = freshSources;
+                chosen = (targetId ? freshSources.find((s) => s.id === targetId) : null)
+                    || freshSources.find((s) => s.id.startsWith('screen:'))
+                    || freshSources[0];
             }
 
             if (!chosen) {
@@ -939,8 +963,6 @@ app.whenReady().then(async () => {
                 return;
             }
 
-            // In Chromium on Windows (WASAPI loopback), 'audio: "loopback"' works both for screens ('screen:') and windows ('window:').
-            // With disable-audio-service-sandbox and disabled AudioServiceSandbox, system loopback operates reliably without DOMException.
             const isWindow = chosen.id.startsWith('window:');
             const isScreen = chosen.id.startsWith('screen:');
             const audioStream = wantAudio ? 'loopback' : undefined;
@@ -1368,13 +1390,12 @@ ipcMain.on('install-update', () => {
     if (isWindowsStore || isDev) return;
     fs.appendFileSync(logFile, 'install-update called. Performing silent background update via quitAndInstall(true, true).\n');
     isQuitting = true;
-    try {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.destroy();
-        }
-    } catch (e) {}
     // true, true: Instalação silenciosa sem tela nativa do NSIS e reinicia o aplicativo automaticamente com tema do Concord
-    autoUpdater.quitAndInstall(true, true);
+    try {
+        autoUpdater.quitAndInstall(true, true);
+    } catch (e: any) {
+        fs.appendFileSync(logFile, `autoUpdater.quitAndInstall error: ${e?.message || e}\n`);
+    }
 });
 
 ipcMain.on('pip-action', (event, action, payload) => {
