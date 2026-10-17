@@ -1,4 +1,8 @@
 import { useCallback } from 'react';
+import { loadRnnoise, RnnoiseWorkletNode } from '@sapphi-red/web-noise-suppressor';
+import rnnoiseWorkletUrl from '@sapphi-red/web-noise-suppressor/rnnoiseWorklet.js?url';
+import rnnoiseWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise.wasm?url';
+import rnnoiseSimdWasmUrl from '@sapphi-red/web-noise-suppressor/rnnoise_simd.wasm?url';
 import { useAudioStore } from '../stores/useAudioStore';
 import { useAppStore } from '../stores/useAppStore';
 
@@ -8,11 +12,14 @@ interface AudioNodes {
   micGain: GainNode;
   destination: MediaStreamAudioDestinationNode;
   analyser: AnalyserNode;
-  // Advanced noise suppression nodes
-  highpass: BiquadFilterNode | null;
-  lowpass: BiquadFilterNode | null;
+  // Advanced noise suppression & dynamics nodes
+  highpass: BiquadFilterNode;
+  presenceEq: BiquadFilterNode;
+  lowpass: BiquadFilterNode;
+  compressor: DynamicsCompressorNode;
   noiseGateNode: AudioWorkletNode | null;
-  compressor: DynamicsCompressorNode | null;
+  rnnoiseNode: RnnoiseWorkletNode | null;
+  activeMode?: 'rnnoise' | 'standard' | 'off';
 }
 
 const speakingAnimations = new Map<string, number>();
@@ -21,21 +28,61 @@ const screenAudioGains = new Map<string, GainNode>();
 
 let audioNodes: AudioNodes | null = null;
 let micTrack: MediaStreamTrack | null = null;
-
 let globalCtx: AudioContext | null = null;
 
-function getOrCreateCtx(): AudioContext {
+let rnnoiseWasmBinary: ArrayBuffer | null = null;
+const rnnoiseModulesLoaded = new WeakSet<AudioContext>();
+const loadedWorklets = new WeakSet<AudioContext>();
+
+/**
+ * Instantiates or reuses the global AudioContext at 48kHz for Opus/WebRTC and RNNoise.
+ */
+export function getAudioContext(): AudioContext {
   if (!globalCtx || globalCtx.state === 'closed') {
-    globalCtx = new AudioContext({ sampleRate: 48000 });
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    try {
+      globalCtx = new AudioContextClass({ sampleRate: 48000, latencyHint: 'interactive' });
+    } catch {
+      globalCtx = new AudioContextClass();
+    }
   }
   return globalCtx;
 }
 
-const loadedWorklets = new WeakSet<AudioContext>();
+export const getOrCreateCtx = getAudioContext;
 
 /**
- * Load the NoiseGateProcessor AudioWorklet module.
- * Returns true on success, false on failure (e.g. browser doesn't support worklets).
+ * Loads and caches the RNNoise WASM binary (SIMD with scalar fallback).
+ */
+async function getOrLoadRnnoiseBinary(): Promise<ArrayBuffer> {
+  if (!rnnoiseWasmBinary) {
+    rnnoiseWasmBinary = await loadRnnoise({
+      url: rnnoiseWasmUrl,
+      simdUrl: rnnoiseSimdWasmUrl,
+    });
+  }
+  return rnnoiseWasmBinary;
+}
+
+/**
+ * Initializes an instance of RnnoiseWorkletNode for the given context.
+ */
+async function initRnnoise(ctx: AudioContext): Promise<RnnoiseWorkletNode | null> {
+  try {
+    if (!rnnoiseModulesLoaded.has(ctx)) {
+      await ctx.audioWorklet.addModule(rnnoiseWorkletUrl);
+      rnnoiseModulesLoaded.add(ctx);
+    }
+    const wasmBinary = await getOrLoadRnnoiseBinary();
+    return new RnnoiseWorkletNode(ctx, { maxChannels: 1, wasmBinary });
+  } catch (err) {
+    console.warn('[useAudio] Falha ao inicializar RnnoiseWorkletNode:', err);
+    return null;
+  }
+}
+
+/**
+ * Loads the custom NoiseGateProcessor AudioWorklet module.
  */
 async function loadNoiseGateWorklet(ctx: AudioContext): Promise<boolean> {
   if (loadedWorklets.has(ctx)) return true;
@@ -44,36 +91,131 @@ async function loadNoiseGateWorklet(ctx: AudioContext): Promise<boolean> {
     loadedWorklets.add(ctx);
     return true;
   } catch (err) {
-    console.warn('[useAudio] Failed to load noise-gate-processor worklet:', err);
+    console.warn('[useAudio] Falha ao carregar worklet noise-gate-processor:', err);
     return false;
   }
 }
 
-export function useAudio() {
+/**
+ * Dynamically re-wires audio nodes according to selected mode:
+ * - 'rnnoise': Source -> HighPass(80Hz) -> RnnoiseWorkletNode -> NoiseGateWorklet -> PresenceEQ -> LowPass(14kHz) -> Compressor -> MicGain -> Destination
+ * - 'standard': Source -> HighPass(80Hz) -> NoiseGateWorklet -> PresenceEQ -> LowPass(14kHz) -> Compressor -> MicGain -> Destination
+ * - 'off': Source -> MicGain -> Destination
+ */
+function connectTopology(
+  nodes: AudioNodes,
+  mode: 'rnnoise' | 'standard' | 'off',
+  autoSensitivity: boolean,
+  threshold: number,
+  forceRewire = false
+) {
+  const { micSource, micGain, highpass, presenceEq, lowpass, compressor, noiseGateNode, rnnoiseNode } = nodes;
 
-  const processMicStream = useCallback(async (rawStream: MediaStream): Promise<MediaStream> => {
-    if (audioNodes) {
-      audioNodes.micSource.disconnect();
-      audioNodes.micGain.disconnect();
-      audioNodes.highpass?.disconnect();
-      audioNodes.lowpass?.disconnect();
-      audioNodes.noiseGateNode?.disconnect();
-      audioNodes.compressor?.disconnect();
-      audioNodes.destination.disconnect();
-      audioNodes.analyser.disconnect();
+  // 1. Atualizar parâmetros do Noise Gate em tempo real (sem desconectar nós)
+  if (noiseGateNode) {
+    const thresholdParam = noiseGateNode.parameters.get('threshold');
+    const enabledParam = noiseGateNode.parameters.get('enabled');
+    const autoSensParam = noiseGateNode.parameters.get('autoSensitivity');
+
+    if (thresholdParam) thresholdParam.value = threshold;
+    if (enabledParam) enabledParam.value = mode !== 'off' ? 1 : 0;
+    if (autoSensParam) autoSensParam.value = autoSensitivity ? 1 : 0;
+
+    noiseGateNode.port.postMessage({
+      floorGain: mode === 'rnnoise' ? 0.02 : 0.005,
+    });
+  }
+
+  // Se a topologia já está conectada neste modo, não reconecta os nós para evitar cliques no áudio
+  if (!forceRewire && nodes.activeMode === mode) {
+    return;
+  }
+
+  // 2. Desconectar cadeia intermediária de processamento
+  try { micSource.disconnect(); } catch {}
+  try { highpass.disconnect(); } catch {}
+  try { rnnoiseNode?.disconnect(); } catch {}
+  try { noiseGateNode?.disconnect(); } catch {}
+  try { presenceEq.disconnect(); } catch {}
+  try { lowpass.disconnect(); } catch {}
+  try { compressor.disconnect(); } catch {}
+
+  // 3. Conectar grafo conforme topologia
+  if (mode === 'rnnoise' && rnnoiseNode) {
+    micSource.connect(highpass);
+    highpass.connect(rnnoiseNode);
+
+    if (noiseGateNode) {
+      rnnoiseNode.connect(noiseGateNode);
+      noiseGateNode.connect(presenceEq);
+    } else {
+      rnnoiseNode.connect(presenceEq);
     }
 
-    const ctx = getOrCreateCtx();
+    presenceEq.connect(lowpass);
+    lowpass.connect(compressor);
+    compressor.connect(micGain);
+  } else if (mode === 'standard' || (mode === 'rnnoise' && !rnnoiseNode)) {
+    micSource.connect(highpass);
+
+    if (noiseGateNode) {
+      highpass.connect(noiseGateNode);
+      noiseGateNode.connect(presenceEq);
+    } else {
+      highpass.connect(presenceEq);
+    }
+
+    presenceEq.connect(lowpass);
+    lowpass.connect(compressor);
+    compressor.connect(micGain);
+  } else {
+    // Modo 'off': bypass limpo direto ao controle de ganho
+    micSource.connect(micGain);
+  }
+
+  nodes.activeMode = mode;
+}
+
+export function useAudio() {
+  const processMicStream = useCallback(async (rawStream: MediaStream): Promise<MediaStream> => {
+    if (audioNodes) {
+      try {
+        audioNodes.micSource.disconnect();
+        audioNodes.micGain.disconnect();
+        audioNodes.highpass.disconnect();
+        audioNodes.presenceEq.disconnect();
+        audioNodes.lowpass.disconnect();
+        audioNodes.compressor.disconnect();
+        audioNodes.noiseGateNode?.disconnect();
+        if (audioNodes.rnnoiseNode) {
+          try { audioNodes.rnnoiseNode.destroy(); } catch {}
+          audioNodes.rnnoiseNode.disconnect();
+        }
+        audioNodes.destination.disconnect();
+        audioNodes.analyser.disconnect();
+      } catch {}
+    }
+
+    const ctx = getAudioContext();
     if (ctx.state === 'suspended') {
       await ctx.resume();
     }
+
     const source = ctx.createMediaStreamSource(rawStream);
     const gainNode = ctx.createGain();
     const dest = ctx.createMediaStreamDestination();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
 
-    const { micVol, micMuted, noiseSuppression, noiseGateThreshold } = useAudioStore.getState();
+    const {
+      micVol,
+      micMuted,
+      noiseSuppression,
+      noiseSuppressionMode,
+      noiseGateThreshold,
+      autoSensitivity,
+    } = useAudioStore.getState();
+
     gainNode.gain.value = micMuted ? 0 : micVol / 100;
 
     micTrack = rawStream.getAudioTracks()[0] ?? null;
@@ -81,61 +223,46 @@ export function useAudio() {
       micTrack.enabled = !micMuted;
     }
 
-    // ─── Build processing chain ────────────────────────────────────
-    // Chain: source → highpass → lowpass → [noiseGate] → compressor → gainNode → analyser + dest
-    let highpass: BiquadFilterNode | null = null;
-    let lowpass: BiquadFilterNode | null = null;
+    // ─── Criação da Cadeia de Filtros e Dinâmica ───────────────────
+    // 1. High-Pass Filter em 80 Hz (Q = 0.707) - preserva o corpo e calor natural da voz humana (85-200 Hz)
+    const highpass = ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 80;
+    highpass.Q.value = 0.707;
+
+    // 2. Presence Peaking Filter suave em 2800 Hz (gain = +1.5 dB, Q = 1.0) para nitidez vocal cristalina
+    const presenceEq = ctx.createBiquadFilter();
+    presenceEq.type = 'peaking';
+    presenceEq.frequency.value = 2800;
+    presenceEq.gain.value = 1.5;
+    presenceEq.Q.value = 1.0;
+
+    // 3. Low-Pass Filter em 14000 Hz (Q = 0.707) - elimina chiado ultrassônico preservando o ar da voz
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 14000;
+    lowpass.Q.value = 0.707;
+
+    // 4. Dynamics Compressor estilo Broadcast Discord
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -20;
+    compressor.knee.value = 18;
+    compressor.ratio.value = 3;
+    compressor.attack.value = 0.004;
+    compressor.release.value = 0.18;
+
+    // 5. Inicialização paralela de RNNoise e NoiseGateWorklet
+    const [rnnoiseNode, workletOk] = await Promise.all([
+      initRnnoise(ctx),
+      loadNoiseGateWorklet(ctx),
+    ]);
+
     let noiseGateNode: AudioWorkletNode | null = null;
-    let compressor: DynamicsCompressorNode | null = null;
-
-    if (noiseSuppression) {
-      // High-pass filter — removes low-frequency rumble (fans, AC, vibration)
-      highpass = ctx.createBiquadFilter();
-      highpass.type = 'highpass';
-      highpass.frequency.value = 200;
-      highpass.Q.value = 0.7;
-
-      // Low-pass filter — removes high-frequency hiss
-      lowpass = ctx.createBiquadFilter();
-      lowpass.type = 'lowpass';
-      lowpass.frequency.value = 8000;
-      lowpass.Q.value = 0.7;
-
-      // Dynamics compressor — smooths out volume spikes
-      compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.value = -24;
-      compressor.knee.value = 12;
-      compressor.ratio.value = 4;
-      compressor.attack.value = 0.003;
-      compressor.release.value = 0.15;
-
-      // Try loading AudioWorklet for noise gate
-      const workletOk = await loadNoiseGateWorklet(ctx);
-      if (workletOk) {
-        noiseGateNode = new AudioWorkletNode(ctx, 'noise-gate-processor');
-        const thresholdParam = noiseGateNode.parameters.get('threshold');
-        if (thresholdParam) {
-          thresholdParam.value = noiseGateThreshold;
-        }
-      }
-
-      // Wire the chain: source → highpass → lowpass → [noiseGate] → compressor → gainNode
-      source.connect(highpass);
-      highpass.connect(lowpass);
-
-      if (noiseGateNode) {
-        lowpass.connect(noiseGateNode);
-        noiseGateNode.connect(compressor);
-      } else {
-        lowpass.connect(compressor);
-      }
-
-      compressor.connect(gainNode);
-    } else {
-      // No suppression — direct path
-      source.connect(gainNode);
+    if (workletOk) {
+      noiseGateNode = new AudioWorkletNode(ctx, 'noise-gate-processor');
     }
 
+    // Saída final do ganho para o destino WebRTC e analisador de volume
     gainNode.connect(dest);
     gainNode.connect(analyser);
 
@@ -144,12 +271,24 @@ export function useAudio() {
     });
 
     audioNodes = {
-      ctx, micSource: source, micGain: gainNode,
-      destination: dest, analyser,
-      highpass, lowpass, noiseGateNode, compressor,
+      ctx,
+      micSource: source,
+      micGain: gainNode,
+      destination: dest,
+      analyser,
+      highpass,
+      presenceEq,
+      lowpass,
+      compressor,
+      noiseGateNode,
+      rnnoiseNode,
     };
 
-    // Return the processed stream (from destination node) for WebRTC
+    const effectiveMode: 'rnnoise' | 'standard' | 'off' =
+      !noiseSuppression || noiseSuppressionMode === 'off' ? 'off' : noiseSuppressionMode;
+
+    connectTopology(audioNodes, effectiveMode, autoSensitivity, noiseGateThreshold);
+
     return dest.stream;
   }, []);
 
@@ -157,18 +296,18 @@ export function useAudio() {
     try {
       const { remoteVol, callMuted, localMutedUsers, userVolumes } = useAudioStore.getState();
       const userVol = userVolumes[userId] ?? 100;
-      
+
       const isLocalMuted = localMutedUsers.includes(userId);
       audioEl.srcObject = stream;
       audioEl.volume = 0; // Controlled by Web Audio API GainNode instead
       audioEl.muted = true;
-      
+
       // Force play to overcome some browser policies
-      audioEl.play().catch(e => console.warn('[useAudio] Autoplay prevented:', e));
+      audioEl.play().catch((e) => console.warn('[useAudio] Autoplay prevented:', e));
 
       // Reuse the active context for speaking detection so it isn't suspended
-      const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
-      
+      const activeCtx = audioNodes?.ctx ?? getAudioContext();
+
       if (activeCtx.state === 'suspended') {
         activeCtx.resume();
       }
@@ -201,16 +340,16 @@ export function useAudio() {
       audioEl.srcObject = stream;
       audioEl.volume = Math.min(1, Math.max(0, targetVol));
       audioEl.muted = (callMuted || isLocalMuted || !isWatching || targetVol === 0);
-      
+
       if (isWatching && targetVol > 0) {
-        audioEl.play().catch(e => console.warn('[useAudio] Screen audio play prevented:', e));
+        audioEl.play().catch((e) => console.warn('[useAudio] Screen audio play prevented:', e));
       } else {
         audioEl.pause();
       }
 
-      // Optional GainNode for boost (> 100% volume)
+      // Boost (> 100% volume) via Web Audio API
       if (targetVol > 1 && isWatching) {
-        const activeCtx = audioNodes?.ctx ?? getOrCreateCtx();
+        const activeCtx = audioNodes?.ctx ?? getAudioContext();
         if (activeCtx.state === 'suspended') {
           activeCtx.resume().catch(() => {});
         }
@@ -222,7 +361,7 @@ export function useAudio() {
             source.connect(gainNode);
             gainNode.connect(activeCtx.destination);
             screenAudioGains.set(userId, gainNode);
-            audioEl.muted = true; // Web Audio API handles playback with boost
+            audioEl.muted = true;
           } catch (e) {
             audioEl.muted = false;
           }
@@ -231,7 +370,6 @@ export function useAudio() {
           gainNode.gain.value = targetVol;
         }
       } else {
-        // Direct HTML5 audio playback for maximum compatibility & zero silent-stream bugs
         const gainNode = screenAudioGains.get(userId);
         if (gainNode) {
           try { gainNode.disconnect(); } catch {}
@@ -260,7 +398,7 @@ export function useAudio() {
       const userId = audio.id.replace('remote-audio-', '');
       const isLocalMuted = localMutedUsers.includes(userId);
       const userVol = userVolumes[userId] ?? 100;
-      
+
       const gainNode = remoteGains.get(userId);
       if (gainNode) {
         gainNode.gain.value = (callMuted || isLocalMuted) ? 0 : (remoteVol / 100) * (userVol / 100);
@@ -299,17 +437,37 @@ export function useAudio() {
   }, []);
 
   /**
-   * Update noise gate threshold in real-time.
-   * Called when the user adjusts the sensitivity slider.
+   * Applies noise suppression mode, threshold, and auto-sensitivity settings dynamically in real-time.
    */
-  const applyNoiseSuppressionSettings = useCallback(() => {
-    if (!audioNodes?.noiseGateNode) return;
-    const { noiseGateThreshold, noiseSuppression } = useAudioStore.getState();
+  const applyNoiseSuppressionSettings = useCallback(async () => {
+    if (!audioNodes) return;
+    const { noiseSuppression, noiseSuppressionMode, noiseGateThreshold, autoSensitivity } = useAudioStore.getState();
 
-    const thresholdParam = audioNodes.noiseGateNode.parameters.get('threshold');
-    if (thresholdParam) {
-      // When suppression is disabled, set threshold to minimum (effectively bypassing the gate)
-      thresholdParam.value = noiseSuppression ? noiseGateThreshold : -100;
+    const effectiveMode: 'rnnoise' | 'standard' | 'off' =
+      !noiseSuppression || noiseSuppressionMode === 'off' ? 'off' : noiseSuppressionMode;
+
+    const modeChanged = audioNodes.activeMode !== effectiveMode;
+
+    if (effectiveMode === 'rnnoise' && !audioNodes.rnnoiseNode) {
+      audioNodes.rnnoiseNode = await initRnnoise(audioNodes.ctx);
+    }
+    if (effectiveMode !== 'off' && !audioNodes.noiseGateNode) {
+      const ok = await loadNoiseGateWorklet(audioNodes.ctx);
+      if (ok) {
+        audioNodes.noiseGateNode = new AudioWorkletNode(audioNodes.ctx, 'noise-gate-processor');
+      }
+    }
+
+    connectTopology(audioNodes, effectiveMode, autoSensitivity, noiseGateThreshold);
+
+    if (modeChanged && micTrack) {
+      micTrack
+        .applyConstraints({
+          noiseSuppression: effectiveMode !== 'off',
+          echoCancellation: true,
+          autoGainControl: true,
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -328,12 +486,9 @@ export function useAudio() {
   }, []);
 
   /**
-   * Cleanup all audio resources when leaving a call.
-   * Stops the raw mic track, closes the AudioContext, and resets state
-   * so that a fresh pipeline can be built on rejoin.
+   * Clean up all audio processing resources when leaving a call.
    */
   const cleanup = useCallback(() => {
-    // Stop the raw microphone track so the browser releases the device
     if (micTrack) {
       micTrack.stop();
       micTrack = null;
@@ -345,24 +500,33 @@ export function useAudio() {
     remoteGains.forEach((gain) => gain.disconnect());
     remoteGains.clear();
 
-    // Disconnect and close the AudioContext
     if (audioNodes) {
       try {
         audioNodes.micSource.disconnect();
         audioNodes.micGain.disconnect();
-        audioNodes.highpass?.disconnect();
-        audioNodes.lowpass?.disconnect();
+        audioNodes.highpass.disconnect();
+        audioNodes.presenceEq.disconnect();
+        audioNodes.lowpass.disconnect();
+        audioNodes.compressor.disconnect();
         audioNodes.noiseGateNode?.disconnect();
-        audioNodes.compressor?.disconnect();
+
+        if (audioNodes.rnnoiseNode) {
+          try {
+            audioNodes.rnnoiseNode.destroy();
+          } catch (e) {
+            console.debug('[useAudio] RNNoise destroy error:', e);
+          }
+          audioNodes.rnnoiseNode.disconnect();
+        }
+
         audioNodes.destination.disconnect();
         audioNodes.analyser.disconnect();
         audioNodes.ctx.close();
       } catch (e) {
-        // Ignore errors during teardown
+        // Ignore teardown errors
       }
       audioNodes = null;
     }
-    // Clear remote gains so next context doesn't try to use closed nodes
     remoteGains.clear();
   }, []);
 
@@ -375,6 +539,7 @@ export function useAudio() {
     applyNoiseSuppressionSettings,
     removeRemoteGain,
     cleanup,
+    cleanupMicProcessing: cleanup,
     getMicTrack: () => micTrack,
   };
 }
@@ -387,7 +552,7 @@ export function monitorSpeaking(stream: MediaStream, userId: string, activeCtx?:
     if (prevRaf) cancelAnimationFrame(prevRaf);
   }
 
-  const ctx = activeCtx || getOrCreateCtx();
+  const ctx = activeCtx || getAudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 256;
@@ -451,11 +616,11 @@ export function stopSpeaking(userId: string) {
 
 export function playChimeSound() {
   try {
-    const ctx = getOrCreateCtx();
+    const ctx = getAudioContext();
     if (ctx.state === 'suspended') ctx.resume();
 
     const now = ctx.currentTime;
-    
+
     // Note 1 (D5)
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();

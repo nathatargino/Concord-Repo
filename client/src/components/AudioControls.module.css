@@ -130,6 +130,235 @@
   background: rgba(244, 63, 94, 0.25);
 }
 
+/* ── Noise Suppression Card ── */
+.noiseCard {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.noiseCardActive {
+  background: rgba(124, 92, 255, 0.08);
+  border-color: rgba(124, 92, 255, 0.28);
+}
+
+.noiseCardMain {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  gap: 8px;
+}
+
+.noiseCardLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.noiseIconWrapper {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.noiseIconActive {
+  background: linear-gradient(135deg, #7c5cff, #6366f1);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(124, 92, 255, 0.4);
+}
+
+.noiseCardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.noiseCardTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.noiseCardTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.rnnoiseBadge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.noiseCardSubtitle {
+  font-size: 10.5px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noiseToggleBtn {
+  width: 34px;
+  height: 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  position: relative;
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+  transition: background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.noiseToggleBtnActive {
+  background: #7c5cff;
+  box-shadow: 0 0 8px rgba(124, 92, 255, 0.4);
+}
+
+.noiseToggleDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: block;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.noiseToggleBtnActive .noiseToggleDot {
+  transform: translateX(14px);
+}
+
+.noiseSubRow {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vadPillBtn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  padding: 3px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #d1d5db;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.vadPillBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vadPillBtnActive {
+  background: rgba(124, 92, 255, 0.2);
+  border-color: rgba(124, 92, 255, 0.4);
+  color: #c4b5fd;
+}
+
+.compactThreshold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.compactThresholdVal {
+  font-size: 10px;
+  font-family: monospace;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.compactRangeInput {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  width: 100%;
+  max-width: 80px;
+  height: 14px;
+  cursor: pointer;
+  margin: 0;
+}
+
+.compactRangeInput:focus {
+  outline: none;
+}
+
+.compactRangeInput::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+.compactRangeInput::-webkit-slider-thumb {
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #7c5cff;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4px;
+  box-shadow: 0 0 6px rgba(124, 92, 255, 0.6);
+}
+
+.compactRangeInput::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+.compactRangeInput::-moz-range-thumb {
+  height: 12px;
+  width: 12px;
+  border-radius: 50%;
+  background: #7c5cff;
+  cursor: pointer;
+  border: none;
+}
+
 .slidersList {
   display: flex;
   flex-direction: column;
@@ -305,5 +534,43 @@
 
 :global(html[data-theme="light"]) .rangeInput::-moz-range-track {
   background: #e2e8f0;
+}
+
+:global(html[data-theme="light"]) .noiseCard {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+:global(html[data-theme="light"]) .noiseCardActive {
+  background: rgba(124, 92, 255, 0.08);
+  border-color: rgba(124, 92, 255, 0.35);
+}
+
+:global(html[data-theme="light"]) .noiseCardTitle {
+  color: #0f172a;
+}
+
+:global(html[data-theme="light"]) .noiseCardSubtitle {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .vadPillBtn {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+:global(html[data-theme="light"]) .vadPillBtnActive {
+  background: rgba(124, 92, 255, 0.15);
+  border-color: #7c5cff;
+  color: #6d28d9;
+}
+
+:global(html[data-theme="light"]) .compactRangeInput::-webkit-slider-runnable-track {
+  background: #cbd5e1;
+}
+
+:global(html[data-theme="light"]) .compactRangeInput::-moz-range-track {
+  background: #cbd5e1;
 }
 

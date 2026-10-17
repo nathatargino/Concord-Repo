@@ -160,6 +160,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   }, []);
 
   // ── Áudio & Dispositivos ──
+  const audioStore = useAudioStore();
   const {
     selectedAudioInputId,
     selectedAudioOutputId,
@@ -167,7 +168,53 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
     setSelectedAudioOutputId,
     noiseSuppression,
     setNoiseSuppression,
-  } = useAudioStore();
+  } = audioStore;
+
+  // Supressão de Ruído e VAD (acesso defensivo com suporte a RNNoise e Auto VAD)
+  const noiseSuppressionMode: 'rnnoise' | 'standard' | 'off' =
+    (audioStore as any).noiseSuppressionMode ?? (noiseSuppression ? 'rnnoise' : 'off');
+
+  const setNoiseSuppressionMode = (mode: 'rnnoise' | 'standard' | 'off') => {
+    if (typeof (audioStore as any).setNoiseSuppressionMode === 'function') {
+      (audioStore as any).setNoiseSuppressionMode(mode);
+    }
+    setNoiseSuppression(mode !== 'off');
+    try {
+      localStorage.setItem('concord_noise_mode', mode);
+    } catch {}
+  };
+
+  const [localAutoSensitivity, setLocalAutoSensitivity] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('concord_auto_sensitivity');
+      if (saved !== null) return saved === 'true';
+      return true;
+    } catch {
+      return true;
+    }
+  });
+
+  const autoSensitivity: boolean = (audioStore as any).autoSensitivity ?? localAutoSensitivity;
+
+  const setAutoSensitivity = (val: boolean) => {
+    if (typeof (audioStore as any).setAutoSensitivity === 'function') {
+      (audioStore as any).setAutoSensitivity(val);
+    }
+    setLocalAutoSensitivity(val);
+    try {
+      localStorage.setItem('concord_auto_sensitivity', String(val));
+    } catch {}
+  };
+
+  const noiseGateThreshold: number = typeof (audioStore as any).noiseGateThreshold === 'number'
+    ? (audioStore as any).noiseGateThreshold
+    : -45;
+
+  const setNoiseGateThreshold = (val: number) => {
+    if (typeof (audioStore as any).setNoiseGateThreshold === 'function') {
+      (audioStore as any).setNoiseGateThreshold(val);
+    }
+  };
 
   const [inputDevices, setInputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [outputDevices, setOutputDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
@@ -1233,21 +1280,129 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
               </button>
             </div>
 
-            <div className={styles.inputGroup} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: '6px' }}>
-              <div>
-                <label className={styles.label} style={{ margin: 0 }}>Supressão de Ruído</label>
-                <span style={{ fontSize: '11px', color: '#9ca3af', display: 'block', marginTop: '2px' }}>
-                  Filtra ruídos de fundo e estática automaticamente
+            {/* ── Supressão de Ruído (Padrão Discord / Krisp RNNoise) ── */}
+            <div className={styles.noiseSection}>
+              <div className={styles.sectionHeader}>
+                <label className={styles.label} style={{ margin: 0 }}>
+                  <i className="fa-solid fa-wand-magic-sparkles" style={{ color: '#7c5cff', marginRight: '6px' }} />
+                  Supressão de Ruído
+                </label>
+                <span className={styles.sectionHelp}>
+                  Remove sons de fundo indesejados como teclado, ventilador e eco.
                 </span>
               </div>
-              <label className={styles.toggleSwitch}>
-                <input
-                  type="checkbox"
-                  checked={noiseSuppression}
-                  onChange={(e) => setNoiseSuppression(e.target.checked)}
-                />
-                <span className={styles.toggleSlider} />
-              </label>
+
+              {/* Seletor de Modo em 3 opções (cards estilo Discord) */}
+              <div className={styles.noiseModeGrid}>
+                {/* 1. Krisp / RNNoise IA (Recomendado) */}
+                <div
+                  className={`${styles.noiseModeCard} ${noiseSuppressionMode === 'rnnoise' ? styles.noiseModeCardActive : ''}`}
+                  onClick={() => setNoiseSuppressionMode('rnnoise')}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className={styles.noiseModeCardTop}>
+                    <div className={styles.noiseModeRadio}>
+                      <span className={styles.noiseModeRadioDot} />
+                    </div>
+                    <div className={styles.noiseModeTitleGroup}>
+                      <span className={styles.noiseModeTitle}>Krisp / RNNoise IA</span>
+                      <span className={styles.noiseModeBadgeRecommended}>Recomendado</span>
+                    </div>
+                  </div>
+                  <p className={styles.noiseModeDescription}>
+                    Rede neural que elimina teclado, ventilador e ruídos de fundo mantendo a voz natural.
+                  </p>
+                </div>
+
+                {/* 2. Padrão (Gate DSP) */}
+                <div
+                  className={`${styles.noiseModeCard} ${noiseSuppressionMode === 'standard' ? styles.noiseModeCardActive : ''}`}
+                  onClick={() => setNoiseSuppressionMode('standard')}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className={styles.noiseModeCardTop}>
+                    <div className={styles.noiseModeRadio}>
+                      <span className={styles.noiseModeRadioDot} />
+                    </div>
+                    <div className={styles.noiseModeTitleGroup}>
+                      <span className={styles.noiseModeTitle}>Padrão (Gate DSP)</span>
+                    </div>
+                  </div>
+                  <p className={styles.noiseModeDescription}>
+                    Filtro de voz e noise gate adaptativo leve.
+                  </p>
+                </div>
+
+                {/* 3. Desativado */}
+                <div
+                  className={`${styles.noiseModeCard} ${noiseSuppressionMode === 'off' ? styles.noiseModeCardActive : ''}`}
+                  onClick={() => setNoiseSuppressionMode('off')}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className={styles.noiseModeCardTop}>
+                    <div className={styles.noiseModeRadio}>
+                      <span className={styles.noiseModeRadioDot} />
+                    </div>
+                    <div className={styles.noiseModeTitleGroup}>
+                      <span className={styles.noiseModeTitle}>Desativado</span>
+                    </div>
+                  </div>
+                  <p className={styles.noiseModeDescription}>
+                    Áudio puro sem filtragem de ruído.
+                  </p>
+                </div>
+              </div>
+
+              {/* ── Sensibilidade Automática de Voz (VAD Inteligente) ── */}
+              <div className={styles.vadContainer}>
+                <div className={styles.vadHeaderRow}>
+                  <div>
+                    <label className={styles.label} style={{ margin: 0 }}>
+                      Sensibilidade Automática de Voz (VAD Inteligente)
+                    </label>
+                    <span className={styles.sectionHelp}>
+                      Ajusta dinamicamente a ativação por voz para cortar ruídos quando você não estiver falando.
+                    </span>
+                  </div>
+                  <label className={styles.toggleSwitch}>
+                    <input
+                      type="checkbox"
+                      checked={autoSensitivity}
+                      onChange={(e) => setAutoSensitivity(e.target.checked)}
+                    />
+                    <span className={styles.toggleSlider} />
+                  </label>
+                </div>
+
+                {/* Slider de Limiar de Sensibilidade (-70 dB a -15 dB) quando modo manual */}
+                {!autoSensitivity && (
+                  <div className={styles.manualSensitivityWrapper}>
+                    <div className={styles.sliderHeader}>
+                      <span className={styles.sliderLabel}>
+                        <i className="fa-solid fa-sliders" style={{ color: '#7c5cff', marginRight: '6px' }} />
+                        Limiar de Sensibilidade
+                      </span>
+                      <span className={styles.sliderValue}>{noiseGateThreshold} dB</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-70"
+                      max="-15"
+                      step="1"
+                      value={noiseGateThreshold}
+                      onChange={(e) => setNoiseGateThreshold(Number(e.target.value))}
+                      className={styles.rangeInput}
+                    />
+                    <div className={styles.sensitivityScale}>
+                      <span>Mais sensível / Capta voz baixa (-70 dB)</span>
+                      <span>Mais rigoroso / Corta ruído alto (-15 dB)</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

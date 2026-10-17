@@ -646,6 +646,8 @@ export default function App() {
 
     try {
       const inputDeviceId = useAudioStore.getState().selectedAudioInputId;
+      const { noiseSuppression, noiseSuppressionMode } = useAudioStore.getState();
+      const nsActive = noiseSuppression && noiseSuppressionMode !== 'off';
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -653,11 +655,11 @@ export default function App() {
             deviceId: (inputDeviceId && inputDeviceId !== 'default') ? { exact: inputDeviceId } : undefined,
             channelCount: 1,
             echoCancellation: true,
-            noiseSuppression: true,
+            noiseSuppression: nsActive,
             autoGainControl: true,
             // @ts-ignore
-            googNoiseSuppression: true,
-            googHighpassFilter: true,
+            googNoiseSuppression: nsActive,
+            googHighpassFilter: false,
           },
         });
       } catch (micErr) {

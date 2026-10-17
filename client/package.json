@@ -24,6 +24,7 @@
     "@fortawesome/fontawesome-free": "^7.3.1",
     "@giphy/js-fetch-api": "^5.8.0",
     "@giphy/react-components": "^10.1.2",
+    "@sapphi-red/web-noise-suppressor": "^0.4.1",
     "@supabase/supabase-js": "^2.112.4",
     "electron-updater": "^6.8.9",
     "emoji-picker-react": "^4.19.1",
