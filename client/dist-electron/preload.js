@@ -1,7 +1,35 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
-electron_1.contextBridge.exposeInMainWorld('electron', {
+// Global deep-link caching and pub/sub to guarantee zero missed events
+let cachedDeepLink = null;
+const deepLinkListeners = new Set();
+electron_1.ipcRenderer.on('deep-link', (_event, url) => {
+    cachedDeepLink = url;
+    for (const listener of deepLinkListeners) {
+        try {
+            listener(url);
+        }
+        catch (err) {
+            console.error('[Preload] Error in onDeepLink listener:', err);
+        }
+    }
+});
+// Query initial deep link on startup if available in main process
+electron_1.ipcRenderer.invoke('get-initial-deep-link').then((url) => {
+    if (url) {
+        cachedDeepLink = url;
+        for (const listener of deepLinkListeners) {
+            try {
+                listener(url);
+            }
+            catch (err) {
+                console.error('[Preload] Error in onDeepLink listener:', err);
+            }
+        }
+    }
+}).catch(() => { });
+const electronBridge = {
     getAppVersion: () => electron_1.ipcRenderer.invoke('get-app-version'),
     isWindowsStore: () => electron_1.ipcRenderer.invoke('is-windows-store'),
     checkForUpdates: () => electron_1.ipcRenderer.send('check-for-updates'),
@@ -27,12 +55,20 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     copyImageToClipboard: (url) => electron_1.ipcRenderer.invoke('copy-image-to-clipboard', url),
     forceUnmute: () => electron_1.ipcRenderer.send('force-unmute'),
     onDeepLink: (callback) => {
-        const subscription = (_event, url) => callback(url);
-        electron_1.ipcRenderer.on('deep-link', subscription);
+        deepLinkListeners.add(callback);
+        if (cachedDeepLink) {
+            const urlToDeliver = cachedDeepLink;
+            setTimeout(() => {
+                if (deepLinkListeners.has(callback)) {
+                    callback(urlToDeliver);
+                }
+            }, 0);
+        }
         return () => {
-            electron_1.ipcRenderer.removeListener('deep-link', subscription);
+            deepLinkListeners.delete(callback);
         };
     },
+    getInitialDeepLink: () => electron_1.ipcRenderer.invoke('get-initial-deep-link'),
     openBase64InBrowser: (data) => electron_1.ipcRenderer.send('open-base64-in-browser', data),
     savePreferences: (prefs) => electron_1.ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => electron_1.ipcRenderer.invoke('load-preferences'),
@@ -82,4 +118,15 @@ electron_1.contextBridge.exposeInMainWorld('electron', {
     showNotification: (options) => electron_1.ipcRenderer.send('show-chat-notification', options),
     openGoogleAuth: (url) => electron_1.ipcRenderer.invoke('open-google-auth', url),
     cancelGoogleAuth: () => electron_1.ipcRenderer.send('cancel-google-auth'),
-});
+    getKeybinds: () => electron_1.ipcRenderer.invoke('get-keybinds'),
+    setKeybinds: (data) => electron_1.ipcRenderer.invoke('set-keybinds', data),
+    onGlobalShortcut: (cb) => {
+        const subscription = (_event, action) => cb(action);
+        electron_1.ipcRenderer.on('global-shortcut-triggered', subscription);
+        return () => {
+            electron_1.ipcRenderer.removeListener('global-shortcut-triggered', subscription);
+        };
+    },
+};
+electron_1.contextBridge.exposeInMainWorld('electron', electronBridge);
+electron_1.contextBridge.exposeInMainWorld('electronAPI', electronBridge);

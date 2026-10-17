@@ -57,6 +57,57 @@ const isWindowsStore = Boolean(process.windowsStore ||
 if (process.platform === 'win32' && !isWindowsStore) {
     electron_1.app.setAppUserModelId('com.concord.desktop');
 }
+// Register concord:// deep link protocol client
+function registerProtocolClient() {
+    try {
+        if (process.defaultApp || isDev) {
+            if (process.argv.length >= 2) {
+                electron_1.app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
+            }
+            else {
+                electron_1.app.setAsDefaultProtocolClient('concord', process.execPath);
+            }
+        }
+        else {
+            electron_1.app.setAsDefaultProtocolClient('concord');
+        }
+        fs.appendFileSync(logFile, `[Protocol] Registered concord:// protocol client.\n`);
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[Protocol] Failed to register protocol client: ${err?.message || err}\n`);
+    }
+}
+registerProtocolClient();
+function extractDeepLinkUrl(argv) {
+    if (!argv || !Array.isArray(argv))
+        return null;
+    for (const rawArg of argv) {
+        if (!rawArg)
+            continue;
+        const clean = rawArg.trim().replace(/^["']|["']$/g, '');
+        if (clean.startsWith('concord://')) {
+            return clean;
+        }
+    }
+    return null;
+}
+let pendingDeepLink = extractDeepLinkUrl(process.argv);
+if (pendingDeepLink) {
+    fs.appendFileSync(logFile, `[DeepLink] Cold start URL detected: ${pendingDeepLink}\n`);
+}
+function sendDeepLinkToRenderer(rawUrl) {
+    if (!rawUrl)
+        return;
+    const url = rawUrl.trim().replace(/^["']|["']$/g, '');
+    if (!url.startsWith('concord://'))
+        return;
+    fs.appendFileSync(logFile, `[DeepLink] sendDeepLinkToRenderer: ${url}\n`);
+    pendingDeepLink = url;
+    showMainWindow();
+    if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('deep-link', url);
+    }
+}
 function getAppIconPath() {
     const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
     const candidates = [
@@ -386,13 +437,11 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
         }
         if (pendingDeepLink) {
             mainWindow?.webContents.send('deep-link', pendingDeepLink);
-            pendingDeepLink = null;
         }
-        if (process.platform === 'win32' || process.platform === 'linux') {
-            const deepLinkUrl = process.argv.find(arg => arg.startsWith('concord://'));
-            if (deepLinkUrl) {
-                mainWindow?.webContents.send('deep-link', deepLinkUrl);
-            }
+    });
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (pendingDeepLink) {
+            mainWindow?.webContents.send('deep-link', pendingDeepLink);
         }
     });
     mainWindow.on('close', (event) => {
@@ -528,9 +577,7 @@ function initAutoUpdater(window) {
     }, 60 * 60 * 1000);
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
-// Deep Linking Setup
-let pendingDeepLink = null;
-// Local Loopback Server for OAuth Callback (port 54321)
+// Local Loopback Server for OAuth & Password Recovery Callback (port 54321)
 let authLoopbackServer = null;
 function startAuthLoopbackServer() {
     if (authLoopbackServer)
@@ -547,14 +594,10 @@ function startAuthLoopbackServer() {
                         const data = JSON.parse(body || '{}');
                         const hash = data.hash || '';
                         const search = data.search || '';
-                        const fullUrl = `concord://auth/callback${search}${hash}`;
-                        showMainWindow();
-                        if (mainWindow && mainWindow.webContents) {
-                            mainWindow.webContents.send('deep-link', fullUrl);
-                        }
-                        else {
-                            pendingDeepLink = fullUrl;
-                        }
+                        const isRecovery = hash.includes('type=recovery') || search.includes('type=recovery') || (data.type === 'recovery');
+                        const pathPrefix = isRecovery ? 'reset-password' : 'auth/callback';
+                        const fullUrl = `concord://${pathPrefix}${search}${hash}`;
+                        sendDeepLinkToRenderer(fullUrl);
                         res.writeHead(200, {
                             'Content-Type': 'application/json',
                             'Access-Control-Allow-Origin': '*'
@@ -578,23 +621,18 @@ function startAuthLoopbackServer() {
                 res.end();
                 return;
             }
-            // Callback landing page
-            if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl === '/' || reqUrl.startsWith('/?')) {
+            // Callback landing page (handles OAuth callback and Password Recovery)
+            if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl.startsWith('/reset-password') || reqUrl === '/' || reqUrl.startsWith('/?')) {
                 try {
                     const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:54321');
                     const sp = parsedUrl.searchParams;
-                    // Compara parâmetros exatos (evita falso positivo de 'error_code=' ao procurar 'code=')
-                    const hasAuthPayload = Boolean(sp.get('code') || sp.get('access_token'));
+                    const isRecovery = sp.get('type') === 'recovery' || reqUrl.includes('type=recovery') || parsedUrl.hash.includes('type=recovery') || reqUrl.startsWith('/reset-password');
+                    const hasAuthPayload = Boolean(sp.get('code') || sp.get('access_token')) || isRecovery;
                     const hasAuthError = Boolean(sp.get('error') || sp.get('error_description'));
                     if (hasAuthPayload || hasAuthError) {
-                        const fullUrl = `concord://auth/callback${parsedUrl.search}${parsedUrl.hash}`;
-                        showMainWindow();
-                        if (mainWindow && mainWindow.webContents) {
-                            mainWindow.webContents.send('deep-link', fullUrl);
-                        }
-                        else {
-                            pendingDeepLink = fullUrl;
-                        }
+                        const pathPrefix = isRecovery ? 'reset-password' : 'auth/callback';
+                        const fullUrl = `concord://${pathPrefix}${parsedUrl.search}${parsedUrl.hash}`;
+                        sendDeepLinkToRenderer(fullUrl);
                     }
                 }
                 catch { }
@@ -679,9 +717,10 @@ function startAuthLoopbackServer() {
     const params = new URLSearchParams(search);
     new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash).forEach((v, k) => { if (!params.has(k)) params.set(k, v); });
 
+    const isRecovery = params.get('type') === 'recovery' || hash.includes('type=recovery') || search.includes('type=recovery') || window.location.pathname.includes('reset-password');
     const authError = params.get('error');
     const authErrorDescription = params.get('error_description');
-    const hasAuthPayload = Boolean(params.get('code') || params.get('access_token'));
+    const hasAuthPayload = Boolean(params.get('code') || params.get('access_token')) || isRecovery;
 
     const icon = document.getElementById('statusIcon');
     const title = document.getElementById('statusTitle');
@@ -692,7 +731,7 @@ function startAuthLoopbackServer() {
       fetch('/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hash, search })
+        body: JSON.stringify({ hash, search, type: isRecovery ? 'recovery' : undefined })
       }).catch(() => {});
     }
 
@@ -706,10 +745,13 @@ function startAuthLoopbackServer() {
         : (authErrorDescription || 'Ocorreu um erro durante a autenticação. Tente novamente pelo Concord.');
       notifyApp();
     } else if (hasAuthPayload) {
-      const deepLink = 'concord://auth/callback' + search + hash;
-      icon.textContent = '✨';
-      title.textContent = 'Autenticado com Sucesso!';
-      text.textContent = 'Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...';
+      const deepLink = (isRecovery ? 'concord://reset-password' : 'concord://auth/callback') + search + hash;
+      icon.textContent = isRecovery ? '🔑' : '✨';
+      title.textContent = isRecovery ? 'Recuperação de Senha' : 'Autenticado com Sucesso!';
+      text.textContent = isRecovery
+        ? 'Token de recuperação validado. Retornando ao aplicativo Concord...'
+        : 'Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...';
+      btn.textContent = 'Abrir Concord Desktop';
       btn.href = deepLink;
       btn.style.display = 'inline-block';
       notifyApp();
@@ -720,7 +762,7 @@ function startAuthLoopbackServer() {
     } else {
       icon.textContent = 'ℹ️';
       title.textContent = 'Nenhuma autenticação pendente';
-      text.textContent = 'Inicie o login com o Google pelo Concord para continuar.';
+      text.textContent = 'Inicie o login ou recuperação pelo Concord para continuar.';
     }
   </script>
 </body>
@@ -742,41 +784,22 @@ function startAuthLoopbackServer() {
         fs.appendFileSync(logFile, `[AuthLoopback] Start error: ${err.message}\n`);
     }
 }
-if (process.defaultApp) {
-    if (process.argv.length >= 2) {
-        electron_1.app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
-    }
-}
-else {
-    electron_1.app.setAsDefaultProtocolClient('concord');
-}
 const gotTheLock = electron_1.app.requestSingleInstanceLock();
 if (!gotTheLock) {
     electron_1.app.quit();
 }
-electron_1.app.on('second-instance', (event, commandLine, workingDirectory) => {
+electron_1.app.on('second-instance', (_event, commandLine, _workingDirectory) => {
+    fs.appendFileSync(logFile, `[second-instance] commandLine=${JSON.stringify(commandLine)}\n`);
     showMainWindow();
-    const rawUrl = commandLine.find(arg => arg.startsWith('concord://'));
+    const rawUrl = extractDeepLinkUrl(commandLine);
     if (rawUrl) {
-        const url = rawUrl.replace(/^["']|["']$/g, '');
-        if (mainWindow && mainWindow.webContents) {
-            mainWindow.webContents.send('deep-link', url);
-        }
-        else {
-            pendingDeepLink = url;
-        }
+        sendDeepLinkToRenderer(rawUrl);
     }
 });
 electron_1.app.on('open-url', (event, url) => {
     event.preventDefault();
-    showMainWindow();
-    const cleanUrl = url.replace(/^["']|["']$/g, '');
-    if (mainWindow && mainWindow.webContents) {
-        mainWindow.webContents.send('deep-link', cleanUrl);
-    }
-    else {
-        pendingDeepLink = cleanUrl;
-    }
+    fs.appendFileSync(logFile, `[open-url] url=${url}\n`);
+    sendDeepLinkToRenderer(url);
 });
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 let pipWindow = null;
@@ -849,16 +872,25 @@ electron_1.app.whenReady().then(async () => {
                 callback({});
                 return;
             }
-            // In Chromium on Windows, system audio loopback is supported for screen sources.
-            // Individual windows do not support system loopback and passing it causes capture to fail.
-            const isScreen = chosen.id.startsWith('screen:');
-            const audioStream = (wantAudio && isScreen) ? 'loopback' : undefined;
-            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), isScreen=${isScreen}, audio=${audioStream}\n`);
-            // @ts-ignore
-            callback({
-                video: chosen,
-                audio: audioStream,
-            });
+            // In Chromium on Windows (WASAPI loopback), 'audio: "loopback"' works even when 'video' is a window ('window:...').
+            // Allow system loopback audio both for screens ('screen:') and windows ('window:').
+            const audioStream = wantAudio ? 'loopback' : undefined;
+            fs.appendFileSync(logFile, `[ScreenShare-Main] Calling callback with video=${chosen.id} (${chosen.name}), audio=${audioStream}\n`);
+            try {
+                // @ts-ignore
+                callback({
+                    video: chosen,
+                    audio: audioStream,
+                });
+            }
+            catch (cbErr) {
+                fs.appendFileSync(logFile, `[ScreenShare-Main] Callback with audio=${audioStream} failed, falling back to video only: ${cbErr}\n`);
+                try {
+                    // @ts-ignore
+                    callback({ video: chosen });
+                }
+                catch { }
+            }
         }
         catch (err) {
             console.error('[Main] Error in setDisplayMediaRequestHandler:', err);
@@ -960,6 +992,13 @@ electron_1.app.whenReady().then(async () => {
     });
     createTray();
     setupAutoLaunch();
+    try {
+        const initialPrefs = readPrefsFromDisk();
+        registerGlobalKeybinds(initialPrefs);
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[Main] Initial keybind registration error: ${err}\n`);
+    }
     if (!isDev) {
         startLocalServer().then(port => {
             localServerPort = port;
@@ -973,6 +1012,12 @@ electron_1.app.whenReady().then(async () => {
 }).catch(err => fs.appendFileSync(logFile, `app.whenReady() ERROR: ${err}\n`));
 electron_1.app.on('before-quit', () => {
     isQuitting = true;
+});
+electron_1.app.on('will-quit', () => {
+    try {
+        electron_1.globalShortcut.unregisterAll();
+    }
+    catch { }
 });
 electron_1.app.on('window-all-closed', () => {
     if (process.platform !== 'darwin' && !tray) {
@@ -999,6 +1044,9 @@ electron_1.ipcMain.on('cancel-google-auth', () => {
 // Basic IPC handlers
 electron_1.ipcMain.handle('get-app-version', () => {
     return electron_1.app.getVersion();
+});
+electron_1.ipcMain.handle('get-initial-deep-link', () => {
+    return pendingDeepLink;
 });
 electron_1.ipcMain.on('copy-to-clipboard', (event, text) => {
     electron_1.clipboard.writeText(text);
@@ -1250,10 +1298,7 @@ electron_1.ipcMain.on('open-base64-in-browser', (event, base64Data) => {
     }
 });
 // ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
-// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
-// because we use a separate folder (not the app install dir or userData)
-// ─── PERSISTENT USER PREFERENCES ─────────────────────────────────────────────
-// Saved to %APPDATA%\ConcordUserData\prefs.json — survives updates AND reinstalls
+// Saved to %APPDATA%\ConcordUserData\prefs.json (or user-preferences.json) — survives updates AND reinstalls
 // because we use a separate folder (not the app install dir or userData)
 function getPrefsPath() {
     // Use a stable path in the user's AppData that is NOT cleaned by the uninstaller
@@ -1264,6 +1309,9 @@ function getPrefsPath() {
         }
     }
     catch { }
+    const userPrefs = path.join(appDataDir, 'user-preferences.json');
+    if (fs.existsSync(userPrefs))
+        return userPrefs;
     return path.join(appDataDir, 'prefs.json');
 }
 /**
@@ -1378,6 +1426,62 @@ function readPrefsFromDisk() {
     }
     return {};
 }
+const DEFAULT_KEYBINDS = {
+    keybindMicMute: 'CommandOrControl+Shift+M',
+    keybindDeafen: 'CommandOrControl+Shift+D',
+    keybindsEnabled: true,
+};
+function getKeybindsFromPrefs(prefs) {
+    const p = prefs || readPrefsFromDisk();
+    return {
+        keybindMicMute: typeof p.keybindMicMute === 'string' ? p.keybindMicMute : DEFAULT_KEYBINDS.keybindMicMute,
+        keybindDeafen: typeof p.keybindDeafen === 'string' ? p.keybindDeafen : DEFAULT_KEYBINDS.keybindDeafen,
+        keybindsEnabled: p.keybindsEnabled !== undefined ? (p.keybindsEnabled === true || p.keybindsEnabled === 'true') : DEFAULT_KEYBINDS.keybindsEnabled,
+    };
+}
+function registerGlobalKeybinds(prefs) {
+    try {
+        electron_1.globalShortcut.unregisterAll();
+    }
+    catch (err) {
+        fs.appendFileSync(logFile, `[GlobalKeybinds] unregisterAll error: ${err}\n`);
+    }
+    const keybinds = getKeybindsFromPrefs(prefs);
+    if (keybinds.keybindsEnabled === false) {
+        fs.appendFileSync(logFile, `[GlobalKeybinds] Keybinds are disabled.\n`);
+        return;
+    }
+    if (keybinds.keybindMicMute && keybinds.keybindMicMute.trim() !== '') {
+        const accel = keybinds.keybindMicMute.trim();
+        try {
+            const registered = electron_1.globalShortcut.register(accel, () => {
+                fs.appendFileSync(logFile, `[GlobalKeybinds] Triggered: toggle-mic (${accel})\n`);
+                if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+                    mainWindow.webContents.send('global-shortcut-triggered', 'toggle-mic');
+                }
+            });
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Registered mic mute (${accel}): ${registered}\n`);
+        }
+        catch (err) {
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Failed to register mic mute (${accel}): ${err?.message || err}\n`);
+        }
+    }
+    if (keybinds.keybindDeafen && keybinds.keybindDeafen.trim() !== '') {
+        const accel = keybinds.keybindDeafen.trim();
+        try {
+            const registered = electron_1.globalShortcut.register(accel, () => {
+                fs.appendFileSync(logFile, `[GlobalKeybinds] Triggered: toggle-deafen (${accel})\n`);
+                if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+                    mainWindow.webContents.send('global-shortcut-triggered', 'toggle-deafen');
+                }
+            });
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Registered deafen (${accel}): ${registered}\n`);
+        }
+        catch (err) {
+            fs.appendFileSync(logFile, `[GlobalKeybinds] Failed to register deafen (${accel}): ${err?.message || err}\n`);
+        }
+    }
+}
 electron_1.ipcMain.on('save-preferences', (_event, prefs) => {
     if (!prefs || typeof prefs !== 'object')
         return;
@@ -1387,6 +1491,9 @@ electron_1.ipcMain.on('save-preferences', (_event, prefs) => {
             const existing = readPrefsFromDisk();
             const merged = { ...existing, ...prefs };
             writeAtomicSync(prefsPath, JSON.stringify(merged, null, 2));
+            if ('keybindMicMute' in prefs || 'keybindDeafen' in prefs || 'keybindsEnabled' in prefs) {
+                registerGlobalKeybinds(merged);
+            }
         }
         catch (e) {
             console.error('Failed to save preferences:', e);
@@ -1402,6 +1509,36 @@ electron_1.ipcMain.handle('load-preferences', () => {
     catch (e) {
         console.error('Failed to load preferences:', e);
         return {};
+    }
+});
+electron_1.ipcMain.handle('get-keybinds', () => {
+    try {
+        const prefs = readPrefsFromDisk();
+        return getKeybindsFromPrefs(prefs);
+    }
+    catch (err) {
+        console.error('[Main] get-keybinds error:', err);
+        return DEFAULT_KEYBINDS;
+    }
+});
+electron_1.ipcMain.handle('set-keybinds', (_event, data) => {
+    try {
+        const existing = readPrefsFromDisk();
+        const current = getKeybindsFromPrefs(existing);
+        const updated = {
+            keybindMicMute: typeof data?.keybindMicMute === 'string' ? data.keybindMicMute : current.keybindMicMute,
+            keybindDeafen: typeof data?.keybindDeafen === 'string' ? data.keybindDeafen : current.keybindDeafen,
+            keybindsEnabled: data?.keybindsEnabled !== undefined ? Boolean(data.keybindsEnabled) : current.keybindsEnabled,
+        };
+        const merged = { ...existing, ...updated };
+        const prefsPath = getPrefsPath();
+        writeAtomicSync(prefsPath, JSON.stringify(merged, null, 2));
+        registerGlobalKeybinds(updated);
+        return { ok: true, keybinds: updated };
+    }
+    catch (err) {
+        console.error('[Main] set-keybinds error:', err);
+        return { ok: false, error: err?.message || String(err) };
     }
 });
 // Secure token storage via Electron safeStorage (DPAPI on Windows)
@@ -1637,6 +1774,25 @@ function getActiveStreamingInstance() {
     return first;
 }
 let currentStreamingVolume = 50; // 0 to 100
+function broadcastToStreamingFrames(wc, channel, ...args) {
+    try {
+        wc.send(channel, ...args);
+    }
+    catch { }
+    try {
+        if (wc.mainFrame && Array.isArray(wc.mainFrame.framesInSubtree)) {
+            for (const frame of wc.mainFrame.framesInSubtree) {
+                if (frame !== wc.mainFrame) {
+                    try {
+                        frame.send(channel, ...args);
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+    catch { }
+}
 function applyStreamingVolumeToView(view, volume) {
     if (!view || view.webContents.isDestroyed())
         return;
@@ -1646,7 +1802,7 @@ function applyStreamingVolumeToView(view, volume) {
         view.webContents.setAudioMuted(isMuted);
     }
     catch (e) { }
-    view.webContents.executeJavaScript(`
+    const volScript = `
         (function() {
             try {
                 var mediaEls = document.querySelectorAll('video, audio');
@@ -1656,7 +1812,21 @@ function applyStreamingVolumeToView(view, volume) {
                 });
             } catch(e) {}
         })();
-    `).catch(() => { });
+    `;
+    view.webContents.executeJavaScript(volScript).catch(() => { });
+    try {
+        if (view.webContents.mainFrame && Array.isArray(view.webContents.mainFrame.framesInSubtree)) {
+            for (const frame of view.webContents.mainFrame.framesInSubtree) {
+                if (frame !== view.webContents.mainFrame) {
+                    try {
+                        frame.executeJavaScript(volScript).catch(() => { });
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+    catch { }
 }
 function hideStreamingView(service) {
     if (!mainWindow || mainWindow.isDestroyed())
@@ -1791,19 +1961,36 @@ function enterStreamingFullscreen(inst) {
     setTimeout(updateBounds, 100);
     setTimeout(updateBounds, 300);
     // Trigger platform DOM fullscreen button only if not already in HTML5 fullscreen
-    target.view.webContents.executeJavaScript(`
+    const fsScript = `
         (function() {
             if (!document.fullscreenElement) {
                 const fsBtn = document.querySelector('[data-uia="control-fullscreen-enter"]') ||
                               document.querySelector('.button-nfplayerFullscreen') ||
                               document.querySelector('.atvwebplayersdk-fullscreen-button') ||
-                              document.querySelector('[data-automation-id="fullscreen-button"]');
+                              document.querySelector('[data-automation-id="fullscreen-button"]') ||
+                              document.querySelector("[data-testid='vilos-fullscreen_button']") ||
+                              document.querySelector("[aria-label*='Fullscreen']") ||
+                              document.querySelector("[aria-label*='Tela cheia']");
                 if (fsBtn) {
                     fsBtn.click();
                 }
             }
         })()
-    `).catch(() => { });
+    `;
+    target.view.webContents.executeJavaScript(fsScript).catch(() => { });
+    try {
+        if (target.view.webContents.mainFrame && Array.isArray(target.view.webContents.mainFrame.framesInSubtree)) {
+            for (const frame of target.view.webContents.mainFrame.framesInSubtree) {
+                if (frame !== target.view.webContents.mainFrame) {
+                    try {
+                        frame.executeJavaScript(fsScript).catch(() => { });
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+    catch { }
 }
 function leaveStreamingFullscreen(inst) {
     if (!mainWindow || mainWindow.isDestroyed())
@@ -1866,9 +2053,18 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
     activeStreamingBounds = safeBounds;
     let targetUrl = options.url?.trim();
     if (!targetUrl) {
-        targetUrl = options.service === 'netflix'
-            ? 'https://www.netflix.com/browse'
-            : 'https://www.primevideo.com';
+        if (options.service === 'netflix') {
+            targetUrl = 'https://www.netflix.com/browse';
+        }
+        else if (options.service === 'prime') {
+            targetUrl = 'https://www.primevideo.com';
+        }
+        else if (options.service === 'crunchyroll') {
+            targetUrl = 'https://www.crunchyroll.com/';
+        }
+        else {
+            targetUrl = 'https://www.crunchyroll.com/';
+        }
     }
     // Se já existe uma sessão em memória para este serviço, apenas reexiba e foque
     const existing = streamingInstances.get(options.service);
@@ -1915,6 +2111,7 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
         session: streamingSession,
         partition,
         nodeIntegration: false,
+        nodeIntegrationInSubFrames: true,
         contextIsolation: true,
         plugins: true,
         webSecurity: true,
@@ -2116,10 +2313,11 @@ electron_1.ipcMain.on('set-active-media-tab', (_event, tab) => {
     if (tab === 'youtube') {
         hideStreamingView('netflix');
         hideStreamingView('prime');
+        hideStreamingView('crunchyroll');
         activeStreamingService = null;
         modalHiddenStreamingService = null;
     }
-    else if (tab === 'netflix' || tab === 'prime') {
+    else if (tab === 'netflix' || tab === 'prime' || tab === 'crunchyroll') {
         if (!isModalActive) {
             showStreamingView(tab);
         }
@@ -2138,6 +2336,7 @@ electron_1.ipcMain.on('set-modal-active', (_event, active) => {
         }
         hideStreamingView('netflix');
         hideStreamingView('prime');
+        hideStreamingView('crunchyroll');
     }
     else {
         const toRestore = modalHiddenStreamingService || activeStreamingService;
@@ -2192,84 +2391,118 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
         }
     }
     else if (command === 'play') {
-        wc.focus();
-        // 1. Hardware Space key event
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
-        // 2. DOM selectors for Prime Video & Netflix
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'play' });
+        // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
-                const v = document.querySelector('video');
-                if (v && v.paused) {
-                    v.play().catch(() => {});
-                }
-                const playBtn = document.querySelector('[data-uia="control-play-pause-play"]') ||
-                                document.querySelector('.button-nfplayerPlay') ||
-                                document.querySelector('.atvwebplayersdk-playpause-button') ||
-                                document.querySelector('[data-automation-id="playback-play-pause"]') ||
-                                document.querySelector('.pausedOverlayButton') ||
-                                document.querySelector('button[aria-label*="Reproduzir"]') ||
-                                document.querySelector('button[aria-label*="Play"]');
-                if (playBtn) playBtn.click();
+                var v = (typeof window.__concord_get_active_video === 'function')
+                    ? window.__concord_get_active_video()
+                    : document.querySelector('video');
+                return {
+                    currentTime: v ? v.currentTime : 0,
+                    url: window.location.href
+                };
             })()
-        `).catch(() => { });
+        `).then((res) => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'play',
+                    service: inst.service,
+                    url: res?.url || inst.currentUrl || '',
+                    positionSeconds: res?.currentTime || 0,
+                    isPlaying: true,
+                });
+            }
+        }).catch(() => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'play',
+                    service: inst.service,
+                    url: inst.currentUrl || '',
+                    isPlaying: true,
+                });
+            }
+        });
     }
     else if (command === 'pause') {
-        wc.focus();
-        // 1. Hardware Space key event
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
-        // 2. DOM selectors for Prime Video & Netflix
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'pause' });
+        // Sincronizar evento de playback com a Watch Party no Concord
         wc.executeJavaScript(`
             (function() {
-                const v = document.querySelector('video');
-                if (v && !v.paused) {
-                    v.pause();
-                }
-                const pauseBtn = document.querySelector('[data-uia="control-play-pause-pause"]') ||
-                                 document.querySelector('.button-nfplayerPause') ||
-                                 document.querySelector('.atvwebplayersdk-playpause-button') ||
-                                 document.querySelector('[data-automation-id="playback-play-pause"]') ||
-                                 document.querySelector('button[aria-label*="Pausar"]') ||
-                                 document.querySelector('button[aria-label*="Pause"]');
-                if (pauseBtn) pauseBtn.click();
+                var v = (typeof window.__concord_get_active_video === 'function')
+                    ? window.__concord_get_active_video()
+                    : document.querySelector('video');
+                return {
+                    currentTime: v ? v.currentTime : 0,
+                    url: window.location.href
+                };
             })()
-        `).catch(() => { });
+        `).then((res) => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'pause',
+                    service: inst.service,
+                    url: res?.url || inst.currentUrl || '',
+                    positionSeconds: res?.currentTime || 0,
+                    isPlaying: false,
+                });
+            }
+        }).catch(() => {
+            if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                mainWindow.webContents.send('streaming-event', {
+                    type: 'playback-event',
+                    playbackType: 'pause',
+                    service: inst.service,
+                    url: inst.currentUrl || '',
+                    isPlaying: false,
+                });
+            }
+        });
     }
     else if (command === 'skip') {
-        wc.focus();
-        // 1. Hardware Right arrow key event (10 seconds fast forward on both Netflix and Prime Video)
-        wc.sendInputEvent({ type: 'keyDown', keyCode: 'Right' });
-        wc.sendInputEvent({ type: 'keyUp', keyCode: 'Right' });
-        // 2. DOM selectors for 10-second fast forward button + currentTime advance
-        wc.executeJavaScript(`
-            (function() {
-                const ff = document.querySelector('[data-uia="control-fastforward-10"]') ||
-                           document.querySelector('.button-nfplayerFastForward10') ||
-                           document.querySelector('.atvwebplayersdk-fastforward-button') ||
-                           document.querySelector('[data-automation-id="fast-forward-button"]') ||
-                           document.querySelector('button[aria-label*="Avançar 10"]') ||
-                           document.querySelector('button[aria-label*="Fast forward"]') ||
-                           document.querySelector('button[aria-label*="10s"]') ||
-                           document.querySelector('button[aria-label*="10 s"]');
-                if (ff) {
-                    ff.click();
-                    return;
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
+        // Sincronizar evento de seek com a Watch Party no Concord
+        setTimeout(() => {
+            wc.executeJavaScript(`
+                (function() {
+                    var v = (typeof window.__concord_get_active_video === 'function')
+                        ? window.__concord_get_active_video()
+                        : document.querySelector('video');
+                    return {
+                        currentTime: v ? v.currentTime : 0,
+                        isPlaying: v ? !v.paused : true,
+                        url: window.location.href
+                    };
+                })()
+            `).then((res) => {
+                if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+                    mainWindow.webContents.send('streaming-event', {
+                        type: 'playback-event',
+                        playbackType: 'seek',
+                        service: inst.service,
+                        url: res?.url || inst.currentUrl || '',
+                        positionSeconds: res?.currentTime || 0,
+                        isPlaying: res?.isPlaying ?? true,
+                    });
                 }
-                const v = document.querySelector('video');
-                if (v) {
-                    v.currentTime = Math.min((v.duration || Infinity), v.currentTime + 10);
-                }
-            })()
-        `).catch(() => { });
+            }).catch(() => { });
+        }, 250);
     }
     else if (command === 'seek' && typeof payload?.time === 'number') {
-        wc.executeJavaScript(`
-            (function() {
-                const v = document.querySelector('video');
-                if (v) v.currentTime = ${payload.time};
-            })()
-        `).catch(() => { });
+        broadcastToStreamingFrames(wc, 'apply-streaming-playback', { action: 'seek', positionSeconds: payload.time });
+        if (mainWindow && !mainWindow.isDestroyed() && inst.service) {
+            mainWindow.webContents.send('streaming-event', {
+                type: 'playback-event',
+                playbackType: 'seek',
+                service: inst.service,
+                url: inst.currentUrl || '',
+                positionSeconds: payload.time,
+                isPlaying: true,
+            });
+        }
     }
     else if (command === 'fullscreen') {
         if (isStreamingFullscreen) {
@@ -2285,15 +2518,19 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
                 const href = window.location.href;
                 const isNetflixWatch = href.includes('netflix.com/watch');
                 const isPrimeWatch = href.includes('/player') || href.includes('/gp/video/detail') || href.includes('/detail');
+                const isCrunchyWatch = href.includes('crunchyroll.com') && href.includes('/watch/');
                 const hasBackBtn = !!(
                     document.querySelector('[data-uia="control-back"]') ||
                     document.querySelector('.button-nfplayerBack') ||
                     document.querySelector('.atvwebplayersdk-back-button') ||
                     document.querySelector('[data-automation-id="back-button"]') ||
-                    document.querySelector('.backButton')
+                    document.querySelector('.backButton') ||
+                    document.querySelector("[data-testid='vilos-back_button']") ||
+                    document.querySelector("[aria-label*='Back']") ||
+                    document.querySelector("[aria-label*='Voltar']")
                 );
                 return {
-                    isWatching: isNetflixWatch || isPrimeWatch || hasBackBtn,
+                    isWatching: isNetflixWatch || isPrimeWatch || isCrunchyWatch || hasBackBtn,
                     href: href
                 };
             })()
@@ -2313,11 +2550,19 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
                                           document.querySelector('[data-automation-id="back-button"]') ||
                                           document.querySelector('.backButton');
                         if (primeBack) { primeBack.click(); return; }
+                        const crunchyBack = document.querySelector("[data-testid='vilos-back_button']") ||
+                                            document.querySelector("[aria-label*='Back']") ||
+                                            document.querySelector("[aria-label*='Voltar']");
+                        if (crunchyBack) { crunchyBack.click(); return; }
                         const href = window.location.href;
                         if (href.includes('netflix.com')) {
                             window.location.href = 'https://www.netflix.com/browse';
-                        } else {
+                        } else if (href.includes('primevideo.com') || href.includes('amazon.')) {
                             window.location.href = 'https://www.primevideo.com';
+                        } else if (href.includes('crunchyroll.com')) {
+                            window.location.href = 'https://www.crunchyroll.com/';
+                        } else {
+                            window.location.href = 'https://www.crunchyroll.com/';
                         }
                     })()
                 `).catch(() => { });
@@ -2330,24 +2575,32 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
     }
 });
 // ═══════════════════════════════════════════════════════════════════
-// ── WATCH PARTY SYNC IPC (NETFLIX & PRIME VIDEO) ──
+// ── WATCH PARTY SYNC IPC (NETFLIX, PRIME VIDEO & CRUNCHYROLL) ──
 // ═══════════════════════════════════════════════════════════════════
 electron_1.ipcMain.on('streaming-playback-event', (event, data) => {
     let service = null;
+    let matchingInst = null;
     for (const [srv, inst] of streamingInstances.entries()) {
         if (inst.view && !inst.view.webContents.isDestroyed() && inst.view.webContents.id === event.sender.id) {
             service = srv;
+            matchingInst = inst;
             break;
         }
     }
-    if (!service)
+    if (!service) {
         service = activeStreamingService;
+        matchingInst = service ? streamingInstances.get(service) || null : null;
+    }
     if (mainWindow && !mainWindow.isDestroyed() && service) {
+        let finalUrl = data.url;
+        if (service === 'crunchyroll' || (data.url && (data.url.includes('static.crunchyroll.com') || data.url.includes('vilos') || !data.url.includes('www.crunchyroll.com')))) {
+            finalUrl = matchingInst?.view?.webContents?.getURL?.() || matchingInst?.currentUrl || data.url;
+        }
         mainWindow.webContents.send('streaming-event', {
             type: 'playback-event',
             playbackType: data.type,
             service,
-            url: data.url,
+            url: finalUrl,
             positionSeconds: data.positionSeconds,
             isPlaying: data.isPlaying,
         });
@@ -2358,9 +2611,8 @@ electron_1.ipcMain.on('sync-streaming-playback', (_event, data) => {
     const inst = targetService ? streamingInstances.get(targetService) : getActiveStreamingInstance();
     if (!inst || !inst.view || inst.view.webContents.isDestroyed())
         return;
-    // Send command to streaming preload — the preload has its own retry logic
-    // if the video element isn't available yet
-    inst.view.webContents.send('apply-streaming-playback', data);
+    // Send command to streaming preload and all subframes
+    broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', data);
     fs.appendFileSync(logFile, `[WatchParty] sync-streaming-playback sent: action=${data.action} pos=${data.positionSeconds} service=${targetService}\n`);
 });
 electron_1.ipcMain.on('navigate-streaming-view', (_event, { service, url }) => {
@@ -2400,7 +2652,7 @@ electron_1.ipcMain.on('navigate-to-title', (_event, { service, url, autoPlay }) 
     else {
         // Same URL — just trigger autoPlay signal
         if (autoPlay) {
-            inst.view.webContents.send('navigate-to-title', { url, autoPlay: true });
+            broadcastToStreamingFrames(inst.view.webContents, 'navigate-to-title', { url, autoPlay: true });
         }
     }
 });

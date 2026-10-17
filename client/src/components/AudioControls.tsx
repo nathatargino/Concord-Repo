@@ -16,7 +16,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
     remoteVol,
     micMuted,
     callMuted,
-    noiseSuppression,
     setYtVol,
     setMicVol,
     setRemoteVol,
@@ -35,50 +34,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
       return true;
     }
   });
-
-  // Supressão de Ruído e VAD (acesso defensivo com suporte a RNNoise e Auto VAD)
-  const noiseSuppressionMode: 'rnnoise' | 'standard' | 'off' =
-    (audioStore as any).noiseSuppressionMode ?? (noiseSuppression ? 'rnnoise' : 'off');
-
-  const handleToggleNoiseSuppression = () => {
-    if (typeof (audioStore as any).toggleNoiseSuppression === 'function') {
-      (audioStore as any).toggleNoiseSuppression();
-    } else {
-      audioStore.setNoiseSuppression(!noiseSuppression);
-    }
-  };
-
-  const [localAutoSensitivity, setLocalAutoSensitivity] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('concord_auto_sensitivity');
-      if (saved !== null) return saved === 'true';
-      return true;
-    } catch {
-      return true;
-    }
-  });
-
-  const autoSensitivity: boolean = (audioStore as any).autoSensitivity ?? localAutoSensitivity;
-
-  const setAutoSensitivity = (val: boolean) => {
-    if (typeof (audioStore as any).setAutoSensitivity === 'function') {
-      (audioStore as any).setAutoSensitivity(val);
-    }
-    setLocalAutoSensitivity(val);
-    try {
-      localStorage.setItem('concord_auto_sensitivity', String(val));
-    } catch {}
-  };
-
-  const noiseGateThreshold: number = typeof (audioStore as any).noiseGateThreshold === 'number'
-    ? (audioStore as any).noiseGateThreshold
-    : -45;
-
-  const setNoiseGateThreshold = (val: number) => {
-    if (typeof (audioStore as any).setNoiseGateThreshold === 'function') {
-      (audioStore as any).setNoiseGateThreshold(val);
-    }
-  };
 
   const toggleDropdown = () => {
     setIsOpen((prev) => {
@@ -164,81 +119,6 @@ export const AudioControls: React.FC<Props> = ({ onUnlockAudio }) => {
               ></i>
               <span>{callMuted ? 'Call Off' : 'Call On'}</span>
             </button>
-          </div>
-
-          {/* Card compacto de Supressão de Ruído IA (Krisp / RNNoise) */}
-          <div className={`${styles.noiseCard} ${noiseSuppression ? styles.noiseCardActive : ''}`}>
-            <div
-              className={styles.noiseCardMain}
-              onClick={handleToggleNoiseSuppression}
-              role="button"
-              tabIndex={0}
-              title={noiseSuppression ? 'Desativar Supressão de Ruído' : 'Ativar Supressão de Ruído IA (RNNoise)'}
-            >
-              <div className={styles.noiseCardLeft}>
-                <div className={`${styles.noiseIconWrapper} ${noiseSuppression ? styles.noiseIconActive : ''}`}>
-                  <i className="fa-solid fa-wand-magic-sparkles"></i>
-                </div>
-                <div className={styles.noiseCardInfo}>
-                  <div className={styles.noiseCardTitleRow}>
-                    <span className={styles.noiseCardTitle}>
-                      {noiseSuppression ? 'Supressão IA: Ativa' : 'Supressão: Off'}
-                    </span>
-                    {noiseSuppression && (
-                      <span className={styles.rnnoiseBadge}>RNNoise</span>
-                    )}
-                  </div>
-                  <span className={styles.noiseCardSubtitle}>
-                    {noiseSuppression
-                      ? (noiseSuppressionMode === 'rnnoise' ? 'Rede neural Krisp / RNNoise' : 'Filtro DSP padrão')
-                      : 'Elimina ruídos de fundo'}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className={`${styles.noiseToggleBtn} ${noiseSuppression ? styles.noiseToggleBtnActive : ''}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleNoiseSuppression();
-                }}
-                title={noiseSuppression ? 'Desativar Supressão' : 'Ativar Supressão'}
-              >
-                <span className={styles.noiseToggleDot} />
-              </button>
-            </div>
-
-            {/* Linha compacta de modo/sensibilidade quando ativo */}
-            {noiseSuppression && (
-              <div className={styles.noiseSubRow}>
-                <button
-                  type="button"
-                  className={`${styles.vadPillBtn} ${autoSensitivity ? styles.vadPillBtnActive : ''}`}
-                  onClick={() => setAutoSensitivity(!autoSensitivity)}
-                  title={autoSensitivity ? 'Sensibilidade automática de voz ativa' : 'Sensibilidade manual selecionada'}
-                >
-                  <i className="fa-solid fa-sparkles"></i>
-                  <span>Auto VAD: {autoSensitivity ? 'Ativo' : 'Manual'}</span>
-                </button>
-
-                {!autoSensitivity && (
-                  <div className={styles.compactThreshold}>
-                    <span className={styles.compactThresholdVal}>{noiseGateThreshold} dB</span>
-                    <input
-                      type="range"
-                      min="-70"
-                      max="-15"
-                      step="1"
-                      value={noiseGateThreshold}
-                      onChange={(e) => setNoiseGateThreshold(Number(e.target.value))}
-                      className={styles.compactRangeInput}
-                      title={`Sensibilidade manual: ${noiseGateThreshold} dB`}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
       {/* Volume Sliders matching prototype */}
