@@ -17,6 +17,7 @@
     "electron:build": "tsc -p tsconfig.electron.json && cross-env ELECTRON=true vite build && electron-builder",
     "electron:ci": "tsc -p tsconfig.electron.json && cross-env ELECTRON=true vite build && electron-builder --publish never",
     "electron:start": "pnpm run electron:build && start release\\win-unpacked\\Concord.exe",
+    "verify:msix": "node scripts/verify_msix.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -32,6 +32,58 @@ if (process.platform === 'win32' && !isWindowsStore) {
     app.setAppUserModelId('com.concord.desktop');
 }
 
+// Register concord:// deep link protocol client
+function registerProtocolClient(): void {
+    try {
+        if (process.defaultApp || isDev) {
+            if (process.argv.length >= 2) {
+                app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
+            } else {
+                app.setAsDefaultProtocolClient('concord', process.execPath);
+            }
+        } else {
+            app.setAsDefaultProtocolClient('concord');
+        }
+        fs.appendFileSync(logFile, `[Protocol] Registered concord:// protocol client.\n`);
+    } catch (err: any) {
+        fs.appendFileSync(logFile, `[Protocol] Failed to register protocol client: ${err?.message || err}\n`);
+    }
+}
+registerProtocolClient();
+
+function extractDeepLinkUrl(argv: string[]): string | null {
+    if (!argv || !Array.isArray(argv)) return null;
+    for (const rawArg of argv) {
+        if (!rawArg) continue;
+        const clean = rawArg.trim().replace(/^["']|["']$/g, '');
+        if (clean.startsWith('concord://')) {
+            return clean;
+        }
+    }
+    return null;
+}
+
+let pendingDeepLink: string | null = extractDeepLinkUrl(process.argv);
+if (pendingDeepLink) {
+    fs.appendFileSync(logFile, `[DeepLink] Cold start URL detected: ${pendingDeepLink}\n`);
+}
+
+function sendDeepLinkToRenderer(rawUrl: string): void {
+    if (!rawUrl) return;
+    const url = rawUrl.trim().replace(/^["']|["']$/g, '');
+    if (!url.startsWith('concord://')) return;
+
+    fs.appendFileSync(logFile, `[DeepLink] sendDeepLinkToRenderer: ${url}\n`);
+    pendingDeepLink = url;
+
+    showMainWindow();
+
+    if (mainWindow && mainWindow.webContents) {
+        mainWindow.webContents.send('deep-link', url);
+    }
+}
+
+
 function getAppIconPath(): string {
     const iconFile = process.platform === 'win32' ? 'icon.ico' : 'logo.png';
     const candidates = [
@@ -377,14 +429,12 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
         
         if (pendingDeepLink) {
             mainWindow?.webContents.send('deep-link', pendingDeepLink);
-            pendingDeepLink = null;
         }
-        
-        if (process.platform === 'win32' || process.platform === 'linux') {
-            const deepLinkUrl = process.argv.find(arg => arg.startsWith('concord://'));
-            if (deepLinkUrl) {
-                mainWindow?.webContents.send('deep-link', deepLinkUrl);
-            }
+    });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+        if (pendingDeepLink) {
+            mainWindow?.webContents.send('deep-link', pendingDeepLink);
         }
     });
 
@@ -533,10 +583,7 @@ function initAutoUpdater(window: BrowserWindowType) {
 
     fs.appendFileSync(logFile, 'initAutoUpdater Finished!\n');
 }
-// Deep Linking Setup
-let pendingDeepLink: string | null = null;
-
-// Local Loopback Server for OAuth Callback (port 54321)
+// Local Loopback Server for OAuth & Password Recovery Callback (port 54321)
 let authLoopbackServer: http.Server | null = null;
 
 function startAuthLoopbackServer() {
@@ -554,14 +601,11 @@ function startAuthLoopbackServer() {
                         const data = JSON.parse(body || '{}');
                         const hash = data.hash || '';
                         const search = data.search || '';
-                        const fullUrl = `concord://auth/callback${search}${hash}`;
+                        const isRecovery = hash.includes('type=recovery') || search.includes('type=recovery') || (data.type === 'recovery');
+                        const pathPrefix = isRecovery ? 'reset-password' : 'auth/callback';
+                        const fullUrl = `concord://${pathPrefix}${search}${hash}`;
                         
-                        showMainWindow();
-                        if (mainWindow && mainWindow.webContents) {
-                            mainWindow.webContents.send('deep-link', fullUrl);
-                        } else {
-                            pendingDeepLink = fullUrl;
-                        }
+                        sendDeepLinkToRenderer(fullUrl);
                         
                         res.writeHead(200, {
                             'Content-Type': 'application/json',
@@ -587,22 +631,18 @@ function startAuthLoopbackServer() {
                 return;
             }
 
-            // Callback landing page
-            if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl === '/' || reqUrl.startsWith('/?')) {
+            // Callback landing page (handles OAuth callback and Password Recovery)
+            if (reqUrl.startsWith('/callback') || reqUrl.startsWith('/auth/callback') || reqUrl.startsWith('/reset-password') || reqUrl === '/' || reqUrl.startsWith('/?')) {
                 try {
                     const parsedUrl = new URL(reqUrl, 'http://127.0.0.1:54321');
                     const sp = parsedUrl.searchParams;
-                    // Compara parâmetros exatos (evita falso positivo de 'error_code=' ao procurar 'code=')
-                    const hasAuthPayload = Boolean(sp.get('code') || sp.get('access_token'));
+                    const isRecovery = sp.get('type') === 'recovery' || reqUrl.includes('type=recovery') || parsedUrl.hash.includes('type=recovery') || reqUrl.startsWith('/reset-password');
+                    const hasAuthPayload = Boolean(sp.get('code') || sp.get('access_token')) || isRecovery;
                     const hasAuthError = Boolean(sp.get('error') || sp.get('error_description'));
                     if (hasAuthPayload || hasAuthError) {
-                        const fullUrl = `concord://auth/callback${parsedUrl.search}${parsedUrl.hash}`;
-                        showMainWindow();
-                        if (mainWindow && mainWindow.webContents) {
-                            mainWindow.webContents.send('deep-link', fullUrl);
-                        } else {
-                            pendingDeepLink = fullUrl;
-                        }
+                        const pathPrefix = isRecovery ? 'reset-password' : 'auth/callback';
+                        const fullUrl = `concord://${pathPrefix}${parsedUrl.search}${parsedUrl.hash}`;
+                        sendDeepLinkToRenderer(fullUrl);
                     }
                 } catch {}
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -686,9 +726,10 @@ function startAuthLoopbackServer() {
     const params = new URLSearchParams(search);
     new URLSearchParams(hash.startsWith('#') ? hash.substring(1) : hash).forEach((v, k) => { if (!params.has(k)) params.set(k, v); });
 
+    const isRecovery = params.get('type') === 'recovery' || hash.includes('type=recovery') || search.includes('type=recovery') || window.location.pathname.includes('reset-password');
     const authError = params.get('error');
     const authErrorDescription = params.get('error_description');
-    const hasAuthPayload = Boolean(params.get('code') || params.get('access_token'));
+    const hasAuthPayload = Boolean(params.get('code') || params.get('access_token')) || isRecovery;
 
     const icon = document.getElementById('statusIcon');
     const title = document.getElementById('statusTitle');
@@ -699,7 +740,7 @@ function startAuthLoopbackServer() {
       fetch('/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hash, search })
+        body: JSON.stringify({ hash, search, type: isRecovery ? 'recovery' : undefined })
       }).catch(() => {});
     }
 
@@ -713,10 +754,13 @@ function startAuthLoopbackServer() {
         : (authErrorDescription || 'Ocorreu um erro durante a autenticação. Tente novamente pelo Concord.');
       notifyApp();
     } else if (hasAuthPayload) {
-      const deepLink = 'concord://auth/callback' + search + hash;
-      icon.textContent = '✨';
-      title.textContent = 'Autenticado com Sucesso!';
-      text.textContent = 'Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...';
+      const deepLink = (isRecovery ? 'concord://reset-password' : 'concord://auth/callback') + search + hash;
+      icon.textContent = isRecovery ? '🔑' : '✨';
+      title.textContent = isRecovery ? 'Recuperação de Senha' : 'Autenticado com Sucesso!';
+      text.textContent = isRecovery
+        ? 'Token de recuperação validado. Retornando ao aplicativo Concord...'
+        : 'Sua conta Google foi conectada ao Concord. Retornando ao aplicativo desktop...';
+      btn.textContent = 'Abrir Concord Desktop';
       btn.href = deepLink;
       btn.style.display = 'inline-block';
       notifyApp();
@@ -727,7 +771,7 @@ function startAuthLoopbackServer() {
     } else {
       icon.textContent = 'ℹ️';
       title.textContent = 'Nenhuma autenticação pendente';
-      text.textContent = 'Inicie o login com o Google pelo Concord para continuar.';
+      text.textContent = 'Inicie o login ou recuperação pelo Concord para continuar.';
     }
   </script>
 </body>
@@ -752,41 +796,24 @@ function startAuthLoopbackServer() {
     }
 }
 
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('concord', process.execPath, [path.resolve(process.argv[1])]);
-  }
-} else {
-  app.setAsDefaultProtocolClient('concord');
-}
-
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 }
 
-app.on('second-instance', (event, commandLine, workingDirectory) => {
+app.on('second-instance', (_event, commandLine, _workingDirectory) => {
+  fs.appendFileSync(logFile, `[second-instance] commandLine=${JSON.stringify(commandLine)}\n`);
   showMainWindow();
-  const rawUrl = commandLine.find(arg => arg.startsWith('concord://'));
+  const rawUrl = extractDeepLinkUrl(commandLine);
   if (rawUrl) {
-      const url = rawUrl.replace(/^["']|["']$/g, '');
-      if (mainWindow && mainWindow.webContents) {
-          mainWindow.webContents.send('deep-link', url);
-      } else {
-          pendingDeepLink = url;
-      }
+      sendDeepLinkToRenderer(rawUrl);
   }
 });
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  showMainWindow();
-  const cleanUrl = url.replace(/^["']|["']$/g, '');
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('deep-link', cleanUrl);
-  } else {
-    pendingDeepLink = cleanUrl;
-  }
+  fs.appendFileSync(logFile, `[open-url] url=${url}\n`);
+  sendDeepLinkToRenderer(url);
 });
 
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
@@ -1040,6 +1067,10 @@ ipcMain.on('cancel-google-auth', () => {
 // Basic IPC handlers
 ipcMain.handle('get-app-version', () => {
     return app.getVersion();
+});
+
+ipcMain.handle('get-initial-deep-link', () => {
+    return pendingDeepLink;
 });
 
 ipcMain.on('copy-to-clipboard', (event, text) => {

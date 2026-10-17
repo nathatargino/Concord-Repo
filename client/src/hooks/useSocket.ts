@@ -194,21 +194,42 @@ export function useSocket(callbacks: SocketCallbacks) {
   useEffect(() => {
     const socket: ConcordSocket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
+      reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000,
+      reconnectionDelayMax: 10000,
+      randomizationFactor: 0.5,
+      timeout: 45000,
+      ackTimeout: 10000,
+      retries: 3,
     });
 
     socketRef.current = socket;
     (window as any).__concord_socket = socket;
 
-    socket.on('connect', () => {
-      console.log('[Socket] Conectado ao servidor:', SOCKET_URL, 'ID:', socket.id);
-      store.setConnected(true);
-      store.setMyId(socket.id ?? '');
+    socket.io.on('reconnect_attempt', (attempt) => {
+      console.log(`[Socket] Tentativa de reconexão #${attempt}...`);
+    });
 
-      let persistentId = getOrCreatePersistentId();
+    socket.io.on('reconnect', (attempt) => {
+      console.log(`[Socket] Reconectado com sucesso após ${attempt} tentativas`);
+    });
+
+    socket.io.on('reconnect_error', (err) => {
+      console.warn('[Socket] Erro na tentativa de reconexão:', err.message);
+    });
+
+    socket.io.on('reconnect_failed', () => {
+      console.error('[Socket] Falha em todas as tentativas de reconexão');
+      useAppStore.getState().setConnected(false);
+    });
+
+    socket.on('connect', () => {
+      console.log('[Socket] Conectado ao servidor:', SOCKET_URL, 'ID:', socket.id, 'Recovered:', socket.recovered);
+      useAppStore.getState().setConnected(true);
+      useAppStore.getState().setMyId(socket.id ?? '');
+
+      const persistentId = getOrCreatePersistentId();
 
       // Auto-login with saved name and avatar
       const savedName = getSavedUsername();
@@ -216,12 +237,12 @@ export function useSocket(callbacks: SocketCallbacks) {
       const savedTag = localStorage.getItem('concord_user_tag');
       const savedUserId = localStorage.getItem('concord_user_id') || undefined;
       if (savedName) {
-        store.setMyName(savedName);
+        useAppStore.getState().setMyName(savedName);
         if (savedAvatar) {
-          store.setMyAvatarUrl(savedAvatar);
+          useAppStore.getState().setMyAvatarUrl(savedAvatar);
         }
         if (savedTag) {
-          store.setMyTag(savedTag);
+          useAppStore.getState().setMyTag(savedTag);
         }
         socket.emit('set_username', savedName, savedAvatar || null, savedTag || undefined, persistentId, savedUserId);
       }
@@ -236,23 +257,38 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('disconnect', (reason) => {
       console.warn('[Socket] Desconectado do servidor:', reason);
-      store.setConnected(false);
+      useAppStore.getState().setConnected(false);
     });
 
     socket.on('connect_error', (err) => {
       console.warn('[Socket] Erro de conexão com o servidor:', err.message);
-      store.setConnected(false);
+      useAppStore.getState().setConnected(false);
     });
 
     socket.on('room_joined', (room) => {
       joinGracePeriodUntilRef.current = Date.now() + 3500;
-      store.setRoom(room);
+      useAppStore.getState().setRoom(room);
       if (room.isServer) {
-        store.setIsServer(true);
-        if (room.name) store.setServerName(room.name);
-        if (room.iconUrl) store.setServerIconUrl(room.iconUrl);
+        useAppStore.getState().setIsServer(true);
+        if (room.name) useAppStore.getState().setServerName(room.name);
+        if (room.iconUrl) useAppStore.getState().setServerIconUrl(room.iconUrl);
       }
       callbacksRef.current.onRoomJoined?.(room);
+
+      // Re-sincronizar presença de voz e streaming sob reconexão
+      const appState = useAppStore.getState();
+      if (appState.inVoice) {
+        console.log('[Socket] Re-estabelecendo presença em voz após reconexão...');
+        socket.emit('join_voice');
+        const audioState = useAudioStore.getState();
+        socket.emit('update_media_state', audioState.micMuted, audioState.callMuted);
+        if (appState.isScreenSharing) {
+          socket.emit('start_screen_share');
+        }
+        if (appState.screenShareUserId) {
+          socket.emit('start_watching_screen', appState.screenShareUserId);
+        }
+      }
     });
 
     socket.on('room_info', (room) => {
@@ -369,7 +405,8 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl, isHistory, sentAt, roomId, customRole) => {
       const isSystem = userName === 'Sistema' || (type as string) === 'system' || (typeof message === 'string' && message.startsWith('O usuário ') && message.includes(' executou o comando /'));
-      const targetRoomId = roomId || store.room?.id;
+      const appState = useAppStore.getState();
+      const targetRoomId = roomId || appState.room?.id;
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         roomId: targetRoomId,
@@ -380,7 +417,7 @@ export function useSocket(callbacks: SocketCallbacks) {
         type: type || 'text',
         url,
         filename,
-        channelId: channelId || (store.isServer ? 'ch-geral' : undefined),
+        channelId: channelId || (appState.isServer ? 'ch-geral' : undefined),
         avatarUrl: isSystem ? null : (avatarUrl || null),
         customRole: customRole || null,
       };
@@ -402,12 +439,12 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
 
       // Notificação nativa do Windows para mensagens enviadas por outros usuários
-      const myName = (store.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
+      const myName = (appState.myName || localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1') || '').trim().toLowerCase();
       const isMe = !isSystem && Boolean(myName && userName.trim().toLowerCase() === myName);
 
       if (!isMe && !isSystem) {
-        const serverOrRoomName = store.serverName || store.room?.name || 'Concord';
-        const channelObj = store.channels.find((c) => c.id === channelId);
+        const serverOrRoomName = appState.serverName || appState.room?.name || 'Concord';
+        const channelObj = appState.channels.find((c) => c.id === channelId);
         const channelName = channelObj ? `#${channelObj.name}` : '';
         const roomDisplay = channelName ? `${serverOrRoomName} (${channelName})` : serverOrRoomName;
 
@@ -431,7 +468,7 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('message_reaction' as any, (messageId: string, emoji: string, userName: string) => {
-      const cleanMy = (store.myName || '').trim().toLowerCase();
+      const cleanMy = (useAppStore.getState().myName || '').trim().toLowerCase();
       const cleanSender = (userName || '').trim().toLowerCase();
       if (!cleanMy || cleanSender !== cleanMy) {
         store.toggleMessageReaction(messageId, emoji, userName);
@@ -489,7 +526,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setCurrentVideoId(null);
       store.setIsPlaying(false);
       callbacksRef.current.onStopYouTube(token);
-      if (store.isPiPActive) {
+      if (useAppStore.getState().isPiPActive) {
         (window as any).electron?.closePipWindow?.();
         store.setPiPActive(false);
       }
@@ -528,7 +565,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setWatchSession(session);
       const electron = (window as any).electron;
 
-      if (!session || !store.inVoice) return;
+      if (!session || !useAppStore.getState().inVoice) return;
 
       // Verificar se a view de streaming já está aberta para este serviço
       const streamingSessions = useAppStore.getState().streamingSessions;
@@ -713,9 +750,14 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     return () => {
+      if (watchActionDebounceTimer) {
+        clearTimeout(watchActionDebounceTimer);
+        watchActionDebounceTimer = null;
+      }
       if ((window as any).__concord_socket === socket) {
         (window as any).__concord_socket = null;
       }
+      socket.io.removeAllListeners();
       socket.removeAllListeners();
       socket.disconnect();
     };

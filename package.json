@@ -11,6 +11,13 @@
     "dev": "concurrently \"pnpm --filter server dev\" \"pnpm --filter client dev\"",
     "electron:dev": "concurrently -k -n \"SERVER,DESKTOP\" -c \"yellow.bold,cyan.bold\" \"pnpm --filter server dev\" \"pnpm --filter client electron:dev\"",
     "build": "pnpm --filter server build",
+    "build:client": "pnpm --filter client build",
+    "build:server": "pnpm --filter server build",
+    "build:all": "pnpm --filter client build && pnpm --filter server build",
+    "typecheck:desktop": "pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit",
+    "typecheck:all": "pnpm --filter client exec tsc --noEmit && pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit && pnpm --filter server exec tsc --noEmit",
+    "lint": "pnpm --filter client lint",
+    "harness:verify": "pnpm --filter client build && pnpm --filter client exec tsc -p tsconfig.electron.json --noEmit && pnpm --filter server build",
     "start": "pnpm --filter server start"
   },
   "devDependencies": {

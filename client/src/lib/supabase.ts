@@ -6,6 +6,8 @@ import {
   broadcastFriendRequestResponse,
   broadcastFriendRequestCancelled,
   broadcastDirectMessage,
+  broadcastProfileUpdate,
+  updateMyPresence,
 } from './socialRealtime';
 
 const DEFAULT_SUPABASE_URL = 'https://zryjdjvqprdrhunmvhbj.supabase.co';
@@ -47,6 +49,52 @@ export const supabase = (() => {
     return createClient('https://placeholder.supabase.co', 'placeholder-key');
   }
 })();
+
+/**
+ * Remove um canal do Supabase Realtime de forma segura, evitando erros de ciclo de vida
+ */
+export async function safeRemoveChannel(channelOrTopic: any): Promise<void> {
+  if (!channelOrTopic || !supabase) return;
+  try {
+    if (typeof channelOrTopic === 'string') {
+      const topic = channelOrTopic.trim();
+      const existing = supabase.getChannels().filter(
+        (c: any) => c.topic === topic || c.topic === `realtime:${topic}`
+      );
+      for (const ch of existing) {
+        try {
+          await supabase.removeChannel(ch);
+        } catch {}
+      }
+    } else if (channelOrTopic && typeof channelOrTopic.unsubscribe === 'function') {
+      await supabase.removeChannel(channelOrTopic);
+    }
+  } catch (err) {
+    console.warn('[Supabase Realtime] Erro ao remover canal:', err);
+  }
+}
+
+/**
+ * Cria ou recupera um canal Realtime garantindo a limpeza prévia de instâncias duplicadas
+ */
+export function safeCreateChannel(topic: string, opts?: any): any {
+  if (!supabase) return null;
+  const cleanTopic = topic.trim();
+  try {
+    const channels = supabase.getChannels();
+    const duplicates = channels.filter(
+      (c: any) => c.topic === cleanTopic || c.topic === `realtime:${cleanTopic}`
+    );
+    for (const dup of duplicates) {
+      try {
+        supabase.removeChannel(dup);
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('[Supabase Realtime] Erro na limpeza preventiva de canais duplicados:', err);
+  }
+  return supabase.channel(cleanTopic, opts);
+}
 
 // Backup de sessão no safeStorage do Electron para persistência resiliente em novas builds/instalações
 if (typeof window !== 'undefined') {
@@ -1161,7 +1209,137 @@ export async function syncProfileAfterAuth(user: any): Promise<{ username: strin
   // Disparar sincronização em nuvem completa multi-dispositivo em segundo plano
   syncCloudUserData(user.id).catch(() => {});
 
+  // Notificar e registrar presença imediata com dados autenticados atualizados
+  updateMyPresence({ userName: finalName, avatarUrl: finalAvatar, customTag }).catch(() => {});
+  broadcastProfileUpdate({ userId: user.id, username: finalName, avatarUrl: finalAvatar, customTag });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('concord:profile-updated', {
+        detail: { userId: user.id, username: finalName, avatarUrl: finalAvatar, customTag },
+      })
+    );
+  }
+
   return { username: finalName, avatarUrl: finalAvatar };
+}
+
+/**
+ * Atualiza o perfil do usuário de ponta a ponta (public.profiles, auth metadata, Electron e Realtime)
+ */
+export async function updateUserProfileInSupabase(updates: {
+  username?: string;
+  avatarUrl?: string | null;
+  customTag?: string;
+  displayName?: string;
+}): Promise<{ success: boolean; profile?: Partial<DbProfile> | null; error?: string }> {
+  try {
+    const store = useAppStore.getState();
+    const myName = updates.username !== undefined ? (sanitizeDisplayName(updates.username) || 'Usuário') : (store.myName || 'Usuário');
+    const myAvatar = updates.avatarUrl !== undefined ? updates.avatarUrl : store.myAvatarUrl;
+    const myTag = updates.customTag !== undefined ? updates.customTag.trim() : (store.myTag || getSavedUserTag());
+
+    // 1. Atualizar Zustand Store
+    if (myName) store.setMyName(myName);
+    store.setMyAvatarUrl(myAvatar || null);
+    if (myTag) store.setMyTag(myTag);
+
+    // 2. Atualizar LocalStorage
+    localStorage.setItem('concord_username', myName);
+    localStorage.setItem('concord_username_v1', myName);
+    localStorage.setItem('concord_is_custom_profile', 'true');
+    if (myAvatar) {
+      localStorage.setItem('concord_avatar_url', myAvatar);
+    } else {
+      localStorage.removeItem('concord_avatar_url');
+    }
+    if (myTag) {
+      localStorage.setItem('concord_user_tag', myTag);
+    }
+
+    // 3. Salvar no Electron
+    await savePrefsToElectron({
+      concord_username: myName,
+      concord_avatar_url: myAvatar || '',
+      concord_user_tag: myTag || '0000',
+    });
+
+    // 4. Salvar no Supabase se logado
+    let authUserId: string | null = null;
+    if (supabaseUrl && supabaseAnonKey) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          authUserId = user.id;
+
+          // 4.1. Upsert em public.profiles
+          const { error: profErr } = await supabase.from('profiles').upsert({
+            id: user.id,
+            username: myName,
+            display_name: updates.displayName || myName,
+            avatar_url: myAvatar || null,
+            custom_tag: myTag,
+            updated_at: new Date().toISOString(),
+          });
+
+          if (profErr) {
+            console.warn('[Supabase] Erro ao salvar profile:', profErr.message);
+          }
+
+          // 4.2. Atualizar user_metadata no Auth
+          await supabase.auth.updateUser({
+            data: {
+              username: myName,
+              display_name: updates.displayName || myName,
+              avatar_url: myAvatar || null,
+              custom_tag: myTag,
+            },
+          });
+        }
+      } catch (err) {
+        console.warn('[Supabase] Falha ao persistir perfil na nuvem:', err);
+      }
+    }
+
+    // 5. Atualizar presença e disparar broadcast em tempo real
+    await updateMyPresence({
+      userName: myName,
+      avatarUrl: myAvatar || null,
+      customTag: myTag,
+    });
+
+    broadcastProfileUpdate({
+      userId: authUserId || store.myId || 'me',
+      username: myName,
+      avatarUrl: myAvatar || null,
+      customTag: myTag,
+    });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('concord:profile-updated', {
+          detail: {
+            userId: authUserId || store.myId,
+            username: myName,
+            avatarUrl: myAvatar,
+            customTag: myTag,
+          },
+        })
+      );
+    }
+
+    return {
+      success: true,
+      profile: {
+        id: authUserId || 'local',
+        username: myName,
+        avatar_url: myAvatar,
+        created_at: new Date().toISOString(),
+      },
+    };
+  } catch (err: any) {
+    console.error('[Supabase] Erro em updateUserProfileInSupabase:', err);
+    return { success: false, error: err.message };
+  }
 }
 
 // ==========================================
@@ -1298,6 +1476,9 @@ export async function syncCloudUserData(userId?: string): Promise<void> {
     // 5. Sincronizar chats diretos
     const dms = await fetchDirectChatsFromSupabase();
     useAppStore.getState().setDirectChats(dms);
+
+    // 6. Atualizar presença no Realtime após sincronização
+    updateMyPresence().catch(() => {});
   } catch (err) {
     console.warn('[CloudSync] Erro na sincronização multi-dispositivo:', err);
   }
@@ -2812,20 +2993,46 @@ export async function fetchServerMembers(serverId: string): Promise<DbMember[]> 
       return Array.from(localMap.values());
     }
 
+    let remoteMembers: DbMember[] = [];
     const { data, error } = await supabase
       .from('server_members')
       .select('*, profiles(avatar_url)')
       .eq('server_id', actualServerId)
       .order('joined_at', { ascending: true });
 
-    if (error || !data) {
-      return Array.from(localMap.values());
-    }
+    if (!error && data && data.length > 0) {
+      remoteMembers = data.map((m: any) => ({
+        ...m,
+        avatar_url: m.profiles?.avatar_url || m.avatar_url || null,
+      })) as DbMember[];
+    } else {
+      // Fallback resiliente: busca membros sem join relacional caso o foreign key profiles não esteja configurado
+      const { data: fallbackData } = await supabase
+        .from('server_members')
+        .select('*')
+        .eq('server_id', actualServerId)
+        .order('joined_at', { ascending: true });
 
-    const remoteMembers = data.map((m: any) => ({
-      ...m,
-      avatar_url: m.profiles?.avatar_url || m.avatar_url || null,
-    })) as DbMember[];
+      if (fallbackData && fallbackData.length > 0) {
+        const uids = fallbackData.map((m: any) => m.user_id).filter(Boolean);
+        const profMap = new Map<string, string>();
+        if (uids.length > 0) {
+          try {
+            const { data: profs } = await supabase
+              .from('profiles')
+              .select('id, avatar_url')
+              .in('id', uids);
+            (profs || []).forEach((p: any) => {
+              if (p.avatar_url) profMap.set(p.id, p.avatar_url);
+            });
+          } catch {}
+        }
+        remoteMembers = fallbackData.map((m: any) => ({
+          ...m,
+          avatar_url: (m.user_id && profMap.get(m.user_id)) || m.avatar_url || null,
+        })) as DbMember[];
+      }
+    }
 
     // Mesclar resultados remotos no mapa
     for (const rm of remoteMembers) {

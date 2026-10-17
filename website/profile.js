@@ -123,9 +123,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (newUsernameInput) newUsernameInput.value = currentDisplayName;
 
             const localAvatar = localStorage.getItem('concord_avatar_url');
-            if (profileData?.avatar_url || meta.avatar_url || localAvatar) {
-                const url = profileData?.avatar_url || meta.avatar_url || localAvatar;
-                if (profileAvatar) profileAvatar.innerHTML = `<img src="${url}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+            const resolvedAvatar = profileData?.avatar_url || meta.avatar_url || localAvatar;
+            if (resolvedAvatar) {
+                if (profileAvatar) profileAvatar.innerHTML = `<img src="${resolvedAvatar}" alt="${currentDisplayName}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+                localStorage.setItem('concord_avatar_url', resolvedAvatar);
+
+                // Sincroniza consistentemente em background caso alguma fonte remota esteja desatualizada
+                if (currentUser) {
+                    if (!profileData?.avatar_url) {
+                        supabaseClient
+                            .from('profiles')
+                            .upsert({
+                                id: currentUser.id,
+                                username: currentDisplayName,
+                                avatar_url: resolvedAvatar,
+                                updated_at: new Date().toISOString()
+                            })
+                            .catch(err => console.warn('Sync profile avatar warning:', err));
+                    }
+                    if (!meta.avatar_url) {
+                        supabaseClient.auth
+                            .updateUser({
+                                data: { avatar_url: resolvedAvatar }
+                            })
+                            .catch(err => console.warn('Sync auth avatar metadata warning:', err));
+                    }
+                }
             } else if (profileAvatar) {
                 profileAvatar.textContent = getInitials(currentDisplayName);
             }
@@ -223,90 +246,101 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // ---- TAB 1: Change Username ----
-    changeUsernameForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const newUsername = newUsernameInput.value.trim();
+    if (changeUsernameForm) {
+        changeUsernameForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!newUsernameInput) return;
+            const newUsername = newUsernameInput.value.trim();
 
-        if (!newUsername) {
-            showMessage(changeUsernameForm, 'Por favor, digite um nome de usuário válido.', true);
-            return;
-        }
-
-        if (newUsername.length < 2 || newUsername.length > 32) {
-            showMessage(changeUsernameForm, 'O nome de usuário deve ter entre 2 e 32 caracteres.', true);
-            return;
-        }
-
-        if (newUsername.toLowerCase() === currentDisplayName.toLowerCase()) {
-            showMessage(changeUsernameForm, 'O nome de usuário inserido é o mesmo que você já está usando.', true);
-            return;
-        }
-
-        setButtonLoading(saveUsernameBtn, true);
-
-        try {
-            if (currentUser) {
-                // Check if username already exists in public.profiles table (case-insensitive)
-                const { data: existingUser, error: queryErr } = await supabaseClient
-                    .from('profiles')
-                    .select('id')
-                    .ilike('username', newUsername)
-                    .neq('id', currentUser.id)
-                    .maybeSingle();
-
-                if (queryErr) {
-                    console.warn('Profile search warning:', queryErr);
-                }
-
-                if (existingUser) {
-                    setButtonLoading(saveUsernameBtn, false);
-                    showMessage(changeUsernameForm, 'Este nome de usuário já está em uso por outra conta. Por favor, escolha outro.', true);
-                    return;
-                }
-
-                // 1. Update public.profiles
-                const { error: profileErr } = await supabaseClient
-                    .from('profiles')
-                    .update({ 
-                        username: newUsername,
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id', currentUser.id);
-
-                if (profileErr) {
-                    console.error('Update profiles error:', profileErr);
-                    setButtonLoading(saveUsernameBtn, false);
-                    showMessage(changeUsernameForm, 'Erro ao salvar alterações no perfil: ' + profileErr.message, true);
-                    return;
-                }
-
-                // 2. Update Auth metadata
-                await supabaseClient.auth.updateUser({
-                    data: {
-                        username: newUsername,
-                        display_name: newUsername
-                    }
-                });
+            if (!newUsername) {
+                showMessage(changeUsernameForm, 'Por favor, digite um nome de usuário válido.', true);
+                return;
             }
 
-            // 3. Update localStorage
-            localStorage.setItem('concord_username', newUsername);
-            localStorage.setItem('concord_username_v1', newUsername);
-            currentDisplayName = newUsername;
+            if (newUsername.length < 2 || newUsername.length > 32) {
+                showMessage(changeUsernameForm, 'O nome de usuário deve ter entre 2 e 32 caracteres.', true);
+                return;
+            }
 
-            // 4. Update UI
-            if (profileDisplayName) profileDisplayName.textContent = newUsername;
-            if (profileAvatar) profileAvatar.textContent = getInitials(newUsername);
-            setButtonLoading(saveUsernameBtn, false);
+            if (newUsername.toLowerCase() === currentDisplayName.toLowerCase()) {
+                showMessage(changeUsernameForm, 'O nome de usuário inserido é o mesmo que você já está usando.', true);
+                return;
+            }
 
-            showMessage(changeUsernameForm, `Nome de usuário alterado com sucesso para "${newUsername}"!`, false);
+            if (saveUsernameBtn) setButtonLoading(saveUsernameBtn, true);
 
-        } catch (err) {
-            console.error('Error updating username:', err);
-            setButtonLoading(saveUsernameBtn, false);
-            showMessage(changeUsernameForm, 'Erro de conexão ao salvar: ' + (err.message || 'Tente novamente.'), true);
-        }
-    });
+            try {
+                if (currentUser) {
+                    // Check if username already exists in public.profiles table (case-insensitive)
+                    const { data: existingUser, error: queryErr } = await supabaseClient
+                        .from('profiles')
+                        .select('id')
+                        .ilike('username', newUsername)
+                        .neq('id', currentUser.id)
+                        .maybeSingle();
+
+                    if (queryErr) {
+                        console.warn('Profile search warning:', queryErr);
+                    }
+
+                    if (existingUser) {
+                        if (saveUsernameBtn) setButtonLoading(saveUsernameBtn, false);
+                        showMessage(changeUsernameForm, 'Este nome de usuário já está em uso por outra conta. Por favor, escolha outro.', true);
+                        return;
+                    }
+
+                    const currentAvatar = localStorage.getItem('concord_avatar_url');
+
+                    // 1. Update public.profiles
+                    const { error: profileErr } = await supabaseClient
+                        .from('profiles')
+                        .update({ 
+                            username: newUsername,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', currentUser.id);
+
+                    if (profileErr) {
+                        console.error('Update profiles error:', profileErr);
+                        if (saveUsernameBtn) setButtonLoading(saveUsernameBtn, false);
+                        showMessage(changeUsernameForm, 'Erro ao salvar alterações no perfil: ' + profileErr.message, true);
+                        return;
+                    }
+
+                    // 2. Update Auth metadata
+                    await supabaseClient.auth.updateUser({
+                        data: {
+                            username: newUsername,
+                            display_name: newUsername,
+                            ...(currentAvatar ? { avatar_url: currentAvatar } : {})
+                        }
+                    });
+                }
+
+                // 3. Update localStorage
+                localStorage.setItem('concord_username', newUsername);
+                localStorage.setItem('concord_username_v1', newUsername);
+                currentDisplayName = newUsername;
+
+                // 4. Update UI
+                if (profileDisplayName) profileDisplayName.textContent = newUsername;
+                const currentAvatar = localStorage.getItem('concord_avatar_url');
+                if (currentAvatar && profileAvatar) {
+                    profileAvatar.innerHTML = `<img src="${currentAvatar}" alt="${newUsername}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;">`;
+                } else if (profileAvatar) {
+                    profileAvatar.textContent = getInitials(newUsername);
+                }
+                if (saveUsernameBtn) setButtonLoading(saveUsernameBtn, false);
+
+                showMessage(changeUsernameForm, `Nome de usuário alterado com sucesso para "${newUsername}"!`, false);
+
+            } catch (err) {
+                console.error('Error updating username:', err);
+                if (saveUsernameBtn) setButtonLoading(saveUsernameBtn, false);
+                showMessage(changeUsernameForm, 'Erro de conexão ao salvar: ' + (err.message || 'Tente novamente.'), true);
+            }
+        });
+    }
 
     // ---- TAB 2: Send Password Reset Email ----
     async function handleSendResetEmail(btn) {

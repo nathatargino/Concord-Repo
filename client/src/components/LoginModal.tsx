@@ -48,7 +48,8 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
             .eq('id', user.id)
             .maybeSingle();
 
-          const avatar = profile?.avatar_url || user.user_metadata?.avatar_url;
+          const localAvatar = localStorage.getItem('concord_avatar_url');
+          const avatar = profile?.avatar_url || user.user_metadata?.avatar_url || localAvatar;
           if (avatar) {
             localStorage.setItem('concord_avatar_url', avatar);
             useAppStore.getState().setMyAvatarUrl(avatar);
@@ -308,7 +309,8 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
             .eq('id', data.user.id)
             .maybeSingle();
 
-          const avatar = profile?.avatar_url || data.user.user_metadata?.avatar_url;
+          const localAvatar = localStorage.getItem('concord_avatar_url');
+          const avatar = profile?.avatar_url || data.user.user_metadata?.avatar_url || localAvatar;
           if (avatar) {
             localStorage.setItem('concord_avatar_url', avatar);
             useAppStore.getState().setMyAvatarUrl(avatar);
@@ -358,11 +360,16 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
 
     try {
       const cleanUsername = username.trim();
+      const localAvatar = localStorage.getItem('concord_avatar_url') || useAppStore.getState().myAvatarUrl;
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password: password,
         options: {
-          data: { username: cleanUsername },
+          data: { 
+            username: cleanUsername,
+            display_name: cleanUsername,
+            ...(localAvatar ? { avatar_url: localAvatar } : {}),
+          },
         },
       });
 
@@ -372,13 +379,14 @@ export const LoginModal: React.FC<Props> = ({ onLogin, initialError, onClose, in
         await supabase.from('profiles').upsert({
           id: data.user.id,
           username: cleanUsername,
+          avatar_url: localAvatar || null,
           updated_at: new Date().toISOString(),
         });
       }
 
       localStorage.setItem('concord_username', cleanUsername);
       localStorage.setItem('concord_username_v1', cleanUsername);
-      savePrefsToElectron({ concord_username: cleanUsername });
+      savePrefsToElectron({ concord_username: cleanUsername, concord_avatar_url: localAvatar || '' });
       toast.success('Conta criada com sucesso! Conectando...');
       onLogin(cleanUsername);
     } catch (err: any) {

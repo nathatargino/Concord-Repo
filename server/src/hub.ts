@@ -61,6 +61,22 @@ const codeToRoomId = new Map<string, string>(); // reverse lookup
 const screenViewersMap = new Map<string, Map<string, string>>(); // broadcasterId -> (viewerSocketId -> viewerName)
 const pendingFriendRequests = new Map<string, any[]>(); // targetIdentifier -> list of pending request payloads
 const pendingDirectMessages = new Map<string, any[]>(); // targetIdentifier -> list of pending DM payloads
+const emptyRoomCleanupTimers = new Map<string, NodeJS.Timeout>(); // roomId -> timeout for destroying empty rooms
+const pendingDisconnects = new Map<string, NodeJS.Timeout>(); // socketId -> grace period timer for temporary disconnects
+
+function findTargetSocket(io: IoServer, targetId: string, senderSocketId: string): IoSocket | null {
+  const direct = io.sockets.sockets.get(targetId);
+  if (direct) return direct;
+  const cleanT = (targetId || '').trim().toLowerCase().replace(/^@/, '');
+  for (const [sId, s] of io.sockets.sockets) {
+    if (sId === senderSocketId) continue;
+    const sName = (s.data.user?.name || '').trim().toLowerCase().replace(/^@/, '');
+    if (s.data.userId === targetId || s.data.persistentId === targetId || (cleanT && sName === cleanT)) {
+      return s;
+    }
+  }
+  return null;
+}
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -145,6 +161,11 @@ export function getRoom(idOrCode: string): RoomState | null {
 }
 
 export function destroyRoom(roomId: string) {
+  const pendingTimer = emptyRoomCleanupTimers.get(roomId);
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    emptyRoomCleanupTimers.delete(roomId);
+  }
   const room = rooms.get(roomId);
   if (!room) return;
   // Permanent servers should NEVER be destroyed automatically
@@ -161,6 +182,11 @@ export function forceDestroyServer(roomIdOrCode: string) {
     if (id) targetRoom = rooms.get(id);
   }
   if (!targetRoom) return;
+  const pendingTimer = emptyRoomCleanupTimers.get(targetRoom.id);
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    emptyRoomCleanupTimers.delete(targetRoom.id);
+  }
   codeToRoomId.delete(targetRoom.code);
   rooms.delete(targetRoom.id);
   console.log(`[Room] Force destroyed empty server ${targetRoom.id} (${targetRoom.code})`);
@@ -271,6 +297,25 @@ function playNextInQueue(io: IoServer, room: RoomState) {
 export function registerHub(io: IoServer, supabaseClient?: any) {
   io.on('connection', (socket: IoSocket) => {
     console.log(`[+] Connected: ${socket.id}`);
+
+    if (socket.recovered) {
+      console.log(`[+] Connection state recovered for socket: ${socket.id}`);
+      const pending = pendingDisconnects.get(socket.id);
+      if (pending) {
+        clearTimeout(pending);
+        pendingDisconnects.delete(socket.id);
+        console.log(`[Socket] Reconnection within grace period for ${socket.id}`);
+      }
+      const room = getCurrentRoom();
+      if (room) {
+        const emptyTimer = emptyRoomCleanupTimers.get(room.id);
+        if (emptyTimer) {
+          clearTimeout(emptyTimer);
+          emptyRoomCleanupTimers.delete(room.id);
+        }
+        broadcastUserList(io, room);
+      }
+    }
 
     let user: UserInfo = { id: socket.id, name: '', avatarUrl: null, inVoice: false, screenSharing: false, micMuted: false, callMuted: false };
     socket.data.user = user;
@@ -492,11 +537,35 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       
       socket.join(room.id);
 
-      // Limpar socket antigo/fantasma da mesma máquina/dispositivo (ex: F5 ou reconexão)
+      // Cancelar qualquer timer de destruição agendada para esta sala
+      const emptyTimer = emptyRoomCleanupTimers.get(room.id);
+      if (emptyTimer) {
+        clearTimeout(emptyTimer);
+        emptyRoomCleanupTimers.delete(room.id);
+        console.log(`[Room] Cancelada destruição da sala temporária ${room.id} (usuário re-entrou)`);
+      }
+
+      // Limpar socket antigo/fantasma da mesma máquina/dispositivo (ex: F5 ou reconexão sob alta latência)
       if (persistentId) {
         for (const [existingSocketId, existingUser] of room.users.entries()) {
           if (existingSocketId !== socket.id && existingUser.persistentId === persistentId) {
             console.log(`[Room] Limpando socket fantasma anterior ${existingSocketId} para o persistentId ${persistentId}`);
+            const pending = pendingDisconnects.get(existingSocketId);
+            if (pending) {
+              clearTimeout(pending);
+              pendingDisconnects.delete(existingSocketId);
+            }
+            if (existingUser.inVoice || room.voiceUsers.has(existingSocketId)) {
+              handleLeaveVoice(existingSocketId, io, existingUser, room);
+            }
+            screenViewersMap.delete(existingSocketId);
+            for (const [broadcasterId, viewers] of screenViewersMap) {
+              if (viewers.delete(existingSocketId)) {
+                const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
+                io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+                if (viewers.size === 0) screenViewersMap.delete(broadcasterId);
+              }
+            }
             room.users.delete(existingSocketId);
             room.voiceUsers.delete(existingSocketId);
             room.screenSharingUsers.delete(existingSocketId);
@@ -758,6 +827,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (!k) continue;
         const existing = pendingFriendRequests.get(k) || [];
         if (!existing.some(r => r.id === payload.id || r.senderName === payload.senderName)) {
+          if (existing.length >= 50) existing.shift();
           existing.push(payload);
           pendingFriendRequests.set(k, existing);
         }
@@ -988,6 +1058,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         for (const k of pendingKeys) {
           if (!k) continue;
           const existing = pendingDirectMessages.get(k) || [];
+          if (existing.length >= 50) existing.shift();
           existing.push(payload);
           pendingDirectMessages.set(k, existing);
         }
@@ -1488,18 +1559,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
     // ─── WEBRTC SIGNALING ──────────────────────────────────────────
     socket.on('send_offer', (targetId: string, offer: RTCSessionDescriptionInit) => {
-      let targetSocket = io.sockets.sockets.get(targetId);
-      if (!targetSocket) {
-        const cleanT = (targetId || '').trim().toLowerCase().replace(/^@/, '');
-        for (const [sId, s] of io.sockets.sockets) {
-          if (sId === socket.id) continue;
-          const sName = (s.data.user?.name || '').trim().toLowerCase().replace(/^@/, '');
-          if (s.data.userId === targetId || s.data.persistentId === targetId || (cleanT && sName === cleanT)) {
-            targetSocket = s;
-            break;
-          }
-        }
-      }
+      const targetSocket = findTargetSocket(io, targetId, socket.id);
       if (targetSocket) {
         targetSocket.emit('receive_offer', socket.id, offer);
       } else {
@@ -1508,11 +1568,21 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     socket.on('send_answer', (targetId: string, answer: RTCSessionDescriptionInit) => {
-      io.to(targetId).emit('receive_answer', socket.id, answer);
+      const targetSocket = findTargetSocket(io, targetId, socket.id);
+      if (targetSocket) {
+        targetSocket.emit('receive_answer', socket.id, answer);
+      } else {
+        io.to(targetId).emit('receive_answer', socket.id, answer);
+      }
     });
 
     socket.on('send_ice', (targetId: string, candidate: RTCIceCandidateInit) => {
-      io.to(targetId).emit('receive_ice', socket.id, candidate);
+      const targetSocket = findTargetSocket(io, targetId, socket.id);
+      if (targetSocket) {
+        targetSocket.emit('receive_ice', socket.id, candidate);
+      } else {
+        io.to(targetId).emit('receive_ice', socket.id, candidate);
+      }
     });
 
     // ─── SCREEN SHARE ──────────────────────────────────────────────
@@ -1709,57 +1779,83 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── DISCONNECT ────────────────────────────────────────────────
-    socket.on('disconnect', () => {
-      console.log(`[-] Disconnected: ${socket.id}`);
-      if (socket.data.voiceRoomId) {
-        const vRoom = rooms.get(socket.data.voiceRoomId);
-        if (vRoom) {
-          handleLeaveVoice(socket, io, user, vRoom);
-          vRoom.users.delete(socket.id);
+    socket.on('disconnect', (reason) => {
+      console.log(`[-] Disconnected: ${socket.id} (reason: ${reason})`);
+
+      const isCleanDisconnect = reason === 'client namespace disconnect' || reason === 'server namespace disconnect';
+      const gracePeriodMs = isCleanDisconnect ? 0 : 8000; // 8s grace period for ping timeout / high latency network drops
+
+      const executeDisconnect = () => {
+        pendingDisconnects.delete(socket.id);
+
+        if (socket.data.voiceRoomId) {
+          const vRoom = rooms.get(socket.data.voiceRoomId);
+          if (vRoom) {
+            handleLeaveVoice(socket.id, io, user, vRoom);
+            vRoom.users.delete(socket.id);
+          }
         }
-      }
-      const room = getCurrentRoom();
-      if (!room) return;
+        const room = getCurrentRoom();
+        if (!room) return;
 
-      handleLeaveVoice(socket, io, user, room);
-      room.users.delete(socket.id);
+        handleLeaveVoice(socket.id, io, user, room);
+        room.users.delete(socket.id);
 
-      // Limpar visualizações de tela deste socket
-      screenViewersMap.delete(socket.id);
-      for (const [broadcasterId, viewers] of screenViewersMap) {
-        if (viewers.delete(socket.id)) {
-          const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
-          io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+        // Limpar visualizações de tela deste socket
+        screenViewersMap.delete(socket.id);
+        for (const [broadcasterId, viewers] of screenViewersMap) {
+          if (viewers.delete(socket.id)) {
+            const viewerList = Array.from(viewers.entries()).map(([id, name]) => ({ id, name }));
+            io.to(broadcasterId).emit('screen_viewers_updated', { broadcasterId, viewers: viewerList });
+            if (viewers.size === 0) screenViewersMap.delete(broadcasterId);
+          }
         }
-      }
 
-      if (room.users.size === 0 && !room.isServer) {
-        destroyRoom(room.id);
+        if (room.users.size === 0 && !room.isServer) {
+          if (!emptyRoomCleanupTimers.has(room.id)) {
+            const timer = setTimeout(() => {
+              emptyRoomCleanupTimers.delete(room.id);
+              const r = rooms.get(room.id);
+              if (r && r.users.size === 0 && !r.isServer) {
+                destroyRoom(room.id);
+              }
+            }, 60000); // 60s grace period before destroying empty temporary room
+            emptyRoomCleanupTimers.set(room.id, timer);
+          }
+        } else {
+          handleAdminReassignment(socket.id, io, room);
+          broadcastUserList(io, room);
+        }
+      };
+
+      if (gracePeriodMs > 0) {
+        const timer = setTimeout(executeDisconnect, gracePeriodMs);
+        pendingDisconnects.set(socket.id, timer);
       } else {
-        handleAdminReassignment(socket.id, io, room);
-        broadcastUserList(io, room);
+        executeDisconnect();
       }
     });
   });
 }
 
 function handleLeaveVoice(
-  socket: IoSocket,
+  socketOrId: IoSocket | string,
   io: IoServer,
   user: UserInfo,
   room: RoomState
 ) {
-  if (!user.inVoice) return;
+  const socketId = typeof socketOrId === 'string' ? socketOrId : socketOrId.id;
+  if (!user.inVoice && !room.voiceUsers.has(socketId)) return;
   user.inVoice = false;
-  room.voiceUsers.delete(socket.id);
+  room.voiceUsers.delete(socketId);
 
-  if (user.screenSharing) {
+  if (user.screenSharing || room.screenSharingUsers.has(socketId)) {
     user.screenSharing = false;
-    room.screenSharingUsers.delete(socket.id);
-    socket.to(room.id).emit('user_stopped_screen_share', socket.id);
+    room.screenSharingUsers.delete(socketId);
+    io.to(room.id).emit('user_stopped_screen_share', socketId);
   }
 
-  socket.to(room.id).emit('user_left_voice', socket.id);
+  io.to(room.id).emit('user_left_voice', socketId);
   broadcastUserList(io, room);
 
   if (room.voiceUsers.size === 0) {
@@ -1773,7 +1869,7 @@ function handleLeaveVoice(
       room.watchSession = null;
       io.to(room.id).emit('watch_session_sync', null);
     }
-  } else if (room.watchSession && room.watchSession.startedBy === socket.id) {
+  } else if (room.watchSession && room.watchSession.startedBy === socketId) {
     const nextVoiceUser = Array.from(room.voiceUsers)[0];
     room.watchSession.startedBy = nextVoiceUser;
     const u = room.users.get(nextVoiceUser);

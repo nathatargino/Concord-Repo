@@ -343,3 +343,32 @@ CREATE POLICY "Users can remove their cloud recent rooms."
 CREATE INDEX IF NOT EXISTS idx_user_recent_rooms_user ON public.user_recent_rooms(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_recent_rooms_expires ON public.user_recent_rooms(expires_at);
 
+
+-- 11. SUPABASE REALTIME REPLICATION (Enable real-time change events)
+-- Tables participating in Supabase Realtime subscriptions (postgres_changes)
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.server_members;
+EXCEPTION WHEN OTHERS THEN
+    -- Ignore if already in publication or permission restricted
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
+EXCEPTION WHEN OTHERS THEN
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.friendships;
+EXCEPTION WHEN OTHERS THEN
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+EXCEPTION WHEN OTHERS THEN
+END $$;
+
+

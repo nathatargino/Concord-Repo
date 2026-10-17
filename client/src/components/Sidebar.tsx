@@ -207,6 +207,38 @@ export const Sidebar: React.FC<Props> = ({
       }
     }
   }, [myAvatarUrl, effectiveMyAvatar, setMyAvatarUrl]);
+
+  useEffect(() => {
+    const syncAvatarFromCloud = async () => {
+      try {
+        const local = localStorage.getItem('concord_avatar_url');
+        if (!myAvatarUrl || !local) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const meta = user.user_metadata || {};
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('avatar_url')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            const cloudAvatar = profile?.avatar_url || meta.avatar_url;
+            if (cloudAvatar) {
+              setMyAvatarUrl(cloudAvatar);
+              try {
+                localStorage.setItem('concord_avatar_url', cloudAvatar);
+              } catch (e) {
+                console.warn('Erro ao salvar concord_avatar_url no localStorage:', e);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Erro ao sincronizar avatar do Supabase na Sidebar:', err);
+      }
+    };
+    syncAvatarFromCloud();
+  }, [myAvatarUrl, setMyAvatarUrl]);
   // Modal para gerenciamento de cargos (Nome + Emoji)
   const [manageRoleTarget, setManageRoleTarget] = useState<{
     userId: string;
@@ -1434,14 +1466,14 @@ export const Sidebar: React.FC<Props> = ({
               if (room?.id) {
                 removeLocalServerMember(room.id, prevName);
               }
-              setServerMembers((prev) =>
-                prev.map((m) =>
-                  m.username.toLowerCase() === prevName.toLowerCase()
-                    ? { ...m, username: newName, avatarUrl: newAvatar ?? m.avatarUrl }
-                    : m
-                )
-              );
             }
+            setServerMembers((prev) =>
+              prev.map((m) =>
+                m.username.toLowerCase() === (prevName || newName).toLowerCase()
+                  ? { ...m, username: newName, avatarUrl: newAvatar !== undefined ? (newAvatar || null) : m.avatarUrl }
+                  : m
+              )
+            );
             if (onUpdateProfile) {
               onUpdateProfile(newName, newAvatar || null);
             }

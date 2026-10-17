@@ -1,63 +1,97 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+export interface ElectronAPI {
+    getAppVersion: () => Promise<string>;
+    isWindowsStore?: () => Promise<boolean>;
+    checkForUpdates: () => void;
+    installUpdate?: () => void;
+    onUpdateDownloaded?: (callback: (version: string) => void) => () => void;
+    onUpdateMessage: (callback: (message: string) => void) => () => void;
+    minimize: () => void;
+    maximize: () => void;
+    close: () => void;
+    copyToClipboard?: (text: string) => void;
+    copyImageToClipboard?: (url: string) => Promise<boolean>;
+    forceUnmute?: () => void;
+    onDeepLink: (callback: (url: string) => void) => () => void;
+    getInitialDeepLink?: () => Promise<string | null>;
+    openBase64InBrowser?: (data: string) => void;
+    savePreferences?: (prefs: Record<string, string>) => void;
+    loadPreferences?: () => Promise<Record<string, string>>;
+    saveSecureToken?: (key: string, value: string) => Promise<boolean>;
+    loadSecureToken?: (key: string) => Promise<string | null>;
+    toggleMiniPlayer?: (isMini: boolean) => void;
+    openPipWindow?: (initialState: any) => void;
+    closePipWindow?: () => void;
+    movePipWindow?: (deltaX: number, deltaY: number) => void;
+    sendPipAction?: (action: string, payload?: any) => void;
+    sendPipSync?: (state: any) => void;
+    onPipAction?: (callback: (action: string, payload?: any) => void) => () => void;
+    onPipSync?: (callback: (state: any) => void) => () => void;
+    onPipClosed?: (callback: () => void) => () => void;
+    /** Force YouTube stream quality via Electron main process (bypasses cross-origin) */
+    setYouTubeQuality?: (quality: string) => Promise<boolean>;
+    getYouTubeQualities?: () => Promise<string[]>;
+    /** Widevine Streaming (Netflix / Prime Video) */
+    openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
+    resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
+    closeStreamingView?: (service?: 'netflix' | 'prime') => void;
+    setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime') => void;
+    sendStreamingCommand?: (command: string, payload?: any) => void;
+    streamingCommand?: (command: string, payload?: any) => void;
+    setStreamingVolume?: (volume: number) => void;
+    setModalActive?: (active: boolean) => void;
+    onStreamingEvent?: (callback: (event: any) => void) => () => void;
+    syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => void;
+    navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
+    /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
+    navigateToTitle?: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => void;
+    /** Screen Share Source Picker */
+    getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
+    selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
+    /** Native Windows Notifications */
+    showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) => void;
+    openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
+    cancelGoogleAuth?: () => void;
+}
+
 declare global {
     interface Window {
-        electron: {
-            getAppVersion: () => Promise<string>;
-            isWindowsStore?: () => Promise<boolean>;
-            checkForUpdates: () => void;
-            installUpdate?: () => void;
-            onUpdateDownloaded?: (callback: (version: string) => void) => () => void;
-            onUpdateMessage: (callback: (message: string) => void) => () => void;
-            minimize: () => void;
-            maximize: () => void;
-            close: () => void;
-            copyToClipboard?: (text: string) => void;
-            forceUnmute?: () => void;
-            onDeepLink?: (callback: (url: string) => void) => () => void;
-            openBase64InBrowser?: (data: string) => void;
-            savePreferences?: (prefs: Record<string, string>) => void;
-            loadPreferences?: () => Promise<Record<string, string>>;
-            toggleMiniPlayer?: (isMini: boolean) => void;
-            openPipWindow?: (initialState: any) => void;
-            closePipWindow?: () => void;
-            movePipWindow?: (deltaX: number, deltaY: number) => void;
-            sendPipAction?: (action: string, payload?: any) => void;
-            sendPipSync?: (state: any) => void;
-            onPipAction?: (callback: (action: string, payload?: any) => void) => () => void;
-            onPipSync?: (callback: (state: any) => void) => () => void;
-            onPipClosed?: (callback: () => void) => () => void;
-            /** Force YouTube stream quality via Electron main process (bypasses cross-origin) */
-            setYouTubeQuality?: (quality: string) => Promise<boolean>;
-            getYouTubeQualities?: () => Promise<string[]>;
-            /** Widevine Streaming (Netflix / Prime Video) */
-            openStreamingView?: (options: { service: 'netflix' | 'prime'; url?: string; bounds: { x: number; y: number; width: number; height: number }; borderRadius?: number }) => Promise<void>;
-            resizeStreamingView?: (bounds: { x: number; y: number; width: number; height: number }) => void;
-            closeStreamingView?: (service?: 'netflix' | 'prime') => void;
-            setActiveMediaTab?: (tab: 'youtube' | 'netflix' | 'prime') => void;
-            sendStreamingCommand?: (command: string, payload?: any) => void;
-            streamingCommand?: (command: string, payload?: any) => void;
-            setStreamingVolume?: (volume: number) => void;
-            setModalActive?: (active: boolean) => void;
-            onStreamingEvent?: (callback: (event: any) => void) => () => void;
-            syncStreamingPlayback?: (data: { action: 'play' | 'pause' | 'seek'; positionSeconds?: number; service?: 'netflix' | 'prime'; autoDrift?: boolean }) => void;
-            navigateStreamingView?: (service: 'netflix' | 'prime', url: string) => void;
-            /** Navigate directly to a specific title inside the streaming view (Watch Party deep link) */
-            navigateToTitle?: (data: { service: 'netflix' | 'prime'; url: string; autoPlay?: boolean }) => void;
-            /** Screen Share Source Picker */
-            getScreenSources?: () => Promise<Array<{ id: string; name: string; thumbnail: string; appIcon?: string; isScreen: boolean }>>;
-            selectScreenSource?: (data: { sourceId: string; withAudio: boolean }) => Promise<boolean>;
-            /** Native Windows Notifications */
-            showNotification?: (options: { userName: string; message: string; roomName?: string; avatarUrl?: string | null; forceShow?: boolean }) => void;
-            openGoogleAuth?: (url: string) => Promise<{ success: boolean; url?: string; canceled?: boolean }>;
-            cancelGoogleAuth?: () => void;
-            saveSecureToken?: (key: string, value: string) => Promise<boolean>;
-            loadSecureToken?: (key: string) => Promise<string | null>;
-        }
+        electron: ElectronAPI;
+        electronAPI: ElectronAPI;
     }
 }
 
-contextBridge.exposeInMainWorld('electron', {
+// Global deep-link caching and pub/sub to guarantee zero missed events
+let cachedDeepLink: string | null = null;
+const deepLinkListeners = new Set<(url: string) => void>();
+
+ipcRenderer.on('deep-link', (_event: any, url: string) => {
+    cachedDeepLink = url;
+    for (const listener of deepLinkListeners) {
+        try {
+            listener(url);
+        } catch (err) {
+            console.error('[Preload] Error in onDeepLink listener:', err);
+        }
+    }
+});
+
+// Query initial deep link on startup if available in main process
+ipcRenderer.invoke('get-initial-deep-link').then((url: string | null) => {
+    if (url) {
+        cachedDeepLink = url;
+        for (const listener of deepLinkListeners) {
+            try {
+                listener(url);
+            } catch (err) {
+                console.error('[Preload] Error in onDeepLink listener:', err);
+            }
+        }
+    }
+}).catch(() => {});
+
+const electronBridge: ElectronAPI = {
     getAppVersion: () => ipcRenderer.invoke('get-app-version'),
     isWindowsStore: () => ipcRenderer.invoke('is-windows-store'),
     checkForUpdates: () => ipcRenderer.send('check-for-updates'),
@@ -83,12 +117,20 @@ contextBridge.exposeInMainWorld('electron', {
     copyImageToClipboard: (url: string) => ipcRenderer.invoke('copy-image-to-clipboard', url),
     forceUnmute: () => ipcRenderer.send('force-unmute'),
     onDeepLink: (callback: (url: string) => void) => {
-        const subscription = (_event: any, url: string) => callback(url);
-        ipcRenderer.on('deep-link', subscription);
+        deepLinkListeners.add(callback);
+        if (cachedDeepLink) {
+            const urlToDeliver = cachedDeepLink;
+            setTimeout(() => {
+                if (deepLinkListeners.has(callback)) {
+                    callback(urlToDeliver);
+                }
+            }, 0);
+        }
         return () => {
-            ipcRenderer.removeListener('deep-link', subscription);
+            deepLinkListeners.delete(callback);
         };
     },
+    getInitialDeepLink: () => ipcRenderer.invoke('get-initial-deep-link'),
     openBase64InBrowser: (data: string) => ipcRenderer.send('open-base64-in-browser', data),
     savePreferences: (prefs: Record<string, string>) => ipcRenderer.send('save-preferences', prefs),
     loadPreferences: () => ipcRenderer.invoke('load-preferences'),
@@ -139,4 +181,7 @@ contextBridge.exposeInMainWorld('electron', {
         ipcRenderer.send('show-chat-notification', options),
     openGoogleAuth: (url: string) => ipcRenderer.invoke('open-google-auth', url),
     cancelGoogleAuth: () => ipcRenderer.send('cancel-google-auth'),
-});
+};
+
+contextBridge.exposeInMainWorld('electron', electronBridge);
+contextBridge.exposeInMainWorld('electronAPI', electronBridge);

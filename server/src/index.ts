@@ -72,6 +72,14 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, InterServerEve
       credentials: true,
     },
     transports: ['websocket', 'polling'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    upgradeTimeout: 30000,
+    maxHttpBufferSize: 1e7,
+    connectionStateRecovery: {
+      maxDisconnectionDuration: 2 * 60 * 1000,
+      skipMiddlewares: true,
+    },
   }
 );
 

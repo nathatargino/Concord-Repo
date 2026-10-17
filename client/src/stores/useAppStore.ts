@@ -218,6 +218,7 @@ interface AppState {
   screenShareUserName: string | null;
   setScreenShare: (userId: string | null, userName?: string | null) => void;
   amSharing: boolean;
+  isScreenSharing: boolean;
   setAmSharing: (v: boolean) => void;
   screenViewers: Array<{ id: string; name: string }>;
   setScreenViewers: (viewers: Array<{ id: string; name: string }>) => void;
@@ -541,7 +542,8 @@ export const useAppStore = create<AppState>((set) => ({
   setScreenShare: (screenShareUserId, screenShareUserName = null) =>
     set({ screenShareUserId, screenShareUserName }),
   amSharing: false,
-  setAmSharing: (amSharing) => set({ amSharing }),
+  isScreenSharing: false,
+  setAmSharing: (amSharing) => set({ amSharing, isScreenSharing: amSharing }),
   screenViewers: [],
   setScreenViewers: (screenViewers) => set({ screenViewers }),
 
@@ -572,6 +574,7 @@ export const useAppStore = create<AppState>((set) => ({
       screenShareUserId: null,
       screenShareUserName: null,
       amSharing: false,
+      isScreenSharing: false,
       screenViewers: [],
     }),
 }));

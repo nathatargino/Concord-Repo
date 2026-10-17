@@ -56,6 +56,30 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
   const createPeerConnection = useCallback(
     (peerId: string): PeerConnection => {
+      const existing = peersRef.current.get(peerId);
+      if (existing) {
+        try {
+          existing.pc.onicecandidate = null;
+          existing.pc.ontrack = null;
+          existing.pc.onsignalingstatechange = null;
+          existing.pc.onnegotiationneeded = null;
+          existing.pc.oniceconnectionstatechange = null;
+          existing.pc.close();
+        } catch {}
+        if (existing.audioEl) {
+          existing.audioEl.pause();
+          existing.audioEl.srcObject = null;
+          existing.audioEl.remove();
+        }
+        if (existing.screenAudioEl) {
+          existing.screenAudioEl.pause();
+          existing.screenAudioEl.srcObject = null;
+          existing.screenAudioEl.remove();
+        }
+        peersRef.current.delete(peerId);
+        pendingIceRef.current.delete(peerId);
+      }
+
       const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
       const peerData: PeerConnection = { pc, makingOffer: false, ignoreOffer: false };
       peersRef.current.set(peerId, peerData);
@@ -298,7 +322,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
   const onUserLeftVoice = useCallback((userId: string) => {
     const peer = peersRef.current.get(userId);
     if (!peer) return;
-    peer.pc.close();
+    try {
+      peer.pc.onicecandidate = null;
+      peer.pc.ontrack = null;
+      peer.pc.onsignalingstatechange = null;
+      peer.pc.onnegotiationneeded = null;
+      peer.pc.oniceconnectionstatechange = null;
+      peer.pc.close();
+    } catch {}
     if (peer.audioEl) {
       peer.audioEl.pause();
       peer.audioEl.srcObject = null;
@@ -324,7 +355,7 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
       }
 
       const { pc } = peerData;
-      const myId = myIdRef.current;
+      const myId = useAppStore.getState().myId || myIdRef.current;
       const offerCollision =
         peerData.makingOffer || pc.signalingState !== 'stable';
       const polite = myId < senderId; // lexicographic tiebreak
@@ -414,7 +445,14 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
   const leaveVoice = useCallback(() => {
     inVoiceRef.current = false;
     peersRef.current.forEach((peer) => {
-      peer.pc.close();
+      try {
+        peer.pc.onicecandidate = null;
+        peer.pc.ontrack = null;
+        peer.pc.onsignalingstatechange = null;
+        peer.pc.onnegotiationneeded = null;
+        peer.pc.oniceconnectionstatechange = null;
+        peer.pc.close();
+      } catch {}
       if (peer.audioEl) {
         peer.audioEl.pause();
         peer.audioEl.srcObject = null;

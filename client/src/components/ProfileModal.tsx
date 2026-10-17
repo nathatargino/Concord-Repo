@@ -357,21 +357,58 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
       if (user) {
+        const meta = user.user_metadata || {};
+        const localAvatar = localStorage.getItem('concord_avatar_url');
+
         const { data } = await supabase
           .from('profiles')
           .select('username, avatar_url')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (data) {
-          if (data.username) setUsername(data.username);
-          if (data.avatar_url) setAvatarUrl(data.avatar_url);
+        const resolvedUsername = data?.username || meta.display_name || meta.username;
+        if (resolvedUsername) {
+          setUsername(resolvedUsername);
+        }
+
+        const resolvedAvatar = data?.avatar_url || meta.avatar_url || localAvatar || null;
+        if (resolvedAvatar) {
+          setAvatarUrl(resolvedAvatar);
+          localStorage.setItem('concord_avatar_url', resolvedAvatar);
+          useAppStore.getState().setMyAvatarUrl(resolvedAvatar);
+          savePrefsToElectron({ concord_avatar_url: resolvedAvatar });
+
+          // Sincroniza consistentemente em background caso alguma fonte remota esteja desatualizada
+          if (!data?.avatar_url && resolvedAvatar) {
+            try {
+              await supabase
+                .from('profiles')
+                .upsert({
+                  id: user.id,
+                  username: resolvedUsername || cleanMyName || 'Usuário',
+                  avatar_url: resolvedAvatar,
+                  updated_at: new Date().toISOString(),
+                });
+            } catch (err) {
+              console.warn('[ProfileModal] Erro ao sincronizar avatar em public.profiles:', err);
+            }
+          }
+
+          if (!meta.avatar_url && resolvedAvatar) {
+            try {
+              await supabase.auth.updateUser({
+                data: { avatar_url: resolvedAvatar },
+              });
+            } catch (err) {
+              console.warn('[ProfileModal] Erro ao sincronizar avatar em user_metadata:', err);
+            }
+          }
         }
       }
     } catch (err) {
       console.warn('Erro ao carregar perfil/sessão:', err);
     }
-  }, []);
+  }, [cleanMyName]);
 
   useEffect(() => {
     checkAuthAndProfile();
@@ -577,11 +614,27 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
             console.error('[Supabase] Erro ao persistir perfil no banco:', profileError);
           }
 
-          // Se estiver conectado em um servidor, atualiza o nome de membro pelo user_id
+          // Sincroniza consistentemente em auth.users.user_metadata
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                username: cleanName,
+                display_name: cleanName,
+                avatar_url: avatarUrl || null,
+              },
+            });
+          } catch (metaErr) {
+            console.warn('[Supabase] Erro ao sincronizar user_metadata:', metaErr);
+          }
+
+          // Se estiver conectado em um servidor, atualiza o nome e avatar de membro pelo user_id
           if (room?.id && (room.isServer || isServer)) {
             await supabase
               .from('server_members')
-              .update({ username: cleanName })
+              .update({
+                username: cleanName,
+                avatar_url: avatarUrl || null,
+              })
               .eq('server_id', room.id)
               .eq('user_id', user.id);
 
