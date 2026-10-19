@@ -20,6 +20,7 @@ import {
   toggleMuteDm,
   deleteDmConversation,
   deleteDmMessage,
+  isUuid,
 } from '../lib/supabase';
 import { playChimeSound } from '../hooks/useAudio';
 import { CrunchyrollIcon, NetflixIcon, PrimeIcon, YouTubeIcon } from './MusicPanel';
@@ -723,7 +724,7 @@ export function ChatPanel({
             }
             for (const item of prev) {
               const alreadyHas = list.some(
-                (l) => l.id === item.id || (l.content === item.content && l.senderName === item.senderName && Math.abs(new Date(l.createdAt).getTime() - new Date(item.createdAt).getTime()) < 2000)
+                (l) => l.id === item.id || (item.id?.startsWith?.('opt-') && l.content === item.content && l.senderName === item.senderName && Math.abs(new Date(l.createdAt).getTime() - new Date(item.createdAt).getTime()) < 5000)
               );
               if (!alreadyHas) {
                 map.set(item.id, item);
@@ -764,8 +765,8 @@ export function ChatPanel({
 
       if (matchesChat) {
         setDmMessages((prev) => {
-          if (prev.some(m => m.id === newMsg.id || (m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 1500))) {
-            return prev;
+          if (prev.some(m => m.id === newMsg.id || (m.id?.startsWith?.('opt-') && m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 5000))) {
+            return prev.map(m => (m.id?.startsWith?.('opt-') && m.content === newMsg.content && m.senderName === newMsg.senderName ? newMsg : m));
           }
           const next = [...prev, newMsg];
           next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -789,44 +790,46 @@ export function ChatPanel({
     window.addEventListener('concord:dm-message-deleted', handleDmMessageDeleted);
     window.addEventListener('concord:dm-deleted', handleDmDeleted);
 
-    // Supabase Realtime subscription para mensagens diretas instantâneas
+    // Supabase Realtime subscription para mensagens diretas instantâneas (apenas se for UUID válido)
     let dmChannel: any = null;
-    try {
-      dmChannel = supabase
-        .channel(`dm-chat-${activeDmChat.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'direct_messages',
-            filter: `chat_id=eq.${activeDmChat.id}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            const newMsg = payload.new as any;
-            if (!newMsg) return;
-            setDmMessages((prev) => {
-              if (prev.some((m) => m.id === newMsg.id)) return prev;
-              const formatted: DirectMessage = {
-                id: newMsg.id,
-                chatId: newMsg.chat_id,
-                senderId: newMsg.sender_id,
-                content: newMsg.content,
-                msgType: newMsg.msg_type || newMsg.type || 'text',
-                fileUrl: newMsg.file_url,
-                fileName: newMsg.file_name,
-                createdAt: newMsg.created_at || new Date().toISOString(),
-                senderName: newMsg.sender_name || (newMsg.sender_id === myId ? myName : activeDmChat.partnerName),
-                avatarUrl: newMsg.sender_avatar_url || newMsg.avatar_url || (newMsg.sender_id === myId ? myAvatarUrl : activeDmChat.partnerAvatarUrl),
-              };
-              return [...prev, formatted];
-            });
-          }
-        )
-        .subscribe();
-    } catch (err) {
-      console.warn('[Realtime] Erro ao subscrever canal de DM:', err);
+    if (isUuid(activeDmChat.id)) {
+      try {
+        dmChannel = supabase
+          .channel(`dm-chat-${activeDmChat.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'direct_messages',
+              filter: `chat_id=eq.${activeDmChat.id}`,
+            },
+            (payload) => {
+              if (!isMounted) return;
+              const newMsg = payload.new as any;
+              if (!newMsg) return;
+              setDmMessages((prev) => {
+                if (prev.some((m) => m.id === newMsg.id)) return prev;
+                const formatted: DirectMessage = {
+                  id: newMsg.id,
+                  chatId: newMsg.chat_id,
+                  senderId: newMsg.sender_id,
+                  content: newMsg.content,
+                  msgType: newMsg.msg_type || newMsg.type || 'text',
+                  fileUrl: newMsg.file_url,
+                  fileName: newMsg.file_name,
+                  createdAt: newMsg.created_at || new Date().toISOString(),
+                  senderName: newMsg.sender_name || (newMsg.sender_id === myId ? myName : activeDmChat.partnerName),
+                  avatarUrl: newMsg.sender_avatar_url || newMsg.avatar_url || (newMsg.sender_id === myId ? myAvatarUrl : activeDmChat.partnerAvatarUrl),
+                };
+                return [...prev, formatted];
+              });
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn('[Realtime] Erro ao subscrever canal de DM:', err);
+      }
     }
 
     return () => {
@@ -1355,36 +1358,6 @@ export function ChatPanel({
         toast.error('Você não pode enviar mensagens diretas para um usuário bloqueado.');
         return;
       }
-      if (!isPartnerFriend) {
-        toast.error('Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.', {
-          id: 'dm-not-friend-warning',
-          duration: 5000,
-          icon: '⛔',
-          style: {
-            background: '#dc2626',
-            color: '#ffffff',
-            fontWeight: 600,
-            fontSize: '14px',
-            borderRadius: '10px',
-            boxShadow: '0 8px 30px rgba(220, 38, 38, 0.5)',
-            border: '1px solid #ef4444',
-            padding: '12px 18px',
-          },
-        });
-
-        const errorMsg: DirectMessage = {
-          id: `sys-err-${Date.now()}`,
-          chatId: activeDmChat.id,
-          senderId: 'system',
-          senderName: 'Sistema',
-          avatarUrl: null,
-          content: 'Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.',
-          msgType: 'system_error' as any,
-          createdAt: new Date().toISOString(),
-        };
-        setDmMessages(prev => [...prev, errorMsg]);
-        return;
-      }
       let fileUrl = '';
       const isImage = stagedFile ? (stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name)) : false;
       const fileName = stagedFile?.file.name || (isImage ? 'imagem.png' : 'arquivo');
@@ -1409,7 +1382,7 @@ export function ChatPanel({
           createdAt: new Date().toISOString(),
         };
         setDmMessages(prev => [...prev, optimisticDm]);
-        sendDirectMessageToSupabase(activeDmChat.id, trimmed, 'text');
+        sendDirectMessageToSupabase(activeDmChat.id, trimmed, 'text', undefined, undefined, activeDmChat.partnerId, activeDmChat.partnerName);
         return;
       }
 
@@ -1437,7 +1410,7 @@ export function ChatPanel({
       }
 
       const messageContent = trimmed || (msgType === 'image' ? '📷 Imagem' : `📎 ${fileName}`);
-      sendDirectMessageToSupabase(activeDmChat.id, messageContent, msgType as any, fileUrl, fileName).then((created) => {
+      sendDirectMessageToSupabase(activeDmChat.id, messageContent, msgType as any, fileUrl, fileName, activeDmChat.partnerId, activeDmChat.partnerName).then((created) => {
         if (created) {
           setDmMessages(prev => [...prev, created]);
         }
@@ -2712,25 +2685,15 @@ export function ChatPanel({
                           Sessão da {platformLabel} não iniciada
                         </h3>
                         <p className={styles.streamingLauncherDesc}>
-                          Inicie a {platformLabel} no Concord com suporte a DRM Widevine para assistir seus animes, filmes e séries sem sair do app.
+                          Em breve você poderá assistir {platformLabel} com suporte a Watch Party diretamente no Concord.
                         </p>
                         <button
                           className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : currentService === 'prime' ? styles.streamingLauncherBtnPrime : styles.streamingLauncherBtnCrunchyroll}`}
-                          onClick={() => {
-                            if (!inVoice) {
-                              toast.error(`Você precisa estar em uma call de voz para assistir ${platformLabel}.`);
-                              return;
-                            }
-                            setActiveStreaming({ service: currentService as any });
-                            (setActiveMediaTab as any)(currentService);
-                            (setStreamingSession as any)(currentService, true);
-                            const electron = (window as any).electron;
-                            if (electron?.setActiveMediaTab) {
-                              electron.setActiveMediaTab(currentService);
-                            }
-                          }}
+                          disabled={true}
+                          style={{ opacity: 0.6, cursor: 'not-allowed', pointerEvents: 'none' }}
+                          title="Em breve"
                         >
-                          <span>▶</span> Abrir {platformLabel} no Concord
+                          <i className="fa-solid fa-clock" style={{ marginRight: '6px' }}></i> Em Breve
                         </button>
                       </div>
                     );

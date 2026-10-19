@@ -705,6 +705,11 @@ export default function App() {
       return;
     }
 
+    // Se já estiver em uma call de voz ao entrar em outra, encerra a chamada anterior e pausa o YouTube antigo
+    if (store.inVoice) {
+      handleLeaveVoice();
+    }
+
     try {
       const inputDeviceId = useAudioStore.getState().selectedAudioInputId;
       const { noiseSuppression, noiseSuppressionMode } = useAudioStore.getState();
@@ -846,72 +851,78 @@ export default function App() {
         />
 
         {/* ── 2. VIEWPORT PRINCIPAL (HOME HUB OU CANAL/CALL) ── */}
-        {isHome && store.homeTab !== 'dm' ? (
-          <div className={styles.homeSection}>
-            <HomeHub />
-          </div>
-        ) : (
-          <>
-            <div className={styles.chatSection}>
-              <ChatPanel
-                onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
-                  socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
-                }}
-                onReaction={(messageId, emoji) => {
-                  socket.emit('message_reaction' as any, messageId, emoji);
-                }}
-                onMusicAction={(action) => {
-                  socket.emit('music_action', action);
-                }}
-                onMusicSeek={(time) => {
-                  socket.emit('music_seek', time);
-                  yt.seekTo(time);
-                }}
-                getYtCurrentTime={yt.getCurrentTime}
-                getYtDuration={yt.getDuration}
-                onSetCC={yt.setCC}
-                onSetQuality={yt.setQuality}
-                getYtAvailableQualities={yt.getAvailableQualities}
-                getYtQuality={yt.getQuality}
-                onWatchSessionStart={(data) => {
-                  socket.emit('watch_session_start', data);
-                }}
-                onWatchSessionAction={(data) => {
-                  socket.emit('watch_session_action', data);
-                }}
-                onWatchSessionHeartbeat={(data) => {
-                  socket.emit('watch_session_heartbeat', data);
-                }}
-                onWatchSessionEnd={() => {
-                  socket.emit('watch_session_end');
-                }}
-              />
-            </div>
+        <div
+          className={styles.homeSection}
+          style={{ display: isHome && store.homeTab !== 'dm' ? 'flex' : 'none' }}
+        >
+          <HomeHub />
+        </div>
 
-            {!isHome && (
-              <div className={styles.sidePanels}>
-                <MusicPanel
-                  onRequestMusic={(url, title, playNow) => {
-                    if (!store.inVoice) {
-                      notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
-                      return;
-                    }
-                    socket.emit('request_music', url, title, playNow);
-                  }}
-                  onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
-                  onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
-                  onWatchSessionStart={(data) => socket.emit('watch_session_start', data)}
-                  inVoice={store.inVoice}
-                />
-                <AudioControls onUnlockAudio={yt.unlock} />
-                <BroadcasterScreenPanel
-                  onStopSharing={screenShare.stopScreenShare}
-                  onChangeSharing={screenShare.changeScreenShare}
-                  localStream={screenShare.streamRef.current}
-                />
-              </div>
-            )}
-          </>
+        <div
+          className={styles.chatSection}
+          style={
+            isHome && store.homeTab !== 'dm'
+              ? { position: 'absolute', top: '-9999px', left: '-9999px', width: '1px', height: '1px', opacity: 0, pointerEvents: 'none', overflow: 'hidden' }
+              : { display: 'flex' }
+          }
+        >
+          <ChatPanel
+            onSendMessage={(msg, type, url, filename, channelId, avatarUrl) => {
+              socket.emit('send_message', msg, type, url, filename, channelId || store.activeChannelId, avatarUrl ?? store.myAvatarUrl ?? null);
+            }}
+            onReaction={(messageId, emoji) => {
+              socket.emit('message_reaction' as any, messageId, emoji);
+            }}
+            onMusicAction={(action) => {
+              socket.emit('music_action', action);
+            }}
+            onMusicSeek={(time) => {
+              socket.emit('music_seek', time);
+              yt.seekTo(time);
+            }}
+            getYtCurrentTime={yt.getCurrentTime}
+            getYtDuration={yt.getDuration}
+            onSetCC={yt.setCC}
+            onSetQuality={yt.setQuality}
+            getYtAvailableQualities={yt.getAvailableQualities}
+            getYtQuality={yt.getQuality}
+            onWatchSessionStart={(data) => {
+              socket.emit('watch_session_start', data);
+            }}
+            onWatchSessionAction={(data) => {
+              socket.emit('watch_session_action', data);
+            }}
+            onWatchSessionHeartbeat={(data) => {
+              socket.emit('watch_session_heartbeat', data);
+            }}
+            onWatchSessionEnd={() => {
+              socket.emit('watch_session_end');
+            }}
+          />
+        </div>
+
+        {!isHome && (
+          <div className={styles.sidePanels}>
+            <MusicPanel
+              onRequestMusic={(url, title, playNow) => {
+                if (!store.inVoice) {
+                  notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
+                  return;
+                }
+                socket.emit('request_music', url, title, playNow);
+              }}
+              onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
+              onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
+              onWatchSessionStart={(data) => socket.emit('watch_session_start', data)}
+              inVoice={store.inVoice}
+            />
+            <AudioControls onUnlockAudio={yt.unlock} />
+            <BroadcasterScreenPanel
+              onStopSharing={screenShare.stopScreenShare}
+              onChangeSharing={screenShare.changeScreenShare}
+              localStream={screenShare.streamRef.current}
+            />
+          </div>
         )}
       </div>
 

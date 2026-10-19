@@ -95,7 +95,7 @@ export const InviteFriendsModal: React.FC<InviteFriendsModalProps> = ({
 
       const inviteMessage = `Ei! Te convidei para participar do servidor **${server.name}** no Concord! 🎉\n\nLink direto:\n${inviteUrl}\n\nCódigo do servidor: \`${server.code}\``;
 
-      const sentMsg = await sendDirectMessageToSupabase(chat.id, inviteMessage, 'text');
+      const sentMsg = await sendDirectMessageToSupabase(chat.id, inviteMessage, 'text', undefined, undefined, chat.partnerId, chat.partnerName || friend.friendName);
       if (sentMsg) {
         setSentFriendIds((prev) => new Set(prev).add(targetId));
         toast.success(`Convite enviado para ${friend.friendName}!`);

@@ -2101,14 +2101,14 @@ export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<D
     ...(partnerName ? [`concord_dm_user_${partnerName}`] : []),
   ];
 
-  let localList: DirectMessage[] = [];
+    let localList: DirectMessage[] = [];
   for (const k of keysToCheck) {
     try {
       const raw = localStorage.getItem(k);
       if (raw) {
         const parsed: DirectMessage[] = JSON.parse(raw);
         for (const item of parsed) {
-          if (!localList.some(m => m.id === item.id || (m.content === item.content && m.senderName === item.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(item.createdAt).getTime()) < 2000))) {
+          if (!localList.some(m => m.id === item.id || (m.id?.startsWith?.('opt-') && m.content === item.content && m.senderName === item.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(item.createdAt).getTime()) < 5000))) {
             localList.push(item);
           }
         }
@@ -2149,7 +2149,7 @@ export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<D
     for (const lm of localList) {
       const exists = merged.some(cm => 
         cm.id === lm.id || 
-        (cm.content === lm.content && cm.senderName === lm.senderName && Math.abs(new Date(cm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 3000)
+        (lm.id?.startsWith?.('opt-') && cm.content === lm.content && cm.senderName === lm.senderName && Math.abs(new Date(cm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
       );
       if (!exists) {
         merged.push(lm);
@@ -2171,14 +2171,33 @@ export async function sendDirectMessageToSupabase(
   content: string,
   msgType = 'text',
   fileUrl?: string,
-  fileName?: string
+  fileName?: string,
+  targetPartnerId?: string,
+  targetPartnerName?: string
 ): Promise<DirectMessage | null> {
   const currentName = cleanDisplayName(useAppStore.getState().myName || localStorage.getItem('concord_username') || 'Eu');
   const currentAvatar = useAppStore.getState().myAvatarUrl || null;
   const activeChat = useAppStore.getState().activeDmChat;
-  const partnerId = activeChat?.partnerId || (activeChat as any)?.other_user_id;
-  const rawPartner = activeChat?.partnerName || (activeChat as any)?.other_user_name;
+  
+  let partnerId = targetPartnerId || activeChat?.partnerId || (activeChat as any)?.other_user_id;
+  let rawPartner = targetPartnerName || activeChat?.partnerName || (activeChat as any)?.other_user_name;
   let partnerName = rawPartner ? cleanDisplayName(rawPartner) : undefined;
+
+  // Fallback para chats conhecidos caso partnerId ou partnerName estejam ausentes
+  if (!partnerName || !partnerId) {
+    try {
+      const rawChats = localStorage.getItem('concord_direct_chats');
+      const chatList = rawChats ? JSON.parse(rawChats) : [];
+      const found = chatList.find((c: any) => c.id === chatId);
+      if (found) {
+        if (!partnerId) partnerId = found.partnerId || found.other_user_id;
+        if (!partnerName && (found.partnerName || found.other_user_name)) {
+          partnerName = cleanDisplayName(found.partnerName || found.other_user_name);
+        }
+      }
+    } catch {}
+  }
+
   const myNameLower = currentName.toLowerCase();
   if (!partnerName && chatId.startsWith('dm-pair-')) {
     const parts = chatId.replace('dm-pair-', '').split('__');
@@ -2232,9 +2251,6 @@ export async function sendDirectMessageToSupabase(
     fileName,
     createdAt: localMsg.createdAt,
   };
-  if (sock) {
-    sock.emit('send_direct_message', dmPayload);
-  }
   broadcastDirectMessage(dmPayload);
 
   // 3. Persistir no Supabase se possível

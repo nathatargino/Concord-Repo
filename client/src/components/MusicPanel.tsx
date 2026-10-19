@@ -61,7 +61,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [trackTitle, setTrackTitle] = useState<string | null>(null);
 
-  const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const {
     musicQueue,
@@ -155,22 +154,6 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     const label = service === 'netflix' ? 'Netflix' : service === 'prime' ? 'Prime Video' : 'Crunchyroll';
     notifyInChat(`🎬 Watch Party iniciada na ${label}! Todos na call já podem clicar em Sincronizar.`);
     setShowVideoPlayer(true);
-  };
-
-  const handleOpenStreaming = async (service: 'netflix' | 'prime' | 'crunchyroll', targetUrl?: string) => {
-    if (!inVoice) {
-      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : service === 'prime' ? 'o Prime Video' : 'a Crunchyroll'}.`);
-      return;
-    }
-    setIsOpeningStreaming(true);
-    try {
-      setActiveStreaming({ service: service as any, url: targetUrl });
-      (setActiveMediaTab as any)(service);
-      (setStreamingSession as any)(service, true);
-      setShowVideoPlayer(true);
-    } finally {
-      setIsOpeningStreaming(false);
-    }
   };
 
   const handleCloseStreaming = () => {
@@ -551,24 +534,12 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                         ? styles.actionButtonPrime
                         : styles.actionButtonCrunchyroll
                     }
-                    onClick={() => {
-                      if (watchSession && watchSession.platform === selectedPlatform) {
-                        handleSyncAndWatch(watchSession);
-                      } else {
-                        handleOpenStreaming(selectedPlatform);
-                      }
-                    }}
-                    disabled={isOpeningStreaming || !inVoice}
-                    title={inVoice ? undefined : "Entre na call de voz para abrir streaming"}
+                    disabled={true}
+                    style={{ opacity: 0.6, cursor: 'not-allowed', pointerEvents: 'none' }}
+                    title="Em breve"
                   >
-                    <i className={isOpeningStreaming ? 'fa-solid fa-spinner fa-spin' : (watchSession && watchSession.platform === selectedPlatform ? 'fa-solid fa-arrows-rotate' : 'fa-solid fa-play')}></i>
-                    <span>
-                      {isOpeningStreaming
-                        ? 'Iniciando...'
-                        : (watchSession && watchSession.platform === selectedPlatform
-                            ? `Sincronizar e Assistir ${platformName}`
-                            : (selectedPlatform === 'netflix' ? 'Abrir Netflix' : selectedPlatform === 'prime' ? 'Abrir Prime Video' : 'Abrir Crunchyroll'))}
-                    </span>
+                    <i className="fa-solid fa-clock"></i>
+                    <span>Em Breve</span>
                   </button>
                 )}
 
