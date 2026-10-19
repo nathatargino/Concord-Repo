@@ -9,6 +9,7 @@ import {
   getMyServers, 
   getSavedServersSync,
   recordRecentServerAccess, 
+  cleanDisplayName,
   type Friend, 
   type DirectChat, 
   type SavedRoom, 
@@ -394,39 +395,102 @@ export const useAppStore = create<AppState>((set) => ({
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) =>
     set((s) => {
+      // 0. Se já existir uma mensagem com o EXATO mesmo id, não duplicar
+      if (msg.id && s.messages.some((m) => m.id === msg.id)) {
+        return s;
+      }
+
+      // Helper para normalizar nome de usuário
+      const normUser = (name?: string | null) => {
+        if (!name) return '';
+        const clean = cleanDisplayName(name).toLowerCase().trim();
+        return clean === 'você' || clean === 'eu' ? '__me__' : clean;
+      };
+
+      const mySaved = normUser(s.myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : ''));
+      const incomingUser = normUser(msg.userName);
+      const isMsgFromMe = incomingUser === '__me__' || (Boolean(mySaved) && incomingUser === mySaved);
+
+      // Helper para normalizar URL de anexo/imagem (compara caminho relativo final para bater localhost vs IP vs remote)
+      const isSameUrl = (urlA?: string | null, urlB?: string | null) => {
+        if (!urlA || !urlB) return false;
+        if (urlA === urlB) return true;
+        const cleanA = urlA.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+        const cleanB = urlB.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+        return Boolean(cleanA && cleanB && cleanA === cleanB);
+      };
+
       // 1. Reconciliação otimista: se a mensagem vinda do socket coincidir com uma mensagem otimista pendente
-      const optIndex = s.messages.findIndex(
-        (m) =>
-          m.id &&
-          m.id.startsWith('opt-') &&
-          m.userName === msg.userName &&
-          m.message === msg.message &&
-          m.channelId === msg.channelId &&
-          (m.url || '') === (msg.url || '')
-      );
+      const optIndex = s.messages.findIndex((m) => {
+        if (!m.id || !m.id.startsWith('opt-')) return false;
+
+        // Se ambos tiverem URL de anexo, o match por URL é prioritário e definitivo
+        if (m.url && msg.url && isSameUrl(m.url, msg.url)) {
+          return true;
+        }
+
+        // Match por canal
+        const mCh = m.channelId || 'ch-geral';
+        const msgCh = msg.channelId || 'ch-geral';
+        if (mCh !== msgCh) return false;
+
+        // Match de usuário (autor da mensagem otimista vs socket)
+        const mUser = normUser(m.userName);
+        const userMatches =
+          mUser === incomingUser ||
+          mUser === '__me__' ||
+          incomingUser === '__me__' ||
+          (isMsgFromMe && (mUser === '__me__' || mUser === mySaved));
+
+        if (!userMatches) return false;
+
+        // Match de conteúdo / filename
+        if (m.message && msg.message && m.message.trim() === msg.message.trim()) {
+          return true;
+        }
+        if (m.filename && msg.filename && m.filename === msg.filename) {
+          return true;
+        }
+
+        return false;
+      });
+
       if (optIndex !== -1) {
         const updated = [...s.messages];
         updated[optIndex] = { ...msg, id: msg.id || updated[optIndex].id };
         return { messages: updated };
       }
 
-      const last = s.messages[s.messages.length - 1];
-      // Só bloqueia duplicatas verdadeiras que chegam dentro da janela de retransmissão
-      if (last) {
-        const lastTs = last.id ? parseInt(last.id.split('-')[1] || '0', 10) : 0;
-        const msgTs = msg.id ? parseInt(msg.id.split('-')[1] || '0', 10) : 0;
-        const withinWindow = lastTs > 0 && msgTs > 0 && Math.abs(msgTs - lastTs) < 2500;
-        if (
-          withinWindow &&
-          last.userName === msg.userName &&
-          last.message === msg.message &&
-          last.channelId === msg.channelId &&
-          last.type === msg.type &&
-          last.url === msg.url
-        ) {
-          return s;
+      // 2. Proteção contra duplicatas reais nos últimos 20 itens
+      const isDuplicate = s.messages.slice(-20).some((m) => {
+        if (m.id && msg.id && m.id === msg.id) return true;
+
+        // Se ambos tiverem a mesma URL de anexo, são duplicatas absolutas
+        if (m.url && msg.url && isSameUrl(m.url, msg.url)) {
+          return true;
         }
+
+        // Se tiverem mesmo canal, mesmo tipo e mesmo autor
+        const mCh = m.channelId || 'ch-geral';
+        const msgCh = msg.channelId || 'ch-geral';
+        if (mCh !== msgCh || m.type !== msg.type) return false;
+
+        const mUser = normUser(m.userName);
+        const userMatches = mUser === incomingUser || (isMsgFromMe && (mUser === '__me__' || mUser === mySaved));
+        if (!userMatches) return false;
+
+        // Mesma mensagem de texto ou mesmo nome de arquivo
+        const contentMatches =
+          (Boolean(m.message && msg.message) && m.message.trim() === msg.message.trim()) ||
+          (Boolean(m.filename && msg.filename) && m.filename === msg.filename);
+
+        return contentMatches;
+      });
+
+      if (isDuplicate) {
+        return s;
       }
+
       return { messages: [...s.messages.slice(-500), msg] };
     }),
   systemNotificationsEnabled: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications') !== 'false' : true,

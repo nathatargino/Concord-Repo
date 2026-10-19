@@ -114,35 +114,93 @@ function getFileIcon(filename: string, mime: string): string {
   return 'fa-file';
 }
 
-async function uploadChatAttachment(file: File): Promise<string> {
-  // 1. Sempre tentar upload multipart para o backend (suporta até 1GB com streaming para disco)
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    const res = await fetch(`${SERVER_URL}/api/upload`, {
-      method: 'POST',
-      body: formData,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.url) {
-        return `${SERVER_URL}${data.url}`;
+interface UploadProgressInfo {
+  percent: number;
+  loaded: number;
+  total: number;
+}
+
+function uploadChatAttachment(
+  file: File,
+  onProgress?: (info: UploadProgressInfo) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+          onProgress?.({
+            percent,
+            loaded: event.loaded,
+            total: event.total,
+          });
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data?.url) {
+              onProgress?.({ percent: 100, loaded: file.size, total: file.size });
+              resolve(`${SERVER_URL}${data.url}`);
+              return;
+            }
+          } catch {
+            // Segue para fallback
+          }
+        }
+
+        let errorMsg = `Erro no upload (HTTP ${xhr.status})`;
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          if (errData?.error) errorMsg = errData.error;
+        } catch {}
+
+        if (file.size <= 8 * 1024 * 1024) {
+          fileToBase64(file)
+            .then((b64) => {
+              onProgress?.({ percent: 100, loaded: file.size, total: file.size });
+              resolve(b64);
+            })
+            .catch(() => reject(new Error(errorMsg)));
+        } else {
+          reject(new Error(errorMsg));
+        }
+      };
+
+      xhr.onerror = () => {
+        if (file.size <= 8 * 1024 * 1024) {
+          fileToBase64(file)
+            .then((b64) => {
+              onProgress?.({ percent: 100, loaded: file.size, total: file.size });
+              resolve(b64);
+            })
+            .catch(() => reject(new Error(`Falha de conexão ao enviar "${file.name}".`)));
+        } else {
+          reject(new Error(`Falha de conexão ao enviar "${file.name}".`));
+        }
+      };
+
+      xhr.open('POST', `${SERVER_URL}/api/upload`);
+      xhr.send(formData);
+    } catch (err: any) {
+      if (file.size <= 8 * 1024 * 1024) {
+        fileToBase64(file)
+          .then((b64) => {
+            onProgress?.({ percent: 100, loaded: file.size, total: file.size });
+            resolve(b64);
+          })
+          .catch(() => reject(new Error(err?.message || 'Erro ao enviar arquivo.')));
+      } else {
+        reject(new Error(err?.message || 'Erro ao enviar arquivo.'));
       }
     }
-  } catch (err) {
-    console.warn('[Upload] Erro ao enviar para /api/upload:', err);
-  }
-
-  // 2. Fallback Base64 apenas para arquivos pequenos (<= 8MB) se o servidor estiver offline
-  if (file.size <= 8 * 1024 * 1024) {
-    try {
-      return await fileToBase64(file);
-    } catch (e) {
-      console.warn('[Upload] Erro na conversão Base64:', e);
-    }
-  }
-
-  throw new Error(`Não foi possível enviar o arquivo "${file.name}". Verifique sua conexão.`);
+  });
 }
 
 // ── Helpers para Emojis, Resposta e Cópia de Imagem ──
@@ -311,6 +369,15 @@ export function ChatPanel({
   const [giphySearch, setGiphySearch] = useState('');
   const [giphyError, setGiphyError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadState, setUploadState] = useState<{
+    fileName: string;
+    fileIndex: number;
+    totalFiles: number;
+    percent: number;
+    loaded: number;
+    total: number;
+  } | null>(null);
+  const isSendingRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef<number>(0);
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
@@ -1492,13 +1559,16 @@ export function ChatPanel({
   }, []);
 
   const handleSend = useCallback(async () => {
+    if (isSendingRef.current || isUploading) return;
     const trimmed = input.trim();
     if (!trimmed && stagedFiles.length === 0) return;
+    isSendingRef.current = true;
 
     // Envio de Mensagem Direta (DM 1:1)
     if (isDmMode && activeDmChat) {
       if (isPartnerBlocked) {
         toast.error('Você não pode enviar mensagens diretas para um usuário bloqueado.');
+        isSendingRef.current = false;
         return;
       }
       if (!isPartnerFriend) {
@@ -1529,6 +1599,7 @@ export function ChatPanel({
           createdAt: new Date().toISOString(),
         };
         setDmMessages(prev => [...prev, errorMsg]);
+        isSendingRef.current = false;
         return;
       }
 
@@ -1557,6 +1628,7 @@ export function ChatPanel({
           activeDmChat.partnerId,
           activeDmChat.partnerName
         );
+        isSendingRef.current = false;
         return;
       }
 
@@ -1570,15 +1642,35 @@ export function ChatPanel({
         try {
           for (let i = 0; i < filesToSend.length; i++) {
             const item = filesToSend[i];
-            const fileUrl = await uploadChatAttachment(item.file);
+            setUploadState({
+              fileName: item.file.name,
+              fileIndex: i + 1,
+              totalFiles: filesToSend.length,
+              percent: 0,
+              loaded: 0,
+              total: item.file.size,
+            });
+
+            const fileUrl = await uploadChatAttachment(item.file, (info) => {
+              setUploadState({
+                fileName: item.file.name,
+                fileIndex: i + 1,
+                totalFiles: filesToSend.length,
+                percent: info.percent,
+                loaded: info.loaded,
+                total: info.total,
+              });
+            });
+
             const msgType: 'image' | 'file' = item.isImage ? 'image' : 'file';
             const messageContent = (i === 0 && trimmed) ? trimmed : (item.isImage ? '📷 Imagem' : `📎 ${item.file.name}`);
 
+            const authorName = (myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : '') || '').trim() || 'Você';
             const optimisticDm: DirectMessage = {
               id: `opt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
               chatId: activeDmChat.id,
               senderId: myName || 'me',
-              senderName: myName || 'Você',
+              senderName: authorName,
               avatarUrl: myAvatarUrl,
               content: messageContent,
               msgType: msgType,
@@ -1607,6 +1699,8 @@ export function ChatPanel({
           toast.error(err?.message || 'Falha ao processar envio dos arquivos.');
         } finally {
           setIsUploading(false);
+          setUploadState(null);
+          isSendingRef.current = false;
         }
         return;
       }
@@ -1619,6 +1713,7 @@ export function ChatPanel({
         const action = firstWord.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
         executeMusicCommand(action);
         setInput('');
+        isSendingRef.current = false;
         return;
       }
     }
@@ -1643,7 +1738,26 @@ export function ChatPanel({
 
         for (let i = 0; i < filesToSend.length; i++) {
           const item = filesToSend[i];
-          const fileUrl = await uploadChatAttachment(item.file);
+          setUploadState({
+            fileName: item.file.name,
+            fileIndex: i + 1,
+            totalFiles: filesToSend.length,
+            percent: 0,
+            loaded: 0,
+            total: item.file.size,
+          });
+
+          const fileUrl = await uploadChatAttachment(item.file, (info) => {
+            setUploadState({
+              fileName: item.file.name,
+              fileIndex: i + 1,
+              totalFiles: filesToSend.length,
+              percent: info.percent,
+              loaded: info.loaded,
+              total: info.total,
+            });
+          });
+
           const isImage = item.isImage;
           const msgType: 'image' | 'file' = isImage ? 'image' : 'file';
           const fileName = item.file.name || (isImage ? 'imagem.png' : 'arquivo');
@@ -1657,10 +1771,11 @@ export function ChatPanel({
             minute: '2-digit',
             timeZone: 'America/Sao_Paulo',
           });
+          const authorName = (myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : '') || '').trim() || 'Você';
           const optMsg: ChatMessage = {
             id: `opt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
             roomId: room?.id,
-            userName: myName || 'Você',
+            userName: authorName,
             message: msgText,
             timestamp,
             type: msgType,
@@ -1673,7 +1788,7 @@ export function ChatPanel({
 
           // Salvar no Supabase e Socket
           if (room?.id) {
-            saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
+            saveMessageToSupabase(room.id, authorName, msgText, currentChannel, msgType, fileUrl, fileName);
           }
           onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel, myAvatarUrl);
         }
@@ -1682,6 +1797,8 @@ export function ChatPanel({
         toast.error(err?.message || 'Falha ao processar envio dos arquivos.');
       } finally {
         setIsUploading(false);
+        setUploadState(null);
+        isSendingRef.current = false;
       }
     } else {
       let finalQuotePrefix = '';
@@ -1699,10 +1816,11 @@ export function ChatPanel({
         minute: '2-digit',
         timeZone: 'America/Sao_Paulo',
       });
+      const authorName = (myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : '') || '').trim() || 'Você';
       const optMsg: ChatMessage = {
         id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         roomId: room?.id,
-        userName: myName || 'Você',
+        userName: authorName,
         message: msgText,
         timestamp,
         type: 'text',
@@ -1713,11 +1831,12 @@ export function ChatPanel({
 
       // Salvar no Supabase e disparar Socket em paralelo
       if (room?.id) {
-        saveMessageToSupabase(room.id, myName, msgText, currentChannel, 'text');
+        saveMessageToSupabase(room.id, authorName, msgText, currentChannel, 'text');
       }
       onSendMessage?.(msgText, 'text', undefined, undefined, currentChannel, myAvatarUrl);
+      isSendingRef.current = false;
     }
-  }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles]);
+  }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles, isUploading]);
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
     const clipboardData = (e as any).clipboardData;
@@ -2554,16 +2673,60 @@ export function ChatPanel({
                 </div>
               )}
 
+              {/* Barra de Progresso de Upload de Arquivo (Ilustrativa e Visível) */}
+              {uploadState && (
+                <div className={styles.uploadProgressContainer}>
+                  <div className={styles.uploadProgressHeader}>
+                    <div className={styles.uploadProgressFileInfo}>
+                      <div className={styles.uploadProgressIconWrapper}>
+                        <i className={`fa-solid ${getFileIcon(uploadState.fileName, '')}`}></i>
+                      </div>
+                      <div className={styles.uploadProgressTextGroup}>
+                        <span className={styles.uploadProgressFileName} title={uploadState.fileName}>
+                          {uploadState.fileName}
+                        </span>
+                        <span className={styles.uploadProgressFileCounter}>
+                          {uploadState.totalFiles > 1
+                            ? `Enviando arquivo ${uploadState.fileIndex} de ${uploadState.totalFiles}`
+                            : 'Enviando arquivo para o servidor...'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={styles.uploadProgressStats}>
+                      <span className={styles.uploadProgressBytes}>
+                        {formatFileSize(uploadState.loaded)} / {formatFileSize(uploadState.total)}
+                      </span>
+                      <span className={styles.uploadProgressPercent}>{uploadState.percent}%</span>
+                    </div>
+                  </div>
+                  <div className={styles.uploadProgressBarTrack}>
+                    <div
+                      className={styles.uploadProgressBarFill}
+                      style={{ width: `${Math.max(4, uploadState.percent)}%` }}
+                    />
+                  </div>
+                  <div className={styles.uploadProgressFooter}>
+                    <span>
+                      <i className="fa-solid fa-cloud-arrow-up" style={{ marginRight: '6px' }}></i>
+                      {uploadState.percent < 100
+                        ? 'Fazendo upload... Por favor, não feche o aplicativo.'
+                        : 'Processando arquivo no servidor...'}
+                    </span>
+                    <span>{uploadState.percent}% concluído</span>
+                  </div>
+                </div>
+              )}
+
               <form
                 id="chatForm"
                 className={`${styles.chatForm} ${isPartnerBlocked ? styles.chatFormBlocked : ''}`}
                 onDragOver={(e) => {
-                  if (isPartnerBlocked) return;
+                  if (isPartnerBlocked || isUploading) return;
                   e.preventDefault();
                   e.stopPropagation();
                   e.dataTransfer.dropEffect = 'copy';
                 }}
-                onDrop={isPartnerBlocked ? undefined : handleDrop}
+                onDrop={isPartnerBlocked || isUploading ? undefined : handleDrop}
                 onSubmit={(e) => {
                   e.preventDefault();
                   handleSend();
@@ -2574,7 +2737,7 @@ export function ChatPanel({
                   ref={fileInputRef}
                   onChange={handleFileUpload}
                   style={{ display: 'none' }}
-                  disabled={isPartnerBlocked}
+                  disabled={isPartnerBlocked || isUploading}
                   multiple
                 />
 
@@ -2582,8 +2745,8 @@ export function ChatPanel({
                   type="button"
                   className={styles.formIconBtn}
                   onClick={() => fileInputRef.current?.click()}
-                  disabled={isPartnerBlocked}
-                  title={isPartnerBlocked ? "Conversa bloqueada" : "Anexar arquivo"}
+                  disabled={isPartnerBlocked || isUploading}
+                  title={isPartnerBlocked ? "Conversa bloqueada" : isUploading ? "Enviando arquivo..." : "Anexar arquivo"}
                 >
                   <i className="fa-solid fa-circle-plus"></i>
                 </button>
@@ -2591,11 +2754,13 @@ export function ChatPanel({
                 <input
                   type="text"
                   id="chatInput"
-                  className={`${styles.chatInput} ${isPartnerBlocked ? styles.chatInputDisabled : ''}`}
-                  disabled={isPartnerBlocked}
+                  className={`${styles.chatInput} ${(isPartnerBlocked || isUploading) ? styles.chatInputDisabled : ''}`}
+                  disabled={isPartnerBlocked || isUploading}
                   placeholder={
                     isPartnerBlocked
                       ? 'Você não pode enviar mensagens diretas para este usuário (bloqueado).'
+                      : isUploading
+                      ? 'Enviando arquivo(s)... Aguarde a conclusão do envio.'
                       : isDmMode
                       ? `Conversar com ${cleanDisplayName(activeDmChat?.partnerName || (activeDmChat as any)?.other_user_name || 'amigo')}...`
                       : isServer
@@ -2607,12 +2772,12 @@ export function ChatPanel({
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   onDragOver={(e) => {
-                    if (isPartnerBlocked) return;
+                    if (isPartnerBlocked || isUploading) return;
                     e.preventDefault();
                     e.stopPropagation();
                     e.dataTransfer.dropEffect = 'copy';
                   }}
-                  onDrop={isPartnerBlocked ? undefined : handleDrop}
+                  onDrop={isPartnerBlocked || isUploading ? undefined : handleDrop}
                   maxLength={2000}
                 />
 
@@ -2621,8 +2786,8 @@ export function ChatPanel({
                     type="button"
                     ref={giphyBtnRef}
                     className={styles.actionBtnGiphy}
-                    onClick={() => !isPartnerBlocked && setShowGiphy(!showGiphy)}
-                    disabled={isPartnerBlocked}
+                    onClick={() => !isPartnerBlocked && !isUploading && setShowGiphy(!showGiphy)}
+                    disabled={isPartnerBlocked || isUploading}
                     title={isPartnerBlocked ? "Conversa bloqueada" : "Presentear Nitro / GIFs"}
                   >
                     <i className="fa-solid fa-gift text-sm"></i>
@@ -2632,8 +2797,8 @@ export function ChatPanel({
                     type="button"
                     ref={emojiBtnRef}
                     className={styles.actionBtnEmoji}
-                    onClick={() => !isPartnerBlocked && setShowEmojiPicker(!showEmojiPicker)}
-                    disabled={isPartnerBlocked}
+                    onClick={() => !isPartnerBlocked && !isUploading && setShowEmojiPicker(!showEmojiPicker)}
+                    disabled={isPartnerBlocked || isUploading}
                     title={isPartnerBlocked ? "Conversa bloqueada" : "Emojis"}
                   >
                     <i className="fa-solid fa-face-smile text-sm"></i>
