@@ -66,7 +66,7 @@ const defaults = {
   ytVol: 50, // Default 50% for first-time users as requested
   micVol: 100,
   remoteVol: 100,
-  screenShareVol: 100,
+  screenShareVol: 50, // Sincronizado com ytVol (streaming)
   selectedAudioInputId: 'default',
   selectedAudioOutputId: 'default',
   micMuted: false,
@@ -123,6 +123,10 @@ function getInitialState() {
           loadedState.autoSensitivity = true;
         }
 
+        if (loadedState.ytVol !== undefined) {
+          loadedState.screenShareVol = loadedState.ytVol;
+        }
+
         return loadedState;
       }
     }
@@ -136,6 +140,7 @@ function getInitialState() {
           ...defaults,
           ...parsed.state,
           ytVol: migratedYtVol,
+          screenShareVol: migratedYtVol,
         };
         if (!isMigrated && loadedState.noiseGateThreshold === -30) {
           loadedState.noiseGateThreshold = -45;
@@ -167,10 +172,16 @@ export const useAudioStore = create<AudioState>()(
   persist(
     (set) => ({
       ...getInitialState(),
-      setYtVol: (ytVol) => set({ ytVol: Math.min(100, Math.max(0, ytVol)) }),
+      setYtVol: (ytVol) => {
+        const val = Math.min(100, Math.max(0, ytVol));
+        set({ ytVol: val, screenShareVol: val });
+      },
       setMicVol: (micVol) => set({ micVol: Math.min(200, Math.max(0, micVol)) }),
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),
-      setScreenShareVol: (screenShareVol) => set({ screenShareVol: Math.min(200, Math.max(0, screenShareVol)) }),
+      setScreenShareVol: (screenShareVol) => {
+        const val = Math.min(100, Math.max(0, screenShareVol));
+        set({ screenShareVol: val, ytVol: val });
+      },
       setSelectedAudioInputId: (selectedAudioInputId) => set({ selectedAudioInputId }),
       setSelectedAudioOutputId: (selectedAudioOutputId) => {
         set({ selectedAudioOutputId });

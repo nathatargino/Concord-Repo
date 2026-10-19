@@ -8,19 +8,8 @@ interface Props {
   localStream?: MediaStream | null;
 }
 
-export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing, localStream }) => {
+export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChangeSharing }) => {
   const { amSharing, screenViewers, users, myId, screenShareUserId, setScreenShare } = useAppStore();
-  const videoRef = React.useRef<HTMLVideoElement>(null);
-
-  React.useEffect(() => {
-    const videoEl = videoRef.current;
-    if (videoEl && localStream) {
-      if (videoEl.srcObject !== localStream) {
-        videoEl.srcObject = localStream;
-      }
-      videoEl.play().catch(() => {});
-    }
-  }, [localStream]);
 
   if (!amSharing) return null;
 
@@ -64,21 +53,11 @@ export const BroadcasterScreenPanel: React.FC<Props> = ({ onStopSharing, onChang
       </div>
 
       <div className={styles.videoWrapper}>
-        {localStream ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className={styles.previewVideo}
-          />
-        ) : (
-          <div className={styles.placeholderContainer}>
-            <div className={styles.pulseIcon}>📡</div>
-            <span className={styles.placeholderTitle}>Sua tela está sendo transmitida</span>
-            <span className={styles.placeholderSubtitle}>Transmissão ativa</span>
-          </div>
-        )}
+        <div className={styles.placeholderContainer}>
+          <div className={styles.pulseIcon}>📡</div>
+          <span className={styles.placeholderTitle}>Sua tela está sendo transmitida</span>
+          <span className={styles.placeholderSubtitle}>Prévia oculta para máxima performance e sem lag</span>
+        </div>
       </div>
 
       {otherBroadcasters.length > 0 && (

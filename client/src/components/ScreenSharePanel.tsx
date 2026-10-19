@@ -231,8 +231,8 @@ export const ScreenSharePanel: React.FC<Props> = ({
                 <input
                   type="range"
                   min="0"
-                  max="200"
-                  value={screenShareVol}
+                  max="100"
+                  value={Math.min(100, Math.max(0, screenShareVol))}
                   onChange={(e) => {
                     const val = Number(e.target.value);
                     if (val > 0) prevScreenVolRef.current = val;
@@ -242,7 +242,7 @@ export const ScreenSharePanel: React.FC<Props> = ({
                   onPointerDown={(e) => e.stopPropagation()}
                   className={styles.volSlider}
                 />
-                <span className={styles.volText}>{screenShareVol}%</span>
+                <span className={styles.volText}>{Math.min(100, Math.max(0, screenShareVol))}%</span>
               </div>
               <button className={styles.actionBtn} onClick={togglePiP} title="Picture-in-Picture">
                 📌

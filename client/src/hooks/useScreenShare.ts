@@ -73,21 +73,27 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
   };
 
   if (isElectron) {
+    const electronVideoConstraints: MediaTrackConstraints = {
+      width: { ideal: targetWidth },
+      height: { ideal: targetHeight },
+      frameRate: { ideal: screenShareFps },
+    };
+
     if (withAudio) {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: electronVideoConstraints,
           audio: true,
         });
         return await applyHintsAndConstraints(stream);
       } catch (err: any) {
-        if (err?.name === 'NotAllowedError' || err?.name === 'AbortError') {
+        if (err?.name === 'NotAllowedError') {
           throw err;
         }
         console.warn(`[ScreenShare] Electron screen share with audio failed (${err?.name}: ${err?.message}), attempting video-only fallback...`);
         try {
           const fallbackVideoOnly = await navigator.mediaDevices.getDisplayMedia({
-            video: true,
+            video: electronVideoConstraints,
             audio: false,
           });
           toast('⚠️ Áudio do sistema indisponível no dispositivo. Transmitindo apenas vídeo.', { icon: '⚠️', duration: 4000 });
@@ -98,7 +104,7 @@ async function captureDisplayMedia(withAudio: boolean = true): Promise<MediaStre
       }
     } else {
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        video: electronVideoConstraints,
         audio: false,
       });
       return await applyHintsAndConstraints(stream);

@@ -722,10 +722,11 @@ export default function App() {
             channelCount: 1,
             echoCancellation: true,
             noiseSuppression: nsActive,
-            autoGainControl: true,
+            autoGainControl: false,
             // @ts-ignore
             googNoiseSuppression: nsActive,
             googHighpassFilter: false,
+            googAutoGainControl: false,
           },
         });
       } catch (micErr) {
