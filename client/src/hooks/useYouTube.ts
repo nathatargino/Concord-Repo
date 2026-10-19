@@ -459,6 +459,9 @@ export function useYouTube(
              if (targetVol > 0) {
                playerRef.current?.unMute();
                playerRef.current?.setVolume(targetVol);
+             } else {
+               playerRef.current?.mute();
+               playerRef.current?.setVolume(0);
              }
 
               // Inject CSS to hide YouTube native overlay UI elements.
@@ -755,6 +758,10 @@ export function useYouTube(
           const targetVol = useAudioStore.getState().callMuted ? 0 : useAudioStore.getState().ytVol;
           if (targetVol > 0 && typeof player.unMute === 'function') {
             player.unMute();
+            player.setVolume(targetVol);
+          } else if (typeof player.mute === 'function') {
+            player.mute();
+            player.setVolume(0);
           }
         }, 500);
       } catch {

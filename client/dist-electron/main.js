@@ -1886,7 +1886,20 @@ function getActiveStreamingInstance() {
     const first = streamingInstances.values().next().value;
     return first;
 }
-let currentStreamingVolume = 50; // 0 to 100
+function getInitialStreamingVolume() {
+    try {
+        const prefs = readPrefsFromDisk();
+        if (prefs && prefs.streamingVolume !== undefined) {
+            const parsed = Number(prefs.streamingVolume);
+            if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+                return parsed;
+            }
+        }
+    }
+    catch { }
+    return 50;
+}
+let currentStreamingVolume = getInitialStreamingVolume(); // 0 to 100
 function broadcastToStreamingFrames(wc, channel, ...args) {
     try {
         wc.send(channel, ...args);
@@ -1915,14 +1928,39 @@ function applyStreamingVolumeToView(view, volume) {
         view.webContents.setAudioMuted(isMuted);
     }
     catch (e) { }
+    // Enviar evento IPC para todos os subframes (incluindo iframes cross-origin de players como Vilos da Crunchyroll)
+    broadcastToStreamingFrames(view.webContents, 'apply-streaming-volume', volume);
     const volScript = `
         (function() {
             try {
+                window.__concord_target_volume = ${fraction};
+                window.__concord_is_muted = ${isMuted};
                 var mediaEls = document.querySelectorAll('video, audio');
                 mediaEls.forEach(function(el) {
-                    el.volume = ${fraction};
-                    el.muted = ${isMuted};
+                    try {
+                        el.volume = ${fraction};
+                        el.muted = ${isMuted};
+                    } catch(e) {}
                 });
+
+                // Controlar diretamente API Cadmium da Netflix caso disponível
+                if (window.netflix && window.netflix.appContext) {
+                    try {
+                        var vp = window.netflix.appContext.state?.playerApp?.getAPI?.()?.videoPlayer;
+                        if (vp) {
+                            var sessionIds = vp.getAllPlayerSessionIds?.() || [];
+                            sessionIds.forEach(function(sid) {
+                                var player = vp.getVideoPlayerBySessionId(sid);
+                                if (player && typeof player.setVolume === 'function') {
+                                    player.setVolume(${fraction});
+                                }
+                                if (player && typeof player.setMuted === 'function') {
+                                    player.setMuted(${isMuted});
+                                }
+                            });
+                        }
+                    } catch(e) {}
+                }
             } catch(e) {}
         })();
     `;
@@ -2387,15 +2425,20 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             })()
         `).catch(() => { });
     };
-    view.webContents.on('dom-ready', applyStyling);
+    view.webContents.on('dom-ready', () => {
+        applyStyling();
+        applyStreamingVolumeToView(view, currentStreamingVolume);
+    });
     view.webContents.on('did-finish-load', () => {
         applyStyling();
+        applyStreamingVolumeToView(view, currentStreamingVolume);
     });
     view.webContents.on('did-navigate', (_e, navUrl) => {
         if (navUrl && !navUrl.includes('static.crunchyroll.com') && !navUrl.includes('vilos')) {
             instObj.currentUrl = navUrl;
         }
         applyStyling();
+        applyStreamingVolumeToView(view, currentStreamingVolume);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
         }
@@ -2405,6 +2448,7 @@ electron_1.ipcMain.handle('open-streaming-view', async (_event, options) => {
             instObj.currentUrl = navUrl;
         }
         applyStyling();
+        applyStreamingVolumeToView(view, currentStreamingVolume);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('streaming-event', { type: 'navigate', service: options.service, url: navUrl });
         }
@@ -2489,7 +2533,19 @@ electron_1.ipcMain.on('close-streaming-view', (_event, service) => {
     closeStreamingInstance(service);
 });
 electron_1.ipcMain.on('set-streaming-volume', (_event, volume) => {
-    currentStreamingVolume = typeof volume === 'number' ? volume : 50;
+    currentStreamingVolume = typeof volume === 'number' ? Math.max(0, Math.min(100, volume)) : 50;
+    // Persiste volume de streaming em disco de forma assíncrona e atômica
+    prefsWriteQueue = prefsWriteQueue.then(async () => {
+        try {
+            const prefsPath = getPrefsPath();
+            const existing = readPrefsFromDisk();
+            existing.streamingVolume = currentStreamingVolume;
+            writeAtomicSync(prefsPath, JSON.stringify(existing, null, 2));
+        }
+        catch (e) {
+            console.error('Failed to save streamingVolume preference:', e);
+        }
+    });
     for (const inst of streamingInstances.values()) {
         if (inst.view) {
             applyStreamingVolumeToView(inst.view, currentStreamingVolume);

@@ -230,10 +230,29 @@ export default function App() {
 
 
 
-  // Initial sync of streaming volume to Electron
+  // Initial sync of streaming volume to/from Electron preferences
   useEffect(() => {
     const electron = (window as any).electron;
-    if (electron?.setStreamingVolume) {
+    if (electron?.loadPreferences) {
+      electron.loadPreferences().then((prefs: Record<string, any>) => {
+        if (prefs && prefs.streamingVolume !== undefined) {
+          const parsed = Number(prefs.streamingVolume);
+          if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+            useAudioStore.getState().setYtVol(parsed);
+            return;
+          }
+        }
+        if (electron?.setStreamingVolume) {
+          const { ytVol, callMuted } = useAudioStore.getState();
+          electron.setStreamingVolume(callMuted ? 0 : ytVol);
+        }
+      }).catch(() => {
+        if (electron?.setStreamingVolume) {
+          const { ytVol, callMuted } = useAudioStore.getState();
+          electron.setStreamingVolume(callMuted ? 0 : ytVol);
+        }
+      });
+    } else if (electron?.setStreamingVolume) {
       const { ytVol, callMuted } = useAudioStore.getState();
       electron.setStreamingVolume(callMuted ? 0 : ytVol);
     }

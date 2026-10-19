@@ -19,9 +19,26 @@ export const ScreenSharePanel: React.FC<Props> = ({
 }) => {
   const { screenShareUserId, screenShareUserName, myId, users, setScreenShare } = useAppStore();
   const { screenShareVol, setScreenShareVol } = useAudioStore();
-  const prevScreenVolRef = useRef<number>(screenShareVol > 0 ? screenShareVol : 100);
+  const prevScreenVolRef = useRef<number>(screenShareVol > 0 ? screenShareVol : 50);
 
   const otherBroadcasters = users.filter((u) => u.screenSharing && u.id !== myId);
+
+  // Sincronizar e fixar o volume nos elementos de áudio da transmissão (evita reset para 100%)
+  useEffect(() => {
+    const fraction = Math.min(1, Math.max(0, screenShareVol / 100));
+    const isMuted = screenShareVol === 0;
+
+    const audioEl = document.getElementById(`remote-screen-audio-${screenShareUserId}`) as HTMLAudioElement | null;
+    if (audioEl) {
+      audioEl.volume = fraction;
+      audioEl.muted = isMuted;
+    }
+
+    document.querySelectorAll<HTMLAudioElement>('audio[id^="remote-screen-audio-"]').forEach((a) => {
+      a.volume = fraction;
+      a.muted = isMuted;
+    });
+  }, [screenShareUserId, screenShareVol]);
 
   const handleToggleScreenMute = (e: React.MouseEvent) => {
     e.stopPropagation();

@@ -2881,6 +2881,33 @@ export function ChatPanel({
                             <span>Tela Cheia</span>
                           </button>
                         </div>
+
+                        {/* Barra de Volume do Streaming (Netflix, Prime Video, Crunchyroll) */}
+                        <div className={styles.streamingVolumeBar}>
+                          <button
+                            type="button"
+                            className={styles.volumeMuteBtn}
+                            onClick={handleToggleYtMute}
+                            title={ytVol === 0 || callMuted ? "Desmutar streaming" : "Mutar streaming"}
+                            aria-label={ytVol === 0 || callMuted ? "Desmutar streaming" : "Mutar streaming"}
+                          >
+                            <i className={`fa-solid ${ytVol === 0 || callMuted ? 'fa-volume-xmark' : ytVol < 50 ? 'fa-volume-low' : 'fa-volume-high'}`} style={{ fontSize: '13px', width: '16px', textAlign: 'center' }}></i>
+                          </button>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={ytVol}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              if (val > 0) prevYtVolRef.current = val;
+                              setYtVol(val);
+                            }}
+                            className={styles.volumeSlider}
+                            title={`Volume do Streaming: ${ytVol}%`}
+                          />
+                          <span className={styles.streamingVolumeValue}>{ytVol}%</span>
+                        </div>
                       </div>
                     </>
                   );

@@ -99,6 +99,10 @@ function getInitialState() {
       localStorage.setItem('concord_ns_v2_migrated', 'true');
     }
 
+    const dedicatedVol = localStorage.getItem('concord_streaming_volume');
+    const dedicatedNum = dedicatedVol !== null ? Number(dedicatedVol) : null;
+    const hasDedicated = dedicatedNum !== null && !isNaN(dedicatedNum) && dedicatedNum >= 0 && dedicatedNum <= 100;
+
     const savedV2 = localStorage.getItem(STORAGE_KEY);
     if (savedV2) {
       const parsed = JSON.parse(savedV2);
@@ -123,8 +127,13 @@ function getInitialState() {
           loadedState.autoSensitivity = true;
         }
 
-        if (loadedState.ytVol !== undefined) {
+        if (hasDedicated) {
+          loadedState.ytVol = dedicatedNum!;
+          loadedState.screenShareVol = dedicatedNum!;
+        } else if (loadedState.ytVol !== undefined) {
           loadedState.screenShareVol = loadedState.ytVol;
+        } else if (loadedState.screenShareVol !== undefined) {
+          loadedState.ytVol = loadedState.screenShareVol;
         }
 
         return loadedState;
@@ -135,7 +144,9 @@ function getInitialState() {
     if (savedV1) {
       const parsed = JSON.parse(savedV1);
       if (parsed?.state) {
-        const migratedYtVol = parsed.state.ytVol === 80 ? 50 : (parsed.state.ytVol ?? 50);
+        const migratedYtVol = hasDedicated
+          ? dedicatedNum!
+          : (parsed.state.ytVol === 80 ? 50 : (parsed.state.ytVol ?? 50));
         const loadedState = {
           ...defaults,
           ...parsed.state,
@@ -148,6 +159,14 @@ function getInitialState() {
         }
         return loadedState;
       }
+    }
+
+    if (hasDedicated) {
+      return {
+        ...defaults,
+        ytVol: dedicatedNum!,
+        screenShareVol: dedicatedNum!,
+      };
     }
   } catch (e) {
     console.debug('Error reading audio store from localStorage:', e);
@@ -174,12 +193,36 @@ export const useAudioStore = create<AudioState>()(
       ...getInitialState(),
       setYtVol: (ytVol) => {
         const val = Math.min(100, Math.max(0, ytVol));
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            localStorage.setItem('concord_streaming_volume', String(val));
+          }
+        } catch {}
+        const electron = typeof window !== 'undefined' ? (window as any).electron : null;
+        if (electron?.setStreamingVolume) {
+          electron.setStreamingVolume(val);
+        }
+        if (electron?.savePreferences) {
+          electron.savePreferences({ streamingVolume: String(val) });
+        }
         set({ ytVol: val, screenShareVol: val });
       },
       setMicVol: (micVol) => set({ micVol: Math.min(200, Math.max(0, micVol)) }),
       setRemoteVol: (remoteVol) => set({ remoteVol: Math.min(200, Math.max(0, remoteVol)) }),
       setScreenShareVol: (screenShareVol) => {
         const val = Math.min(100, Math.max(0, screenShareVol));
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            localStorage.setItem('concord_streaming_volume', String(val));
+          }
+        } catch {}
+        const electron = typeof window !== 'undefined' ? (window as any).electron : null;
+        if (electron?.setStreamingVolume) {
+          electron.setStreamingVolume(val);
+        }
+        if (electron?.savePreferences) {
+          electron.savePreferences({ streamingVolume: String(val) });
+        }
         set({ screenShareVol: val, ytVol: val });
       },
       setSelectedAudioInputId: (selectedAudioInputId) => set({ selectedAudioInputId }),

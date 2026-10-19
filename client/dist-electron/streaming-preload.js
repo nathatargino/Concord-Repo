@@ -197,6 +197,21 @@ electron_1.webFrame.executeJavaScript(`
       if (!e || !e.detail) return;
       window.__concord_main_playback(e.detail.action, e.detail.positionSeconds, e.detail.deltaSeconds);
     });
+
+    window.addEventListener('__concord_volume_cmd', function(e) {
+      if (!e || !e.detail) return;
+      try {
+        var nfPlayer = window.__concord_get_netflix_player();
+        if (nfPlayer) {
+          if (typeof nfPlayer.setVolume === 'function') {
+            try { nfPlayer.setVolume(e.detail.fraction); } catch(err) {}
+          }
+          if (typeof nfPlayer.setMuted === 'function') {
+            try { nfPlayer.setMuted(e.detail.isMuted); } catch(err) {}
+          }
+        }
+      } catch(err) {}
+    });
   })();
 `);
 let isRemoteAction = false;
@@ -678,3 +693,62 @@ electron_1.ipcRenderer.on('navigate-to-title', (_event, data) => {
         window.location.href = data.url;
     }
 });
+// ── Sincronização e Persistência Contínua de Volume no Streaming (Netflix, Prime, Crunchyroll) ──
+let targetVolumeFraction = null;
+let targetIsMuted = false;
+function applyVolumeToAllMedia() {
+    if (targetVolumeFraction === null)
+        return;
+    try {
+        const mediaEls = document.querySelectorAll('video, audio');
+        mediaEls.forEach((el) => {
+            try {
+                if (Math.abs(el.volume - targetVolumeFraction) > 0.01) {
+                    el.volume = targetVolumeFraction;
+                }
+                if (el.muted !== targetIsMuted) {
+                    el.muted = targetIsMuted;
+                }
+            }
+            catch (e) { }
+        });
+        // Enviar para o contexto do mundo principal (Netflix Cadmium API)
+        window.dispatchEvent(new CustomEvent('__concord_volume_cmd', {
+            detail: { fraction: targetVolumeFraction, isMuted: targetIsMuted },
+        }));
+    }
+    catch (e) { }
+}
+electron_1.ipcRenderer.on('apply-streaming-volume', (_event, volume) => {
+    if (typeof volume === 'number') {
+        targetVolumeFraction = Math.max(0, Math.min(1, volume / 100));
+        targetIsMuted = targetVolumeFraction === 0;
+        applyVolumeToAllMedia();
+    }
+});
+// Interceptar eventos de mídia na fase de captura (capture: true) para evitar que o player
+// da plataforma (Vilos/Cadmium/Amazon) resete o volume para 100% ao iniciar um vídeo
+const onMediaPlaybackEvent = (e) => {
+    if (targetVolumeFraction !== null && e.target && e.target instanceof HTMLMediaElement) {
+        try {
+            e.target.volume = targetVolumeFraction;
+            e.target.muted = targetIsMuted;
+        }
+        catch { }
+    }
+};
+window.addEventListener('play', onMediaPlaybackEvent, true);
+window.addEventListener('loadeddata', onMediaPlaybackEvent, true);
+window.addEventListener('canplay', onMediaPlaybackEvent, true);
+window.addEventListener('volumechange', (e) => {
+    if (targetVolumeFraction !== null && e.target && e.target instanceof HTMLMediaElement) {
+        const el = e.target;
+        if (Math.abs(el.volume - targetVolumeFraction) > 0.05) {
+            try {
+                el.volume = targetVolumeFraction;
+                el.muted = targetIsMuted;
+            }
+            catch { }
+        }
+    }
+}, true);

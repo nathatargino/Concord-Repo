@@ -173,6 +173,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         peerData.screenAudioEl = screenAudioEl;
       }
 
+      const savedVol = (useAudioStore.getState().screenShareVol ?? 50) / 100;
+      screenAudioEl.volume = Math.max(0, Math.min(1, savedVol));
+      screenAudioEl.muted = useAudioStore.getState().callMuted || savedVol === 0;
+
       const existingStream = screenAudioEl.srcObject as MediaStream | null;
       const alreadyAttached =
         existingStream instanceof MediaStream &&
