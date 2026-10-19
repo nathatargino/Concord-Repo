@@ -49,7 +49,8 @@ const corsOptions: cors.CorsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Root health check endpoint
 app.get('/', (_req, res) => {
@@ -201,17 +202,28 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 1024 * 1024 * 1024 } // 1GB limit
 });
 
-app.post('/api/upload', upload.single('file'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-  }
-  
-  // Return the public URL path
-  const fileUrl = `/uploads/${req.file.filename}`;
-  res.json({ url: fileUrl });
+app.post('/api/upload', (req, res) => {
+  upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'O arquivo excede o limite máximo permitido de 1GB.' });
+      }
+      return res.status(400).json({ error: `Erro no upload: ${err.message}` });
+    } else if (err) {
+      return res.status(500).json({ error: 'Erro interno ao processar upload.' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    }
+    
+    // Return the public URL path
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({ url: fileUrl, filename: req.file.originalname, size: req.file.size });
+  });
 });
 
 

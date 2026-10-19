@@ -600,14 +600,149 @@
   text-overflow: ellipsis;
 }
 
-/* ── File Preview Before Send ── */
+/* ── File Preview Before Send (Multiple Attachments Tray - Discord Style) ── */
+.attachmentsTray,
 .previewContainer {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
-  background: rgba(17, 19, 25, 0.9);
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(17, 19, 25, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.attachmentsTray::-webkit-scrollbar {
+  height: 6px;
+}
+.attachmentsTray::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.attachmentCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #2b2d31;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 170px;
+  max-width: 220px;
+  height: 64px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.attachmentCard:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.attachmentCardImage {
+  padding: 4px;
+  min-width: 80px;
+  max-width: 110px;
+  height: 64px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachmentThumb {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.attachmentFileIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.attachmentMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachmentName {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f2f3f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachmentSize {
+  font-size: 10px;
+  color: #949ba4;
+}
+
+.attachmentRemoveBtn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #da373c;
+  color: white;
+  border: 2px solid #1e1f22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.attachmentRemoveBtn:hover {
+  background: #c62828;
+  transform: scale(1.12);
+}
+
+.attachmentAddMoreBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  color: #949ba4;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+
+.attachmentAddMoreBtn:hover {
+  border-color: #5865f2;
+  color: #fff;
+  background: rgba(88, 101, 242, 0.1);
 }
 
 .filePreviewThumb {

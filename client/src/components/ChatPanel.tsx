@@ -86,6 +86,65 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+export interface StagedAttachment {
+  id: string;
+  file: File;
+  previewUrl: string;
+  isImage: boolean;
+}
+
+const MAX_CHAT_FILE_SIZE = 1024 * 1024 * 1024; // 1GB
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function getFileIcon(filename: string, mime: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  if (ext === 'pdf') return 'fa-file-pdf';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'fa-file-zipper';
+  if (['mp3', 'wav', 'ogg', 'flac', 'm4a'].includes(ext) || mime.startsWith('audio/')) return 'fa-file-audio';
+  if (['mp4', 'mkv', 'avi', 'mov', 'webm'].includes(ext) || mime.startsWith('video/')) return 'fa-file-video';
+  if (['doc', 'docx'].includes(ext)) return 'fa-file-word';
+  if (['xls', 'xlsx'].includes(ext)) return 'fa-file-excel';
+  if (['txt', 'md', 'json', 'js', 'ts', 'html', 'css'].includes(ext)) return 'fa-file-code';
+  return 'fa-file';
+}
+
+async function uploadChatAttachment(file: File): Promise<string> {
+  // 1. Sempre tentar upload multipart para o backend (suporta até 1GB com streaming para disco)
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${SERVER_URL}/api/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.url) {
+        return `${SERVER_URL}${data.url}`;
+      }
+    }
+  } catch (err) {
+    console.warn('[Upload] Erro ao enviar para /api/upload:', err);
+  }
+
+  // 2. Fallback Base64 apenas para arquivos pequenos (<= 8MB) se o servidor estiver offline
+  if (file.size <= 8 * 1024 * 1024) {
+    try {
+      return await fileToBase64(file);
+    } catch (e) {
+      console.warn('[Upload] Erro na conversão Base64:', e);
+    }
+  }
+
+  throw new Error(`Não foi possível enviar o arquivo "${file.name}". Verifique sua conexão.`);
+}
+
 // ── Helpers para Emojis, Resposta e Cópia de Imagem ──
 function isOnlyEmojis(text: string): boolean {
   if (!text) return false;
@@ -254,7 +313,18 @@ export function ChatPanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef<number>(0);
-  const [stagedFile, setStagedFile] = useState<{ file: File, previewUrl: string } | null>(null);
+  const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
+  const stagedFilesRef = useRef(stagedFiles);
+  stagedFilesRef.current = stagedFiles;
+
+  useEffect(() => {
+    return () => {
+      stagedFilesRef.current.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+    };
+  }, []);
+
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [imageZoom, setImageZoom] = useState<number>(1);
@@ -1348,9 +1418,82 @@ export function ChatPanel({
     }
   }, [displayedMessages.length, activeChannelId, searchQuery, scrollToBottom]);
 
+  const stageFiles = useCallback((filesToAdd: FileList | File[]) => {
+    const newStaged: StagedAttachment[] = [];
+    const filesArray = Array.from(filesToAdd);
+    let hasTooLarge = false;
+
+    for (const rawFile of filesArray) {
+      if (rawFile.size > MAX_CHAT_FILE_SIZE) {
+        hasTooLarge = true;
+        continue;
+      }
+
+      // Normalização do tipo MIME caso venha vazio ou genérico
+      let processedFile = rawFile;
+      if (!rawFile.type || rawFile.type === '') {
+        const ext = rawFile.name ? rawFile.name.split('.').pop()?.toLowerCase() : '';
+        let mime = 'application/octet-stream';
+        if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
+        else if (ext === 'png') mime = 'image/png';
+        else if (ext === 'gif') mime = 'image/gif';
+        else if (ext === 'webp') mime = 'image/webp';
+        else if (ext === 'svg') mime = 'image/svg+xml';
+        else if (ext === 'pdf') mime = 'application/pdf';
+        processedFile = new File([rawFile], rawFile.name || `arquivo_${Date.now()}`, { type: mime });
+      }
+
+      const isImage = processedFile.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(processedFile.name);
+      const previewUrl = URL.createObjectURL(processedFile);
+      const id = `staged-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      newStaged.push({
+        id,
+        file: processedFile,
+        previewUrl,
+        isImage,
+      });
+    }
+
+    if (hasTooLarge) {
+      toast.error('O arquivo deve ter no máximo 1GB.');
+    }
+
+    if (newStaged.length > 0) {
+      setStagedFiles((prev) => [...prev, ...newStaged]);
+      if (newStaged.length === 1) {
+        toast.success(`Arquivo "${newStaged[0].file.name}" anexado!`);
+      } else {
+        toast.success(`${newStaged.length} arquivos anexados!`);
+      }
+      setTimeout(() => {
+        document.getElementById('chatInput')?.focus();
+      }, 50);
+    }
+  }, []);
+
+  const removeStagedFile = useCallback((id: string) => {
+    setStagedFiles((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  const clearStagedFiles = useCallback(() => {
+    setStagedFiles((prev) => {
+      prev.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      return [];
+    });
+  }, []);
+
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
-    if (!trimmed && !stagedFile) return;
+    if (!trimmed && stagedFiles.length === 0) return;
 
     // Envio de Mensagem Direta (DM 1:1)
     if (isDmMode && activeDmChat) {
@@ -1358,19 +1501,42 @@ export function ChatPanel({
         toast.error('Você não pode enviar mensagens diretas para um usuário bloqueado.');
         return;
       }
-      let fileUrl = '';
-      const isImage = stagedFile ? (stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name)) : false;
-      const fileName = stagedFile?.file.name || (isImage ? 'imagem.png' : 'arquivo');
-      const msgType = stagedFile ? (isImage ? 'image' : 'file') : 'text';
+      if (!isPartnerFriend) {
+        toast.error('Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.', {
+          id: 'dm-not-friend-warning',
+          duration: 5000,
+          icon: '⛔',
+          style: {
+            background: '#dc2626',
+            color: '#ffffff',
+            fontWeight: 600,
+            fontSize: '14px',
+            borderRadius: '10px',
+            boxShadow: '0 8px 30px rgba(220, 38, 38, 0.5)',
+            border: '1px solid #ef4444',
+            padding: '12px 18px',
+          },
+        });
 
-      // Limpar input imediatamente para feedback 0ms
-      setInput('');
-      const currentStaged = stagedFile;
-      setStagedFile(null);
-      setReplyingTo(null);
+        const errorMsg: DirectMessage = {
+          id: `sys-err-${Date.now()}`,
+          chatId: activeDmChat.id,
+          senderId: 'system',
+          senderName: 'Sistema',
+          avatarUrl: null,
+          content: 'Esta pessoa não recebeu sua mensagem pois ainda não é seu amigo.',
+          msgType: 'system_error' as any,
+          createdAt: new Date().toISOString(),
+        };
+        setDmMessages(prev => [...prev, errorMsg]);
+        return;
+      }
 
-      // Otimismo imediato se for texto puro
-      if (!currentStaged && trimmed) {
+      // Otimismo imediato se for texto puro sem anexos
+      if (stagedFiles.length === 0 && trimmed) {
+        setInput('');
+        setReplyingTo(null);
+
         const optimisticDm: DirectMessage = {
           id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           chatId: activeDmChat.id,
@@ -1381,45 +1547,73 @@ export function ChatPanel({
           msgType: 'text',
           createdAt: new Date().toISOString(),
         };
-        setDmMessages(prev => [...prev, optimisticDm]);
-        sendDirectMessageToSupabase(activeDmChat.id, trimmed, 'text', undefined, undefined, activeDmChat.partnerId, activeDmChat.partnerName);
+        setDmMessages((prev) => [...prev, optimisticDm]);
+        sendDirectMessageToSupabase(
+          activeDmChat.id,
+          trimmed,
+          'text',
+          undefined,
+          undefined,
+          activeDmChat.partnerId,
+          activeDmChat.partnerName
+        );
         return;
       }
 
-      if (currentStaged) {
-        if (isImage) {
-          fileUrl = await fileToBase64(currentStaged.file);
-        } else {
-          try {
-            const formData = new FormData();
-            formData.append('file', currentStaged.file);
-            const res = await fetch(`${SERVER_URL}/api/upload`, {
-              method: 'POST',
-              body: formData,
-            });
-            if (res.ok) {
-              const data = await res.json();
-              fileUrl = `${SERVER_URL}${data.url}`;
-            } else {
-              fileUrl = await fileToBase64(currentStaged.file);
-            }
-          } catch {
-            fileUrl = await fileToBase64(currentStaged.file);
-          }
-        }
-      }
+      if (stagedFiles.length > 0) {
+        const filesToSend = [...stagedFiles];
+        setInput('');
+        clearStagedFiles();
+        setReplyingTo(null);
+        setIsUploading(true);
 
-      const messageContent = trimmed || (msgType === 'image' ? '📷 Imagem' : `📎 ${fileName}`);
-      sendDirectMessageToSupabase(activeDmChat.id, messageContent, msgType as any, fileUrl, fileName, activeDmChat.partnerId, activeDmChat.partnerName).then((created) => {
-        if (created) {
-          setDmMessages(prev => [...prev, created]);
+        try {
+          for (let i = 0; i < filesToSend.length; i++) {
+            const item = filesToSend[i];
+            const fileUrl = await uploadChatAttachment(item.file);
+            const msgType: 'image' | 'file' = item.isImage ? 'image' : 'file';
+            const messageContent = (i === 0 && trimmed) ? trimmed : (item.isImage ? '📷 Imagem' : `📎 ${item.file.name}`);
+
+            const optimisticDm: DirectMessage = {
+              id: `opt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+              chatId: activeDmChat.id,
+              senderId: myName || 'me',
+              senderName: myName || 'Você',
+              avatarUrl: myAvatarUrl,
+              content: messageContent,
+              msgType: msgType,
+              fileUrl: fileUrl,
+              fileName: item.file.name,
+              createdAt: new Date().toISOString(),
+            };
+            setDmMessages((prev) => [...prev, optimisticDm]);
+
+            sendDirectMessageToSupabase(
+              activeDmChat.id,
+              messageContent,
+              msgType as any,
+              fileUrl,
+              item.file.name,
+              activeDmChat.partnerId,
+              activeDmChat.partnerName
+            ).then((created) => {
+              if (created) {
+                setDmMessages((prev) => prev.map((m) => (m.id === optimisticDm.id ? created : m)));
+              }
+            });
+          }
+        } catch (err: any) {
+          console.error('Erro ao enviar anexos:', err);
+          toast.error(err?.message || 'Falha ao processar envio dos arquivos.');
+        } finally {
+          setIsUploading(false);
         }
-      });
-      return;
+        return;
+      }
     }
 
     // Interceptação direta dos comandos de música
-    if (!stagedFile && trimmed.startsWith('/')) {
+    if (stagedFiles.length === 0 && trimmed.startsWith('/')) {
       const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
       if (firstWord === '/pause' || firstWord === '/play' || firstWord === '/skip' || firstWord === '/clear') {
         const action = firstWord.replace('/', '') as 'skip' | 'pause' | 'play' | 'clear';
@@ -1431,79 +1625,61 @@ export function ChatPanel({
 
     const currentChannel = isServer ? (activeChannelId || 'ch-geral') : undefined;
 
-    if (stagedFile) {
+    // Envio de mensagem em canal/sala
+    if (stagedFiles.length > 0) {
+      const filesToSend = [...stagedFiles];
+      const replyData = replyingTo;
+      setInput('');
+      clearStagedFiles();
+      setReplyingTo(null);
       setIsUploading(true);
+
       try {
-        const isImage = stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name);
-        let fileUrl = '';
-        const fileName = stagedFile.file.name || (isImage ? 'imagem.png' : 'arquivo');
-
-        if (isImage) {
-          // Imagens convertidas para Base64 Data URL: permanente e instantânea
-          fileUrl = await fileToBase64(stagedFile.file);
-        } else {
-          // Outros arquivos: tenta upload com fallback Base64
-          try {
-            const formData = new FormData();
-            formData.append('file', stagedFile.file);
-            const res = await fetch(`${SERVER_URL}/api/upload`, {
-              method: 'POST',
-              body: formData,
-            });
-            if (res.ok) {
-              const data = await res.json();
-              fileUrl = `${SERVER_URL}${data.url}`;
-            } else {
-              fileUrl = await fileToBase64(stagedFile.file);
-            }
-          } catch {
-            fileUrl = await fileToBase64(stagedFile.file);
-          }
-        }
-
         let finalQuotePrefix = '';
-        if (replyingTo) {
-          const quoteSnippet = replyingTo.message.length > 70 ? replyingTo.message.slice(0, 67) + '...' : replyingTo.message;
-          finalQuotePrefix = `> **@${replyingTo.userName}**: ${quoteSnippet}\n`;
-          setReplyingTo(null);
+        if (replyData) {
+          const quoteSnippet = replyData.message.length > 70 ? replyData.message.slice(0, 67) + '...' : replyData.message;
+          finalQuotePrefix = `> **@${replyData.userName}**: ${quoteSnippet}\n`;
         }
 
-        const rawText = trimmed || (isImage ? '📷 Imagem' : `📄 ${fileName}`);
-        const msgText = finalQuotePrefix ? `${finalQuotePrefix}${rawText}` : rawText;
-        const msgType = isImage ? 'image' : 'file';
+        for (let i = 0; i < filesToSend.length; i++) {
+          const item = filesToSend[i];
+          const fileUrl = await uploadChatAttachment(item.file);
+          const isImage = item.isImage;
+          const msgType: 'image' | 'file' = isImage ? 'image' : 'file';
+          const fileName = item.file.name || (isImage ? 'imagem.png' : 'arquivo');
 
-        // Renderização otimista imediata para anexo
-        const timestamp = new Date().toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'America/Sao_Paulo',
-        });
-        const optMsg: ChatMessage = {
-          id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          roomId: room?.id,
-          userName: myName || 'Você',
-          message: msgText,
-          timestamp,
-          type: msgType,
-          url: fileUrl || undefined,
-          filename: fileName,
-          channelId: currentChannel,
-          avatarUrl: myAvatarUrl,
-        };
-        addMessage(optMsg);
+          // O texto digitado e eventual citação acompanham o primeiro arquivo (como no Discord)
+          const rawText = (i === 0 && trimmed) ? trimmed : (isImage ? '📷 Imagem' : `📄 ${fileName}`);
+          const msgText = (i === 0 && finalQuotePrefix) ? `${finalQuotePrefix}${rawText}` : rawText;
 
-        // Salvar no Supabase e Socket
-        if (room?.id) {
-          saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
+          const timestamp = new Date().toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/Sao_Paulo',
+          });
+          const optMsg: ChatMessage = {
+            id: `opt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+            roomId: room?.id,
+            userName: myName || 'Você',
+            message: msgText,
+            timestamp,
+            type: msgType,
+            url: fileUrl,
+            filename: fileName,
+            channelId: currentChannel,
+            avatarUrl: myAvatarUrl,
+          };
+          addMessage(optMsg);
+
+          // Salvar no Supabase e Socket
+          if (room?.id) {
+            saveMessageToSupabase(room.id, myName, msgText, currentChannel, msgType, fileUrl, fileName);
+          }
+          onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel, myAvatarUrl);
         }
-        onSendMessage?.(msgText, msgType, fileUrl, fileName, currentChannel, myAvatarUrl);
-
-        URL.revokeObjectURL(stagedFile.previewUrl);
-        setStagedFile(null);
-        setInput('');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Erro no upload/conversao de arquivo:', err);
-        toast.error('Falha ao processar o arquivo.');
+        toast.error(err?.message || 'Falha ao processar envio dos arquivos.');
       } finally {
         setIsUploading(false);
       }
@@ -1541,80 +1717,45 @@ export function ChatPanel({
       }
       onSendMessage?.(msgText, 'text', undefined, undefined, currentChannel, myAvatarUrl);
     }
-  }, [input, stagedFile, replyingTo, onSendMessage, onMusicAction, activeChannelId, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage]);
-
-
-  const stageFile = (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('O arquivo deve ter no máximo 10MB');
-      return;
-    }
-
-    // Normalização do tipo MIME caso venha vazio ou genérico
-    let processedFile = file;
-    if (!file.type || file.type === '') {
-      const ext = file.name ? file.name.split('.').pop()?.toLowerCase() : '';
-      let mime = 'image/png';
-      if (ext === 'jpg' || ext === 'jpeg') mime = 'image/jpeg';
-      else if (ext === 'gif') mime = 'image/gif';
-      else if (ext === 'webp') mime = 'image/webp';
-      else if (ext === 'svg') mime = 'image/svg+xml';
-      else if (ext === 'pdf') mime = 'application/pdf';
-      processedFile = new File([file], file.name || `imagem_${Date.now()}.png`, { type: mime });
-    }
-
-    const previewUrl = URL.createObjectURL(processedFile);
-    setStagedFile({ file: processedFile, previewUrl });
-    toast.success(`Foto "${processedFile.name || 'imagem'}" anexada! Pressione Enter ou envie.`);
-
-    setTimeout(() => {
-      document.getElementById('chatInput')?.focus();
-    }, 50);
-  };
+  }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles]);
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
-    const clipboardData = (e as React.ClipboardEvent).clipboardData || (e as ClipboardEvent).clipboardData;
+    const clipboardData = (e as any).clipboardData;
     if (!clipboardData) return;
 
     // 1. Arquivos copiados diretamente no clipboard (ex: explorer do Windows, arquivo de foto)
     const files = clipboardData.files;
     if (files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(file.name)) {
-          e.preventDefault();
-          stageFile(file);
-          return;
-        }
-      }
-      if (files[0]) {
-        e.preventDefault();
-        stageFile(files[0]);
-        return;
-      }
+      e.preventDefault();
+      stageFiles(files);
+      return;
     }
 
     // 2. Itens de clipboard (ex: print screen, print de área, imagem copiada do navegador)
     const items = clipboardData.items;
     if (items) {
+      const pastedFiles: File[] = [];
       for (let i = 0; i < items.length; i++) {
         const item = items[i];
         if (item.type.indexOf('image') !== -1 || item.kind === 'file') {
           const file = item.getAsFile();
           if (file) {
-            e.preventDefault();
-            stageFile(file);
-            return;
+            pastedFiles.push(file);
           }
         }
+      }
+      if (pastedFiles.length > 0) {
+        e.preventDefault();
+        stageFiles(pastedFiles);
+        return;
       }
     }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    stageFile(file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    stageFiles(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -1654,20 +1795,23 @@ export function ChatPanel({
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
-      stageFile(files[0]);
+      stageFiles(files);
       return;
     }
 
     if (e.dataTransfer.items) {
+      const droppedFiles: File[] = [];
       for (let i = 0; i < e.dataTransfer.items.length; i++) {
         const item = e.dataTransfer.items[i];
         if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file) {
-            stageFile(file);
-            return;
+            droppedFiles.push(file);
           }
         }
+      }
+      if (droppedFiles.length > 0) {
+        stageFiles(droppedFiles);
       }
     }
   };
@@ -2273,32 +2417,49 @@ export function ChatPanel({
               <div ref={bottomRef} />
             </div>
 
-            {/* Staged file preview */}
-            {stagedFile && (
-              <div className={styles.previewContainer}>
-                {(stagedFile.file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|ico)$/i.test(stagedFile.file.name)) ? (
-                  <img src={stagedFile.previewUrl} alt="Preview" className={styles.filePreviewThumb} />
-                ) : (
-                  <div className={styles.genericFilePreview}>
-                    <span>📄</span>
+            {/* Staged multiple attachments preview tray (Discord Style) */}
+            {stagedFiles.length > 0 && (
+              <div className={styles.attachmentsTray}>
+                {stagedFiles.map((staged) => (
+                  <div
+                    key={staged.id}
+                    className={`${styles.attachmentCard} ${staged.isImage ? styles.attachmentCardImage : ''}`}
+                    title={staged.file.name}
+                  >
+                    <button
+                      type="button"
+                      className={styles.attachmentRemoveBtn}
+                      onClick={() => removeStagedFile(staged.id)}
+                      title="Remover este arquivo"
+                      aria-label="Remover este arquivo"
+                    >
+                      ✕
+                    </button>
+
+                    {staged.isImage ? (
+                      <img src={staged.previewUrl} alt={staged.file.name} className={styles.attachmentThumb} />
+                    ) : (
+                      <div className={styles.attachmentFileIcon}>
+                        <i className={`fa-solid ${getFileIcon(staged.file.name, staged.file.type)}`} style={{ color: '#5865f2' }}></i>
+                      </div>
+                    )}
+
+                    <div className={styles.attachmentMeta}>
+                      <span className={styles.attachmentName}>{staged.file.name}</span>
+                      <span className={styles.attachmentSize}>{formatFileSize(staged.file.size)}</span>
+                    </div>
                   </div>
-                )}
-                <div className={styles.previewDetails}>
-                  <span className={styles.previewName}>{stagedFile.file.name}</span>
-                  <span className={styles.previewSize}>
-                    {(stagedFile.file.size / 1024).toFixed(1)} KB
-                  </span>
-                </div>
+                ))}
+
+                {/* Botão de adicionar mais arquivos */}
                 <button
                   type="button"
-                  className={styles.removeFileBtn}
-                  onClick={() => {
-                    URL.revokeObjectURL(stagedFile.previewUrl);
-                    setStagedFile(null);
-                  }}
-                  title="Remover anexo"
+                  className={styles.attachmentAddMoreBtn}
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Adicionar mais arquivos"
                 >
-                  ✕
+                  <i className="fa-solid fa-plus" style={{ fontSize: '16px' }}></i>
+                  <span>Mais</span>
                 </button>
               </div>
             )}
@@ -2414,6 +2575,7 @@ export function ChatPanel({
                   onChange={handleFileUpload}
                   style={{ display: 'none' }}
                   disabled={isPartnerBlocked}
+                  multiple
                 />
 
                 <button
@@ -2480,7 +2642,7 @@ export function ChatPanel({
                   <button
                     type="submit"
                     className={styles.sendButton}
-                    disabled={isPartnerBlocked || (!input.trim() && !stagedFile) || isUploading}
+                    disabled={isPartnerBlocked || (!input.trim() && stagedFiles.length === 0) || isUploading}
                     title={isPartnerBlocked ? "Conversa bloqueada" : "Enviar Mensagem (Enter)"}
                   >
                     {isUploading ? (
