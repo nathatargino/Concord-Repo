@@ -202,13 +202,11 @@ function ensureWidevineCdm(): void {
 // Allow autoplay without user gesture for YouTube and streaming
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('disable-gesture-requirement-for-media-playback');
-// Desativa recursos conflitantes, sandbox do Audio Service e ducking no Windows para permitir captura WASAPI loopback e impedir redução do som em chamadas
+// Desativa recursos conflitantes que interceptam teclas de mídia e autenticação WebAuthn
 app.commandLine.appendSwitch(
     'disable-features',
-    'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi,AudioServiceOutOfProcess,AudioServiceSandbox,AudioServiceDuckOthers'
+    'HardwareMediaKeyHandling,MediaSessionService,WebAuthentication,WebAuthenticationCable,WebAuthnExtensions,WebAuthenticationUseNativeWinApi'
 );
-// Desativa o sandbox do Audio Service do Chromium para permitir captura WASAPI loopback de áudio do sistema sem falhas no Windows
-app.commandLine.appendSwitch('disable-audio-service-sandbox');
 
 // Disable web security restrictions that block YouTube iframe audio and media streaming
 app.commandLine.appendSwitch('disable-web-security');

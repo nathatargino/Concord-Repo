@@ -741,11 +741,10 @@ export default function App() {
             channelCount: 1,
             echoCancellation: true,
             noiseSuppression: nsActive,
-            autoGainControl: false,
+            autoGainControl: true,
             // @ts-ignore
             googNoiseSuppression: nsActive,
             googHighpassFilter: false,
-            googAutoGainControl: false,
           },
         });
       } catch (micErr) {
