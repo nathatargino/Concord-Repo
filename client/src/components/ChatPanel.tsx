@@ -2985,6 +2985,20 @@ export function ChatPanel({
                     <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
                   ) : null}
                 </button>
+                <button
+                  type="button"
+                  className={styles.mediaTabCloseBtn}
+                  onClick={() => {
+                    const electron = (window as any).electron;
+                    if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
+                    setRenderMedia(false);
+                    setShowVideoPlayer(false);
+                  }}
+                  title="Fechar player e voltar ao chat"
+                  aria-label="Fechar player e voltar ao chat"
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
               </div>
 
               {/* ── Conteúdo: Streaming (Netflix, Prime Video ou Crunchyroll) ── */}
@@ -3180,19 +3194,29 @@ export function ChatPanel({
                           </button>
 
                           <button
-                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
+                            type="button"
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutBack}`}
                             onClick={() => {
                               const electron = (window as any).electron;
-                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('exit', { service: currentService });
-                              else if (electron?.streamingCommand) electron.streamingCommand('exit', { service: currentService });
-                              if (electron?.setActiveMediaTab) electron.setActiveMediaTab('youtube');
-                              setRenderMedia(false);
-                              setShowVideoPlayer(false);
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('back', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('back', { service: currentService });
+                              // Fallback no modo Web SPA (iframe)
+                              if (!electron) {
+                                const catalogUrl = currentService === 'netflix'
+                                  ? 'https://www.netflix.com/browse'
+                                  : currentService === 'prime'
+                                  ? 'https://www.primevideo.com'
+                                  : 'https://www.crunchyroll.com/';
+                                const iframe = document.getElementById(`streaming-frame-${currentService}`) as HTMLIFrameElement | null;
+                                if (iframe) {
+                                  iframe.src = catalogUrl;
+                                }
+                              }
                             }}
-                            title="Sair da transmissão e voltar ao chat"
+                            title={`Voltar ao catálogo de ${platformLabel}`}
                           >
                             <i className="fa-solid fa-arrow-left"></i>
-                            <span>Sair</span>
+                            <span>Voltar</span>
                           </button>
 
                           <button

@@ -2701,64 +2701,92 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
             enterStreamingFullscreen(inst);
         }
     }
-    else if (command === 'exit' || command === 'back') {
+    else if (command === 'back') {
+        // Voltar ao catálogo: sair do filme/série e retornar à tela inicial/catálogo do streaming sem fechar o player
+        const targetCatalogUrl = inst.service === 'netflix'
+            ? 'https://www.netflix.com/browse'
+            : inst.service === 'prime'
+                ? 'https://www.primevideo.com'
+                : 'https://www.crunchyroll.com/';
         wc.executeJavaScript(`
             (function() {
+                const selectors = [
+                    '[data-uia="control-back"]',
+                    '.button-nfplayerBack',
+                    '.atvwebplayersdk-back-button',
+                    '[data-automation-id="back-button"]',
+                    '.backButton',
+                    '.dv-playback-back-button',
+                    "[data-testid='vilos-back_button']",
+                    '.video-player-back-button',
+                    '.erc-watch-header .back-button',
+                    "button[aria-label*='Back' i]",
+                    "button[aria-label*='Voltar' i]",
+                    "a[aria-label*='Back' i]",
+                    "a[aria-label*='Voltar' i]"
+                ];
+
+                // 1. Tentar clicar no botão nativo de voltar no DOM principal
+                for (const sel of selectors) {
+                    const btn = document.querySelector(sel);
+                    if (btn && typeof btn.click === 'function') {
+                        btn.click();
+                        return { action: 'clicked_native', selector: sel };
+                    }
+                }
+
+                // 2. Tentar nos iframes (como o Vilos da Crunchyroll)
+                try {
+                    const iframes = Array.from(document.querySelectorAll('iframe'));
+                    for (const ifr of iframes) {
+                        try {
+                            const innerDoc = ifr.contentDocument || ifr.contentWindow?.document;
+                            if (innerDoc) {
+                                for (const sel of selectors) {
+                                    const btn = innerDoc.querySelector(sel);
+                                    if (btn && typeof btn.click === 'function') {
+                                        btn.click();
+                                        return { action: 'clicked_iframe', selector: sel };
+                                    }
+                                }
+                            }
+                        } catch {}
+                    }
+                } catch {}
+
+                // 3. Se estiver em URL de reprodução direta, voltar no histórico ou ir direto ao catálogo
                 const href = window.location.href;
-                const isNetflixWatch = href.includes('netflix.com/watch');
-                const isPrimeWatch = href.includes('/player') || href.includes('/gp/video/detail') || href.includes('/detail');
-                const isCrunchyWatch = href.includes('crunchyroll.com') && href.includes('/watch/');
-                const hasBackBtn = !!(
-                    document.querySelector('[data-uia="control-back"]') ||
-                    document.querySelector('.button-nfplayerBack') ||
-                    document.querySelector('.atvwebplayersdk-back-button') ||
-                    document.querySelector('[data-automation-id="back-button"]') ||
-                    document.querySelector('.backButton') ||
-                    document.querySelector("[data-testid='vilos-back_button']") ||
-                    document.querySelector("[aria-label*='Back']") ||
-                    document.querySelector("[aria-label*='Voltar']")
-                );
-                return {
-                    isWatching: isNetflixWatch || isPrimeWatch || isCrunchyWatch || hasBackBtn,
-                    href: href
-                };
+                const isWatchUrl = href.includes('/watch') || href.includes('/player') || href.includes('/detail');
+                if (window.history.length > 1 && isWatchUrl) {
+                    window.history.back();
+                    return { action: 'history_back' };
+                }
+
+                // 4. Redirecionar diretamente para o catálogo oficial
+                window.location.href = ${JSON.stringify(targetCatalogUrl)};
+                return { action: 'navigated_catalog' };
             })()
-        `).then((res) => {
-            if (!res || !res.isWatching) {
-                // Se já estiver fora do filme/série (no catálogo ou home), feche a transmissão
-                closeStreamingInstance(inst.service);
-            }
-            else {
-                // Se estiver assistindo ao filme/série, saia do filme e volte ao catálogo
-                wc.executeJavaScript(`
-                    (function() {
-                        const netflixBack = document.querySelector('[data-uia="control-back"]') ||
-                                            document.querySelector('.button-nfplayerBack');
-                        if (netflixBack) { netflixBack.click(); return; }
-                        const primeBack = document.querySelector('.atvwebplayersdk-back-button') ||
-                                          document.querySelector('[data-automation-id="back-button"]') ||
-                                          document.querySelector('.backButton');
-                        if (primeBack) { primeBack.click(); return; }
-                        const crunchyBack = document.querySelector("[data-testid='vilos-back_button']") ||
-                                            document.querySelector("[aria-label*='Back']") ||
-                                            document.querySelector("[aria-label*='Voltar']");
-                        if (crunchyBack) { crunchyBack.click(); return; }
-                        const href = window.location.href;
-                        if (href.includes('netflix.com')) {
-                            window.location.href = 'https://www.netflix.com/browse';
-                        } else if (href.includes('primevideo.com') || href.includes('amazon.')) {
-                            window.location.href = 'https://www.primevideo.com';
-                        } else if (href.includes('crunchyroll.com')) {
-                            window.location.href = 'https://www.crunchyroll.com/';
-                        } else {
-                            window.location.href = 'https://www.crunchyroll.com/';
-                        }
-                    })()
-                `).catch(() => { });
-            }
+        `).then(() => {
+            // Se após 350ms o player ainda estiver na URL de vídeo (/watch ou /player), forçar carregamento do catálogo
+            setTimeout(() => {
+                if (!wc.isDestroyed()) {
+                    const currentUrl = wc.getURL();
+                    const isStillWatching = currentUrl.includes('/watch') || currentUrl.includes('/player');
+                    if (isStillWatching) {
+                        wc.loadURL(targetCatalogUrl).catch(() => { });
+                    }
+                }
+            }, 350);
         }).catch(() => {
-            closeStreamingInstance(inst.service);
+            if (!wc.isDestroyed()) {
+                wc.loadURL(targetCatalogUrl).catch(() => { });
+            }
         });
+        const streamingSession = electron_1.session.fromPartition('persist:streaming-session');
+        streamingSession.cookies.flushStore().catch(() => { });
+    }
+    else if (command === 'exit') {
+        closeStreamingInstance(inst.service);
         const streamingSession = electron_1.session.fromPartition('persist:streaming-session');
         streamingSession.cookies.flushStore().catch(() => { });
     }

@@ -2017,6 +2017,18 @@
   color: #93c5fd;
 }
 
+/* Botão Voltar ao Catálogo — indigo/blurple */
+.videoShortcutBack {
+  border-color: rgba(99, 102, 241, 0.35);
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+}
+.videoShortcutBack:hover {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #ffffff;
+}
+
 /* /clear e Sair — vermelho */
 .videoShortcutClear,
 .videoShortcutExit {
@@ -2462,6 +2474,29 @@
 .mediaTab:hover:not([class*="mediaTabActive"]) {
   background: rgba(255, 255, 255, 0.06);
   color: #fff;
+}
+
+.mediaTabCloseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.mediaTabCloseBtn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #ef4444;
 }
 
 /* YouTube Active Tab */
