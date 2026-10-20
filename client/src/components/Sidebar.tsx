@@ -110,6 +110,7 @@ export const Sidebar: React.FC<Props> = ({
     directChats,
     activeDmChat,
     setActiveDmChat,
+    setShowVideoPlayer,
     setCreateRoomPromptOpen,
     activeCallInfo,
     showConfirmModal,
@@ -958,6 +959,7 @@ export const Sidebar: React.FC<Props> = ({
                           onClick={() => {
                             setActiveDmChat(chat);
                             setHomeTab('dm');
+                            setShowVideoPlayer(false);
                           }}
                           onContextMenu={(e) => {
                             e.preventDefault();
@@ -1720,6 +1722,7 @@ export const Sidebar: React.FC<Props> = ({
                     if (chat) {
                       setActiveDmChat(chat);
                       setHomeTab('dm');
+                      setShowVideoPlayer(false);
                       setActiveRailContext('home');
                       navigate('/home');
                     } else {
@@ -2068,6 +2071,7 @@ export const Sidebar: React.FC<Props> = ({
               onClick={() => {
                 setActiveDmChat(dmContextMenu.chat);
                 setHomeTab('dm');
+                setShowVideoPlayer(false);
                 setDmContextMenu(null);
               }}
             >

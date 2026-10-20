@@ -21,7 +21,7 @@ interface Props {
 
 export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
   const navigate = useNavigate();
-  const { myAvatarUrl, myName, friends, setFriends, showConfirmModal, setActiveDmChat, setHomeTab, setActiveRailContext } = useAppStore();
+  const { myAvatarUrl, myName, friends, setFriends, showConfirmModal, setActiveDmChat, setShowVideoPlayer, setHomeTab, setActiveRailContext } = useAppStore();
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [memberSince, setMemberSince] = useState<string | null>(null);
   const [fetchedAvatar, setFetchedAvatar] = useState<string | null>(null);
@@ -238,6 +238,7 @@ export const UserProfileModal: React.FC<Props> = ({ user, onClose }) => {
       if (chat) {
         setActiveDmChat(chat);
         setHomeTab('dm');
+        setShowVideoPlayer(false);
         setActiveRailContext('home');
         onClose();
         navigate('/home');

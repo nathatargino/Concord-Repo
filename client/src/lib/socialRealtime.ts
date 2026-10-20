@@ -841,9 +841,10 @@ export function handleIncomingDirectMessage(data: any) {
         !list.some(
           (m: any) =>
             m.id === data.id ||
-            (m.content === data.content &&
+            (m.id?.startsWith?.('opt-') &&
+              m.content === data.content &&
               m.senderName === data.senderName &&
-              Math.abs(new Date(m.createdAt).getTime() - new Date(data.createdAt).getTime()) < 2000)
+              Math.abs(new Date(m.createdAt).getTime() - new Date(data.createdAt).getTime()) < 5000)
         )
       ) {
         list.push(data);
@@ -852,7 +853,7 @@ export function handleIncomingDirectMessage(data: any) {
     } catch {}
   }
 
-  // Garantir que chat existe na lista de chats diretos e atualizar avatar
+  // Garantir que chat existe na lista de chats diretos e atualizar timestamp/avatar
   try {
     const rawChats = localStorage.getItem('concord_direct_chats');
     const chatList = rawChats ? JSON.parse(rawChats) : [];
@@ -864,13 +865,20 @@ export function handleIncomingDirectMessage(data: any) {
     );
 
     if (existingIndex >= 0) {
-      if (data.senderAvatarUrl && chatList[existingIndex].partnerAvatarUrl !== data.senderAvatarUrl) {
-        chatList[existingIndex].partnerAvatarUrl = data.senderAvatarUrl;
-        chatList[existingIndex].updatedAt = data.createdAt || new Date().toISOString();
-        localStorage.setItem('concord_direct_chats', JSON.stringify(chatList));
-        store.setDirectChats(chatList);
-        window.dispatchEvent(new CustomEvent('concord:direct-chats-updated'));
+      const existingChat = chatList[existingIndex];
+      existingChat.updatedAt = data.createdAt || new Date().toISOString();
+      if (data.senderAvatarUrl) {
+        existingChat.partnerAvatarUrl = data.senderAvatarUrl;
       }
+      if (data.chatId && !existingChat.id) {
+        existingChat.id = data.chatId;
+      }
+      // Reordena para o topo dos chats ativos
+      chatList.splice(existingIndex, 1);
+      chatList.unshift(existingChat);
+      localStorage.setItem('concord_direct_chats', JSON.stringify(chatList));
+      store.setDirectChats(chatList);
+      window.dispatchEvent(new CustomEvent('concord:direct-chats-updated'));
     } else {
       const newChat = {
         id: data.chatId || `dm-pair-${pairKey}`,

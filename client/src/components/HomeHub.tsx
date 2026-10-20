@@ -46,6 +46,7 @@ export const HomeHub: React.FC = () => {
     setFriends,
     setDirectChats,
     setActiveDmChat,
+    setShowVideoPlayer,
     createRoomPromptOpen,
     setCreateRoomPromptOpen,
     servers,
@@ -376,6 +377,7 @@ export const HomeHub: React.FC = () => {
       if (chat) {
         setActiveDmChat(chat);
         setHomeTab('dm');
+        setShowVideoPlayer(false);
       } else {
         toast.error('Não foi possível abrir a mensagem direta.');
       }

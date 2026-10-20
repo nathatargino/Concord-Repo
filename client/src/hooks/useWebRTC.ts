@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { useAudioStore } from '../stores/useAudioStore';
 import { playJoinSound, playLeaveSound } from '../utils/soundEffects';
@@ -39,29 +39,44 @@ function applySenderBitrate(sender: RTCRtpSender, isVideo: boolean, peerCount: n
 
     if (isVideo) {
       let baseBitrate = 5_000_000; // 1080p 60fps standard
+      let targetHeight = 1080;
       if (screenShareResolution === '1440p' && screenShareFps === 60) {
         baseBitrate = 7_500_000; // 7.5 Mbps
+        targetHeight = 1440;
       } else if (screenShareResolution === '1440p' && screenShareFps === 30) {
         baseBitrate = 5_500_000;
+        targetHeight = 1440;
       } else if (screenShareResolution === '1080p' && screenShareFps === 60) {
         baseBitrate = 5_000_000; // 5.0 Mbps
-      } else if (
-        (screenShareResolution === '1080p' && screenShareFps === 30) ||
-        (screenShareResolution === '720p' && screenShareFps === 60)
-      ) {
+        targetHeight = 1080;
+      } else if (screenShareResolution === '1080p' && screenShareFps === 30) {
         baseBitrate = 3_500_000; // 3.5 Mbps
+        targetHeight = 1080;
+      } else if (screenShareResolution === '720p' && screenShareFps === 60) {
+        baseBitrate = 3_000_000; // 3.0 Mbps
+        targetHeight = 720;
       } else if (screenShareResolution === '720p' && screenShareFps === 30) {
-        baseBitrate = 2_500_000; // 2.5 Mbps
+        baseBitrate = 2_000_000; // 2.0 Mbps
+        targetHeight = 720;
       }
 
-      // If more than 4 peers, adjust proportionally to avoid saturating upstream, keeping >= 2 Mbps
+      // If more than 4 peers, adjust proportionally to avoid saturating upstream, keeping >= 1.5 Mbps
       let adjustedBitrate = baseBitrate;
       if (peerCount > 4) {
-        adjustedBitrate = Math.max(2_000_000, Math.round(baseBitrate * (4 / peerCount)));
+        adjustedBitrate = Math.max(1_500_000, Math.round(baseBitrate * (4 / peerCount)));
       }
 
       params.encodings[0].maxBitrate = adjustedBitrate;
       params.encodings[0].maxFramerate = screenShareFps;
+
+      // Escala e reduz resolução real (720p vs 1080p) via scaleResolutionDownBy do WebRTC
+      const currentHeight = sender.track?.getSettings()?.height || 1080;
+      if (currentHeight > targetHeight) {
+        params.encodings[0].scaleResolutionDownBy = Math.max(1.0, +(currentHeight / targetHeight).toFixed(2));
+      } else {
+        params.encodings[0].scaleResolutionDownBy = 1.0;
+      }
+
       // @ts-ignore
       params.degradationPreference =
         screenShareContentHint === 'detail' ? 'maintain-resolution' : 'maintain-framerate';
@@ -91,8 +106,58 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
 
   const myIdRef = useRef('');
 
+  // Re-aplica constraints e parâmetros de codificação de screenshare dinamicamente quando resolução/FPS mudam
+  useEffect(() => {
+    const unsub = useAudioStore.subscribe((state, prevState) => {
+      if (
+        state.screenShareResolution !== prevState.screenShareResolution ||
+        state.screenShareFps !== prevState.screenShareFps ||
+        state.screenShareContentHint !== prevState.screenShareContentHint
+      ) {
+        if (screenStreamRef.current) {
+          const vTrack = screenStreamRef.current.getVideoTracks()[0];
+          if (vTrack) {
+            let targetWidth = 1920;
+            let targetHeight = 1080;
+            if (state.screenShareResolution === '720p') {
+              targetWidth = 1280;
+              targetHeight = 720;
+            } else if (state.screenShareResolution === '1440p') {
+              targetWidth = 2560;
+              targetHeight = 1440;
+            }
+            try {
+              // @ts-ignore
+              vTrack.contentHint = state.screenShareContentHint;
+            } catch {}
+            vTrack
+              .applyConstraints({
+                width: { ideal: targetWidth, max: targetWidth },
+                height: { ideal: targetHeight, max: targetHeight },
+                frameRate: { ideal: state.screenShareFps, max: state.screenShareFps },
+              })
+              .catch(() => {});
+          }
+        }
+
+        peersRef.current.forEach((peer) => {
+          if (peer.screenSender) {
+            applySenderBitrate(peer.screenSender, true, peersRef.current.size);
+          }
+        });
+      }
+    });
+
+    return () => unsub();
+  }, []);
+
   const attachScreenAudioTrack = useCallback(
     (peerId: string, peerData: PeerConnection, sAudio: MediaStreamTrack) => {
+      try {
+        // @ts-ignore
+        sAudio.contentHint = 'music';
+      } catch {}
+
       let screenAudioEl = peerData.screenAudioEl;
       if (!screenAudioEl) {
         screenAudioEl = (document.getElementById(`remote-screen-audio-${peerId}`) as HTMLAudioElement) || null;
@@ -107,6 +172,10 @@ export function useWebRTC(emit: EmitFn, attachRemoteStream?: AttachRemoteFn, att
         }
         peerData.screenAudioEl = screenAudioEl;
       }
+
+      const savedVol = (useAudioStore.getState().screenShareVol ?? 50) / 100;
+      screenAudioEl.volume = Math.max(0, Math.min(1, savedVol));
+      screenAudioEl.muted = useAudioStore.getState().callMuted || savedVol === 0;
 
       const existingStream = screenAudioEl.srcObject as MediaStream | null;
       const alreadyAttached =
