@@ -235,7 +235,11 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   // Navigation & Rail Context
   activeRailContext: 'home',
-  setActiveRailContext: (activeRailContext) => set({ activeRailContext }),
+  setActiveRailContext: (activeRailContext) =>
+    set({
+      activeRailContext,
+      ...(activeRailContext !== 'home' ? { activeDmChat: null, homeTab: 'hub' } : {}),
+    }),
   recentRooms: getRecentRooms(),
   setRecentRooms: (recentRooms) => set({ recentRooms }),
   refreshRecentRooms: () => set({ recentRooms: getRecentRooms() }),
@@ -329,6 +333,7 @@ export const useAppStore = create<AppState>((set) => ({
         users: roomChanged ? [] : state.users,
         serverMembers: roomChanged ? [] : state.serverMembers,
         watchSession: roomChanged ? null : state.watchSession,
+        ...(room && state.activeRailContext !== 'home' ? { activeDmChat: null, homeTab: 'hub' } : {}),
       };
     }),
   isServer: false,
@@ -493,10 +498,10 @@ export const useAppStore = create<AppState>((set) => ({
 
       return { messages: [...s.messages.slice(-500), msg] };
     }),
-  systemNotificationsEnabled: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications') !== 'false' : true,
+  systemNotificationsEnabled: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications_v2') === 'true' : false,
   setSystemNotificationsEnabled: (enabled) => {
     try {
-      localStorage.setItem('concord_system_notifications', String(enabled));
+      localStorage.setItem('concord_system_notifications_v2', String(enabled)); localStorage.setItem('concord_system_notifications', String(enabled));
     } catch {}
     set({ systemNotificationsEnabled: enabled });
   },

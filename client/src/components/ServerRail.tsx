@@ -18,6 +18,7 @@ export const ServerRail: React.FC<ServerRailProps> = ({ onOpenProfile }) => {
     activeRailContext,
     setActiveRailContext,
     setHomeTab,
+    setActiveDmChat,
     openActionModal,
     myName,
     myAvatarUrl,
@@ -119,6 +120,7 @@ export const ServerRail: React.FC<ServerRailProps> = ({ onOpenProfile }) => {
   const handleHomeClick = () => {
     setActiveRailContext('home');
     setHomeTab('hub');
+    setActiveDmChat(null);
     useAppStore.getState().setRoom(null);
     navigate('/');
   };
@@ -126,6 +128,8 @@ export const ServerRail: React.FC<ServerRailProps> = ({ onOpenProfile }) => {
   const handleServerClick = (server: SavedServer) => {
     recordRecentServer(server);
     setActiveRailContext(server.id);
+    setActiveDmChat(null);
+    setHomeTab('hub');
     navigate(`/room/${server.id}?code=${server.code}&server=1`);
   };
 

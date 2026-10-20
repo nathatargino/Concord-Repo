@@ -68,10 +68,16 @@ function findTargetSocket(io: IoServer, targetId: string, senderSocketId: string
   const direct = io.sockets.sockets.get(targetId);
   if (direct) return direct;
   const cleanT = (targetId || '').trim().toLowerCase().replace(/^@/, '');
+  const cleanTNoTag = cleanT.includes('#') ? cleanT.split('#')[0].trim() : cleanT;
   for (const [sId, s] of io.sockets.sockets) {
     if (sId === senderSocketId) continue;
     const sName = (s.data.user?.name || '').trim().toLowerCase().replace(/^@/, '');
-    if (s.data.userId === targetId || s.data.persistentId === targetId || (cleanT && sName === cleanT)) {
+    const sNameClean = sName.includes('#') ? sName.split('#')[0].trim() : sName;
+    if (
+      s.data.userId === targetId ||
+      s.data.persistentId === targetId ||
+      (cleanT && (sName === cleanT || sNameClean === cleanTNoTag || sNameClean === cleanT || sName === cleanTNoTag))
+    ) {
       return s;
     }
   }
@@ -409,20 +415,37 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 }
               }
 
-              // Buscar admins/donos se for servidor
+              // Buscar admins/donos e membros conhecidos se for servidor
               let restoredAdminPersistentIds: string[] = [];
+              const restoredKnownMembers = new Map<string, any>();
               if (isServerRoom) {
                 try {
                   const { data: memData } = await supabaseClient
                     .from('server_members')
-                    .select('user_id')
-                    .eq('server_id', dbRoom.id)
-                    .in('role', ['owner', 'sub_owner']);
+                    .select('id, user_id, username, role, custom_role_name, custom_role_emoji, custom_role_color')
+                    .eq('server_id', dbRoom.id);
                   if (memData) {
-                    restoredAdminPersistentIds = memData.map((m: any) => m.user_id).filter(Boolean);
+                    for (const m of memData) {
+                      if (m.role === 'owner' || m.role === 'sub_owner') {
+                        if (m.user_id) restoredAdminPersistentIds.push(m.user_id);
+                      }
+                      if (m.username) {
+                        restoredKnownMembers.set(m.username.toLowerCase(), {
+                          id: m.id || m.username,
+                          username: m.username,
+                          role: m.role || 'member',
+                          customRole: m.custom_role_name ? {
+                            name: m.custom_role_name,
+                            emoji: m.custom_role_emoji || '🛡️',
+                            color: m.custom_role_color || '#5865f2',
+                            isAdmin: m.role === 'sub_owner' || m.role === 'owner',
+                          } : undefined,
+                        });
+                      }
+                    }
                   }
                 } catch (memErr) {
-                  console.warn('[Room] Erro ao restaurar admins:', memErr);
+                  console.warn('[Room] Erro ao restaurar membros/admins:', memErr);
                 }
               }
 
@@ -450,7 +473,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 currentMusicStartTime: null,
                 watchSession: null,
                 messageHistory: [],
-                knownMembers: new Map(),
+                knownMembers: restoredKnownMembers,
               };
               rooms.set(restored.id, restored);
               codeToRoomId.set(restored.code, restored.id);
@@ -610,38 +633,81 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (room.isServer) {
         if (!room.knownMembers) room.knownMembers = new Map();
         if (user.name) {
+          const existing = room.knownMembers.get(user.name.toLowerCase());
           room.knownMembers.set(user.name.toLowerCase(), {
             id: user.id,
             username: user.name,
-            avatarUrl: user.avatarUrl || null,
-            role: user.role || 'member',
+            avatarUrl: user.avatarUrl || existing?.avatarUrl || null,
+            role: user.role || existing?.role || 'member',
+            customRole: existing?.customRole,
           });
         }
       }
 
-      if (supabaseClient && room.isServer && user.name) {
-        supabaseClient
-          .from('server_members')
-          .select('role')
-          .eq('server_id', room.id)
-          .ilike('username', user.name)
-          .maybeSingle()
-          .then(({ data: mem }: any) => {
-            if (mem?.role) {
-              user.role = mem.role;
-              if (mem.role === 'sub_owner') {
-                if (!room.subOwnerIds) room.subOwnerIds = [];
-                if (!room.subOwnerIds.includes(socket.id)) room.subOwnerIds.push(socket.id);
-                if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
-              } else if (mem.role === 'owner') {
-                if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+      if (supabaseClient && room.isServer) {
+        const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+        (async () => {
+          let actualDbServerId = isValidUUID(room.id) ? room.id : null;
+          if (!actualDbServerId && room.code) {
+            const { data: dbR } = await supabaseClient
+              .from('rooms')
+              .select('id')
+              .ilike('code', room.code)
+              .maybeSingle();
+            if (dbR?.id && isValidUUID(dbR.id)) actualDbServerId = dbR.id;
+          }
+
+          if (actualDbServerId) {
+            if (user.name) {
+              const { data: mem } = await supabaseClient
+                .from('server_members')
+                .select('role')
+                .eq('server_id', actualDbServerId)
+                .ilike('username', user.name)
+                .maybeSingle();
+              if (mem?.role) {
+                user.role = mem.role;
+                if (mem.role === 'sub_owner') {
+                  if (!room.subOwnerIds) room.subOwnerIds = [];
+                  if (!room.subOwnerIds.includes(socket.id)) room.subOwnerIds.push(socket.id);
+                  if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+                } else if (mem.role === 'owner') {
+                  if (!room.adminIds.includes(socket.id)) room.adminIds.push(socket.id);
+                }
+                socket.emit('user_role_updated', { userId: socket.id, role: mem.role });
+                io.to(room.id).emit('room_info', toRoomInfo(room));
               }
-              socket.emit('user_role_updated', { userId: socket.id, role: mem.role });
-              io.to(room.id).emit('room_info', toRoomInfo(room));
+            }
+
+            // Popular knownMembers com todos os membros do servidor cadastrados no banco
+            const { data: allMems } = await supabaseClient
+              .from('server_members')
+              .select('id, user_id, username, role, custom_role_name, custom_role_emoji, custom_role_color')
+              .eq('server_id', actualDbServerId);
+            if (allMems && allMems.length > 0) {
+              if (!room.knownMembers) room.knownMembers = new Map();
+              for (const m of allMems) {
+                if (m.username) {
+                  const key = m.username.toLowerCase();
+                  const existing = room.knownMembers.get(key);
+                  room.knownMembers.set(key, {
+                    id: m.id || m.username,
+                    username: m.username,
+                    avatarUrl: existing?.avatarUrl || null,
+                    role: m.role || existing?.role || 'member',
+                    customRole: m.custom_role_name ? {
+                      name: m.custom_role_name,
+                      emoji: m.custom_role_emoji || '🛡️',
+                      color: m.custom_role_color || '#5865f2',
+                      isAdmin: m.role === 'sub_owner' || m.role === 'owner',
+                    } : existing?.customRole,
+                  });
+                }
+              }
               broadcastUserList(io, room);
             }
-          })
-          .catch(() => {});
+          }
+        })().catch(() => {});
       }
 
       socket.emit('room_joined', toRoomInfo(room));
@@ -666,14 +732,21 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (room.isServer) {
         if (room.messageHistory.length > 0) {
           // Use cached in-memory history (already loaded by a previous joiner this session)
-          for (const msg of room.messageHistory) {
-            socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0, room.id);
-          }
+          socket.emit('message_history', room.messageHistory, room.id);
         } else if (supabaseClient) {
           // First join this session — load history from Supabase
           try {
             const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-            const roomIdForQuery = isValidUUID(room.id) ? room.id : null;
+            let roomIdForQuery = isValidUUID(room.id) ? room.id : null;
+            if (!roomIdForQuery && room.code) {
+              const { data: dbR } = await supabaseClient
+                .from('rooms')
+                .select('id')
+                .ilike('code', room.code)
+                .maybeSingle();
+              if (dbR?.id && isValidUUID(dbR.id)) roomIdForQuery = dbR.id;
+            }
+
             if (roomIdForQuery) {
               const { data, error } = await supabaseClient
                 .from('messages')
@@ -694,9 +767,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                   avatarUrl: m.avatar_url || null,
                   sentAt: new Date(m.created_at).getTime(),
                 }));
-                for (const msg of room.messageHistory) {
-                  socket.emit('receive_message', msg.userName, msg.message, msg.timestamp, msg.type as any, msg.url, msg.filename, msg.channelId, msg.avatarUrl, true, msg.sentAt || 0, room.id);
-                }
+                socket.emit('message_history', room.messageHistory, room.id);
               }
             }
           } catch (dbErr) {
@@ -998,7 +1069,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     // ─── REALTIME DIRECT MESSAGES (DMs) ────────────────────────────
     socket.on('send_direct_message', (data) => {
       console.log(`[DM] Mensagem direta de ${data.senderName} para ${data.targetName || data.targetUserId}`);
-      const msgId = `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const msgId = data.id || `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const payload = {
         id: msgId,
         chatId: data.chatId,
@@ -1018,6 +1089,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       let targetNameClean = (data.targetName || '').trim().toLowerCase();
       if (targetNameClean.startsWith('@')) targetNameClean = targetNameClean.substring(1).trim();
       if (targetNameClean.includes('#')) targetNameClean = targetNameClean.split('#')[0].trim();
+      if (targetNameClean === 'usuário' || targetNameClean === 'usuario') targetNameClean = '';
 
       let delivered = false;
 
@@ -1025,6 +1097,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (targetSocketId === socket.id) continue;
         const sUser = s.data.user;
         const sName = (sUser?.name || '').trim().toLowerCase().replace(/^@/, '');
+        const sNameClean = sName.includes('#') ? sName.split('#')[0].trim() : sName;
         const sPersistentId = s.data.persistentId;
         const sUserId = s.data.userId;
 
@@ -1038,10 +1111,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
           )
         );
         const matchName = Boolean(
-          targetNameClean && sName && (
+          targetNameClean && (
             sName === targetNameClean ||
-            sName.includes(targetNameClean) ||
-            targetNameClean.includes(sName)
+            sNameClean === targetNameClean ||
+            (sName && sName.includes(targetNameClean)) ||
+            (sNameClean && targetNameClean.includes(sNameClean))
           )
         );
 
@@ -1288,21 +1362,32 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         // Save to Supabase asynchronously (fire-and-forget)
         if (supabaseClient) {
           const isValidUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-          const roomIdForDb = isValidUUID(room.id) ? room.id : null;
-          if (roomIdForDb) {
-            supabaseClient.from('messages').insert({
-              room_id: roomIdForDb,
-              sender_name: user.name,
-              content: safe,
-              msg_type: type || 'text',
-              file_url: url || null,
-              file_name: filename || null,
-              channel_id: channelId || null,
-              avatar_url: avatarUrl || null,
-            }).then(({ error }: { error: any }) => {
-              if (error) console.warn('[Hub] Failed to save message to Supabase:', error.message);
-            });
-          }
+          (async () => {
+            let roomIdForDb = isValidUUID(room.id) ? room.id : null;
+            if (!roomIdForDb && room.code) {
+              const { data: dbR } = await supabaseClient
+                .from('rooms')
+                .select('id')
+                .ilike('code', room.code)
+                .maybeSingle();
+              if (dbR?.id && isValidUUID(dbR.id)) roomIdForDb = dbR.id;
+            }
+            if (roomIdForDb) {
+              const validChId = (channelId && isValidUUID(channelId)) ? channelId : null;
+              supabaseClient.from('messages').insert({
+                room_id: roomIdForDb,
+                sender_name: user.name,
+                content: safe,
+                msg_type: type || 'text',
+                file_url: url || null,
+                file_name: filename || null,
+                channel_id: validChId,
+                avatar_url: avatarUrl || null,
+              }).then(({ error }: { error: any }) => {
+                if (error) console.warn('[Hub] Failed to save message to Supabase:', error.message);
+              });
+            }
+          })().catch(() => {});
         }
       }
 

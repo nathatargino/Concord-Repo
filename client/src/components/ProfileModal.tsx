@@ -55,7 +55,7 @@ export const ProfileModal: React.FC<Props> = ({ onClose, onUpdate, onUpdateServe
   const handleToggleSystemNotifications = async (enabled: boolean) => {
     setSystemNotifications(enabled);
     setSystemNotificationsEnabled(enabled);
-    await saveUserSettingsToCloud({ systemNotifications: enabled });
+    await saveUserSettingsToCloud({ systemNotifications: enabled, systemNotificationsExplicit: true });
     toast.success(
       enabled ? 'Notificações de sistema ativadas.' : 'Notificações de sistema desativadas.',
       { icon: enabled ? '🔔' : '🔕' }

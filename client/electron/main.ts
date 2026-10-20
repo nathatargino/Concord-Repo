@@ -327,10 +327,10 @@ function setupAutoLaunch() {
             // 2. Se ainda não há preferência gravada, respeitar o estado atual do sistema operacional (app.getLoginItemSettings().openAtLogin).
             // NUNCA forçar openAtLogin: true incondicionalmente para evitar reativação indesejada após atualizações.
             let shouldOpenAtLogin: boolean;
-            if (prefs && prefs.openAtLogin !== undefined) {
+            if (prefs && prefs.openAtLoginExplicit === true && prefs.openAtLogin !== undefined) {
                 shouldOpenAtLogin = prefs.openAtLogin === true || prefs.openAtLogin === 'true';
             } else {
-                shouldOpenAtLogin = Boolean(currentSettings.openAtLogin);
+                shouldOpenAtLogin = true; try { prefs.openAtLogin = true; writeAtomicSync(getPrefsPath(), JSON.stringify(prefs, null, 2)); } catch {}
             }
 
             if (currentSettings.openAtLogin !== shouldOpenAtLogin) {
@@ -1663,14 +1663,14 @@ ipcMain.handle('load-preferences', () => {
     }
 });
 
-ipcMain.handle('get-auto-launch', () => {
+ipcMain.handle('get-auto-launch', () => { try { const prefs = readPrefsFromDisk(); if (prefs && prefs.openAtLoginExplicit === true && prefs.openAtLogin !== undefined) { return prefs.openAtLogin === true || prefs.openAtLogin === 'true'; } return true; } catch { return true; } }); ipcMain.handle('get-auto-launch-legacy', () => {
     try {
         if (process.platform === 'win32' && !isDev) {
             const prefs = readPrefsFromDisk();
-            if (prefs && prefs.openAtLogin !== undefined) {
+            if (prefs && prefs.openAtLoginExplicit === true && prefs.openAtLogin !== undefined) {
                 return prefs.openAtLogin === true || prefs.openAtLogin === 'true';
             }
-            return Boolean(app.getLoginItemSettings().openAtLogin);
+            return true;
         }
         return false;
     } catch {
@@ -1690,7 +1690,7 @@ ipcMain.handle('set-auto-launch', (_event, enabled: boolean) => {
             });
             const prefsPath = getPrefsPath();
             const existing = readPrefsFromDisk();
-            existing.openAtLogin = shouldEnable;
+            existing.openAtLogin = shouldEnable; existing.openAtLoginExplicit = true;
             writeAtomicSync(prefsPath, JSON.stringify(existing, null, 2));
             fs.appendFileSync(logFile, `[AutoLaunch] Explicit set-auto-launch to ${shouldEnable}\n`);
             return { ok: true, openAtLogin: shouldEnable };

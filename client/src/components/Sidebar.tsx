@@ -18,6 +18,7 @@ import {
   findRoomInSupabase,
   isUuid,
   supabase,
+  getLocalServerMembers,
   removeLocalServerMember,
   formatRoomTimeRemaining,
   removeRecentRoom,
@@ -302,7 +303,7 @@ export const Sidebar: React.FC<Props> = ({
     };
 
     const loadMembers = async (actualServerId: string) => {
-      const mems = await fetchServerMembers(actualServerId);
+      const mems = await fetchServerMembers(actualServerId, room.code);
       if (isMounted && mems) {
         setServerMembers((prev) => {
           const prevMap = new Map<string, typeof serverMembers[0]>();
@@ -323,6 +324,11 @@ export const Sidebar: React.FC<Props> = ({
               customRole: existing?.customRole,
             });
           }
+          for (const [key, existing] of prevMap.entries()) {
+            if (!map.has(key)) {
+              map.set(key, existing);
+            }
+          }
           return Array.from(map.values());
         });
       }
@@ -331,11 +337,41 @@ export const Sidebar: React.FC<Props> = ({
     const setup = async () => {
       let actualServerId = room.id;
       if (!isUuid(room.id)) {
-        const dbRoom = await findRoomInSupabase(room.id);
+        const dbRoom = await findRoomInSupabase(room.code || room.id);
         if (dbRoom?.id && isUuid(dbRoom.id)) actualServerId = dbRoom.id;
       }
 
       if (!isMounted) return;
+
+      // Pré-carregar membros locais imediatamente para exibir membros offline sem atraso
+      const localMems = [
+        ...getLocalServerMembers(actualServerId),
+        ...(room.code ? getLocalServerMembers(room.code) : []),
+        ...(room.id ? getLocalServerMembers(room.id) : [])
+      ];
+      if (localMems.length > 0 && isMounted) {
+        setServerMembers((prev) => {
+          const map = new Map<string, typeof serverMembers[0]>();
+          for (const m of prev) {
+            map.set(m.username.trim().toLowerCase(), m);
+          }
+          for (const m of localMems) {
+            const key = m.username.trim().toLowerCase();
+            if (!map.has(key)) {
+              map.set(key, {
+                id: m.id || m.username,
+                username: m.username,
+                avatarUrl: (m as any).avatar_url || (m as any).avatarUrl || null,
+                isOnline: false,
+                inVoice: false,
+                role: (m.role as any) || 'member',
+                customRole: (m as any).customRole,
+              });
+            }
+          }
+          return Array.from(map.values());
+        });
+      }
 
       // Registrar membro atual com dados completos do servidor
       if (myName) {
@@ -959,6 +995,7 @@ export const Sidebar: React.FC<Props> = ({
                           onClick={() => {
                             setActiveDmChat(chat);
                             setHomeTab('dm');
+                            setActiveRailContext('home');
                             setShowVideoPlayer(false);
                           }}
                           onContextMenu={(e) => {
@@ -1034,7 +1071,11 @@ export const Sidebar: React.FC<Props> = ({
                 <div key={channel.id} className={styles.channelRow}>
                   <button
                     className={`${styles.channelItem} ${isActive ? styles.channelActive : ''}`}
-                    onClick={() => setActiveChannelId(channel.id)}
+                    onClick={() => {
+                      setActiveChannelId(channel.id);
+                      setActiveDmChat(null);
+                      setHomeTab('hub');
+                    }}
                   >
                     <span className={styles.channelItemLeft}>
                       <i className="fa-solid fa-hashtag" style={{ color: isActive ? '#7c5cff' : '#6b7280' }} />

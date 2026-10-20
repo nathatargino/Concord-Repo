@@ -795,6 +795,8 @@ export function handleIncomingFriendCancelled(data: any) {
 }
 
 // ── PROCESS INCOMING DIRECT MESSAGE ──
+const processedDmIds = new Set<string>();
+
 export function handleIncomingDirectMessage(data: any) {
   if (!data) return;
   const store = useAppStore.getState();
@@ -822,32 +824,59 @@ export function handleIncomingDirectMessage(data: any) {
 
   if (!isForMe) return;
 
+  if (!data.id) {
+    data.id = `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
+  // Deduplicação em memória para evitar processamento quadruplicado do mesmo pacote multi-transporte
+  if (processedDmIds.has(data.id)) {
+    return;
+  }
+  processedDmIds.add(data.id);
+  if (processedDmIds.size > 500) {
+    const first = processedDmIds.values().next().value;
+    if (first) processedDmIds.delete(first);
+  }
+
   console.log('[SocialRealtime] Nova DM recebida de:', data.senderName, data.content);
 
   const senderLower = senderName;
-  const pairKey = [myName, senderLower].sort().join('__');
+  const pairKey = [myName, senderLower].filter(Boolean).sort().join('__');
 
-  const storageKeys = [
-    `concord_dm_${data.chatId}`,
-    `concord_dm_user_${senderLower}`,
-    `concord_dm_pair_${pairKey}`,
-  ];
+  const activeDm = store.activeDmChat;
+  const isMatchingActiveDm = Boolean(
+    activeDm &&
+    (activeDm.id === data.chatId ||
+      (activeDm.partnerName && cleanName(activeDm.partnerName) === senderLower) ||
+      (activeDm.partnerId && data.senderId && activeDm.partnerId === data.senderId))
+  );
+
+  const storageKeys = Array.from(new Set([
+    ...(data.chatId ? [`concord_dm_${data.chatId}`] : []),
+    ...(isMatchingActiveDm && activeDm?.id ? [`concord_dm_${activeDm.id}`] : []),
+    ...(senderLower ? [`concord_dm_user_${senderLower}`] : []),
+    ...(pairKey ? [`concord_dm_pair_${pairKey}`, `concord_dm_dm-pair-${pairKey}`] : []),
+  ]));
 
   for (const k of storageKeys) {
     try {
       const raw = localStorage.getItem(k);
       const list = raw ? JSON.parse(raw) : [];
-      if (
-        !list.some(
-          (m: any) =>
-            m.id === data.id ||
-            (m.id?.startsWith?.('opt-') &&
-              m.content === data.content &&
-              m.senderName === data.senderName &&
-              Math.abs(new Date(m.createdAt).getTime() - new Date(data.createdAt).getTime()) < 5000)
-        )
-      ) {
+      // Sanitiza mensagens antigas sem id e verifica apenas colisão exata de ID válido
+      let listModified = false;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i] && !list[i].id) {
+          list[i].id = `dm-legacy-${i}-${Date.now()}`;
+          listModified = true;
+        }
+      }
+      const isDuplicate = list.some(
+        (m: any) => Boolean(m && m.id && data.id && m.id === data.id)
+      );
+      if (!isDuplicate) {
         list.push(data);
+        localStorage.setItem(k, JSON.stringify(list));
+      } else if (listModified) {
         localStorage.setItem(k, JSON.stringify(list));
       }
     } catch {}
@@ -870,8 +899,26 @@ export function handleIncomingDirectMessage(data: any) {
       if (data.senderAvatarUrl) {
         existingChat.partnerAvatarUrl = data.senderAvatarUrl;
       }
+      if (data.senderName && (!existingChat.partnerName || existingChat.partnerName === 'Usuário')) {
+        existingChat.partnerName = data.senderName;
+      }
+      if (data.senderId && (!existingChat.partnerId || existingChat.partnerId.startsWith('friend-'))) {
+        existingChat.partnerId = data.senderId;
+      }
       if (data.chatId && !existingChat.id) {
         existingChat.id = data.chatId;
+      }
+      // Salva também sob o ID do existingChat caso seja diferente de data.chatId
+      if (existingChat.id && existingChat.id !== data.chatId) {
+        try {
+          const kChat = `concord_dm_${existingChat.id}`;
+          const rChat = localStorage.getItem(kChat);
+          const lChat = rChat ? JSON.parse(rChat) : [];
+          if (!lChat.some((m: any) => m && m.id && m.id === data.id)) {
+            lChat.push(data);
+            localStorage.setItem(kChat, JSON.stringify(lChat));
+          }
+        } catch {}
       }
       // Reordena para o topo dos chats ativos
       chatList.splice(existingIndex, 1);
@@ -1025,6 +1072,10 @@ export function broadcastFriendRequestCancelled(payload: any) {
 }
 
 export function broadcastDirectMessage(payload: any) {
+  if (!payload.id) {
+    payload.id = `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  }
+
   if (socialChannel) {
     try {
       socialChannel.send({
