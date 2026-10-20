@@ -145,6 +145,7 @@ export interface ClientToServerEvents {
     senderName: string;
   }) => void;
   send_direct_message: (data: {
+    id?: string;
     chatId: string;
     targetUserId?: string;
     targetName?: string;
@@ -209,6 +210,7 @@ export interface ServerToClientEvents {
     roomId?: string,
     customRole?: CustomRole | null
   ) => void;
+  message_history: (history: any[], roomId: string) => void;
   channel_created: (channel: ServerChannel) => void;
   channel_updated: (channel: ServerChannel) => void;
   channel_deleted: (channelId: string) => void;

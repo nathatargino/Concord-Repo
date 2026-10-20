@@ -265,7 +265,7 @@
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
-.emptyMessages {
+.chatLoadingContainer { margin: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px 24px; text-align: center; animation: fadeInLoading 0.2s ease-out; } .chatLoadingSpinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(124, 92, 255, 0.18); border-top-color: #7c5cff; animation: spinLoading 0.75s linear infinite; box-shadow: 0 0 16px rgba(124, 92, 255, 0.25); } .chatLoadingTitle { margin: 0; font-size: 14px; font-weight: 600; color: #e5e7eb; letter-spacing: 0.01em; } .chatLoadingSubtitle { margin: 0; font-size: 12px; color: #94a3b8; } @keyframes spinLoading { to { transform: rotate(360deg); } } @keyframes fadeInLoading { from { opacity: 0; } to { opacity: 1; } } .emptyMessages {
   margin: auto;
   display: flex;
   flex-direction: column;
@@ -1931,13 +1931,13 @@
   text-align: center;
 }
 
-.videoShortcutGrid {
+.videoShortcutGrid { align-items: center; max-width: 480px; margin: 0 auto; width: 100%;
   display: flex;
   justify-content: center;
   gap: 8px;
 }
 
-.videoShortcutBtn {
+.videoShortcutBtn { max-width: 105px; padding: 6px 12px !important; border-radius: 10px !important; font-size: 11px !important; gap: 6px !important;
   display: flex;
   flex-direction: row;
   align-items: center;

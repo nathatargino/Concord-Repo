@@ -1056,6 +1056,7 @@ export async function savePrefsToElectron(prefs: Record<string, string>) {
 
 export interface UserAccountSettings {
   systemNotifications: boolean;
+  systemNotificationsExplicit?: boolean;
   theme: 'dark' | 'light';
   updatedAt?: string;
   [key: string]: any;
@@ -1063,7 +1064,8 @@ export interface UserAccountSettings {
 
 export function getLocalUserSettings(): UserAccountSettings {
   return {
-    systemNotifications: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications') !== 'false' : true,
+    systemNotifications: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications_v2') === 'true' : false,
+    systemNotificationsExplicit: typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications_v2') !== null : false,
     theme: (typeof window !== 'undefined' ? (localStorage.getItem('concord_theme') as 'dark' | 'light') : null) || 'dark',
   };
 }
@@ -1079,6 +1081,7 @@ export async function saveUserSettingsToCloud(settings: Partial<UserAccountSetti
   // 1. Atualizar localStorage e estado Zustand local imediatamente
   if (merged.systemNotifications !== undefined) {
     try {
+      localStorage.setItem('concord_system_notifications_v2', String(merged.systemNotifications));
       localStorage.setItem('concord_system_notifications', String(merged.systemNotifications));
     } catch {}
     useAppStore.getState().setSystemNotificationsEnabled(merged.systemNotifications);
@@ -1091,6 +1094,7 @@ export async function saveUserSettingsToCloud(settings: Partial<UserAccountSetti
 
   // 2. Persistir localmente no Electron se disponível
   savePrefsToElectron({
+    concord_system_notifications_v2: String(merged.systemNotifications),
     concord_system_notifications: String(merged.systemNotifications),
     concord_theme: merged.theme,
   }).catch(() => {});
@@ -1210,8 +1214,9 @@ export async function syncProfileAfterAuth(user: any): Promise<{ username: strin
     null;
 
   if (cloudSettings) {
-    if (typeof cloudSettings.systemNotifications === 'boolean') {
+    if (cloudSettings.systemNotificationsExplicit === true && typeof cloudSettings.systemNotifications === 'boolean') {
       try {
+        localStorage.setItem('concord_system_notifications_v2', String(cloudSettings.systemNotifications));
         localStorage.setItem('concord_system_notifications', String(cloudSettings.systemNotifications));
       } catch {}
       useAppStore.getState().setSystemNotificationsEnabled(cloudSettings.systemNotifications);
@@ -1457,12 +1462,14 @@ export async function syncCloudUserData(userId?: string): Promise<void> {
       }
 
       if (userSettings) {
-        if (typeof userSettings.systemNotifications === 'boolean') {
-          try {
-            localStorage.setItem('concord_system_notifications', String(userSettings.systemNotifications));
-          } catch {}
-          useAppStore.getState().setSystemNotificationsEnabled(userSettings.systemNotifications);
-        }
+        const effectiveSysNotif = userSettings.systemNotificationsExplicit === true
+          ? Boolean(userSettings.systemNotifications)
+          : (typeof window !== 'undefined' ? localStorage.getItem('concord_system_notifications_v2') === 'true' : false);
+        try {
+          localStorage.setItem('concord_system_notifications_v2', String(effectiveSysNotif));
+          localStorage.setItem('concord_system_notifications', String(effectiveSysNotif));
+        } catch {}
+        useAppStore.getState().setSystemNotificationsEnabled(effectiveSysNotif);
         if (userSettings.theme && (userSettings.theme === 'dark' || userSettings.theme === 'light')) {
           try {
             localStorage.setItem('concord_theme', userSettings.theme);
@@ -1470,7 +1477,8 @@ export async function syncCloudUserData(userId?: string): Promise<void> {
           applyTheme(userSettings.theme);
         }
         savePrefsToElectron({
-          concord_system_notifications: String(userSettings.systemNotifications ?? true),
+          concord_system_notifications_v2: String(effectiveSysNotif),
+          concord_system_notifications: String(effectiveSysNotif),
           concord_theme: userSettings.theme || 'dark',
         }).catch(() => {});
       }
@@ -1557,11 +1565,32 @@ export async function fetchFriendsFromSupabase(): Promise<Friend[]> {
           });
 
           for (const df of dbFriends) {
-            const idx = result.findIndex(r => r.id === df.id || (df.friendId && r.friendId === df.friendId));
+            const idx = result.findIndex(r =>
+              r.id === df.id ||
+              (df.friendId && r.friendId === df.friendId) ||
+              (df.friendName && df.friendName !== 'Usuário' && r.friendName?.trim().toLowerCase() === df.friendName.trim().toLowerCase())
+            );
             if (idx === -1) {
               result.push(df);
             } else {
-              result[idx] = { ...result[idx], ...df };
+              const prev = result[idx];
+              const mergedStatus =
+                prev.status === 'blocked' || df.status === 'blocked'
+                  ? 'blocked'
+                  : prev.status === 'accepted' || df.status === 'accepted'
+                  ? 'accepted'
+                  : df.status || prev.status;
+              result[idx] = {
+                ...prev,
+                ...df,
+                status: mergedStatus,
+                friendName:
+                  df.friendName && df.friendName !== 'Usuário' && df.friendName !== 'Amigo'
+                    ? df.friendName
+                    : prev.friendName || df.friendName,
+                friendAvatarUrl: df.friendAvatarUrl || prev.friendAvatarUrl,
+                onlineStatus: prev.onlineStatus === 'online' ? 'online' : df.onlineStatus,
+              };
             }
           }
         }
@@ -1811,24 +1840,53 @@ export async function respondFriendRequestInSupabase(friendshipId: string, accep
   } catch {}
   window.dispatchEvent(new CustomEvent('concord:friends-updated'));
 
-  if (!supabaseUrl || !supabaseAnonKey || !isUuid(friendshipId)) {
+  if (!supabaseUrl || !supabaseAnonKey) {
     return true;
   }
 
   try {
-    if (accept) {
-      const { error } = await supabase
-        .from('friendships')
-        .update({ status: 'accepted', updated_at: new Date().toISOString() })
-        .eq('id', friendshipId);
-      return !error;
-    } else {
-      const { error } = await supabase
-        .from('friendships')
-        .delete()
-        .eq('id', friendshipId);
-      return !error;
+    const { data: { user } } = await supabase.auth.getUser();
+    let partnerUuid = targetFriend?.friendId && isUuid(targetFriend.friendId) ? targetFriend.friendId : undefined;
+    if (!partnerUuid && !isUuid(friendshipId) && targetFriend?.friendName) {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('id')
+        .ilike('username', cleanDisplayName(targetFriend.friendName))
+        .limit(1);
+      if (prof && prof.length > 0) {
+        partnerUuid = prof[0].id;
+      }
     }
+
+    if (isUuid(friendshipId)) {
+      if (accept) {
+        const { error } = await supabase
+          .from('friendships')
+          .update({ status: 'accepted', updated_at: new Date().toISOString() })
+          .eq('id', friendshipId);
+        return !error;
+      } else {
+        const { error } = await supabase
+          .from('friendships')
+          .delete()
+          .eq('id', friendshipId);
+        return !error;
+      }
+    } else if (user && partnerUuid) {
+      if (accept) {
+        await supabase
+          .from('friendships')
+          .update({ status: 'accepted', updated_at: new Date().toISOString() })
+          .or(`and(user_id.eq.${user.id},friend_id.eq.${partnerUuid}),and(user_id.eq.${partnerUuid},friend_id.eq.${user.id})`);
+      } else {
+        await supabase
+          .from('friendships')
+          .delete()
+          .or(`and(user_id.eq.${user.id},friend_id.eq.${partnerUuid}),and(user_id.eq.${partnerUuid},friend_id.eq.${user.id})`);
+      }
+      return true;
+    }
+    return true;
   } catch {
     return true;
   }
@@ -1929,20 +1987,20 @@ export async function unblockUserInSupabase(targetIdOrFriendshipId: string): Pro
 // ─── DIRECT CHATS (DMs) ──────────────────────────────────────────
 
 export async function fetchDirectChatsFromSupabase(): Promise<DirectChat[]> {
+  let localChats: DirectChat[] = [];
+  try {
+    const raw = localStorage.getItem('concord_direct_chats');
+    if (raw) localChats = JSON.parse(raw);
+  } catch {}
+
   if (!supabaseUrl || !supabaseAnonKey) {
-    try {
-      const raw = localStorage.getItem('concord_direct_chats');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    return localChats;
   }
 
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      const raw = localStorage.getItem('concord_direct_chats');
-      return raw ? JSON.parse(raw) : [];
+      return localChats;
     }
 
     const { data, error } = await supabase
@@ -1952,8 +2010,7 @@ export async function fetchDirectChatsFromSupabase(): Promise<DirectChat[]> {
       .order('updated_at', { ascending: false });
 
     if (error || !data) {
-      const raw = localStorage.getItem('concord_direct_chats');
-      return raw ? JSON.parse(raw) : [];
+      return localChats;
     }
 
     const partnerIds = Array.from(new Set(
@@ -1970,29 +2027,53 @@ export async function fetchDirectChatsFromSupabase(): Promise<DirectChat[]> {
       (profiles || []).forEach((p: any) => profilesMap.set(p.id, p));
     }
 
-    const list: DirectChat[] = data.map((c: any) => {
+    const knownFriends = useAppStore.getState().friends || [];
+
+    const cloudList: DirectChat[] = data.map((c: any) => {
       const partnerId = c.user1_id === user.id ? c.user2_id : c.user1_id;
       const partner = profilesMap.get(partnerId);
+      const localMatch = localChats.find(lc => lc.id === c.id || (partnerId && lc.partnerId === partnerId));
+      const friendMatch = knownFriends.find(f => f.friendId === partnerId);
+      const resolvedName =
+        (partner?.username && partner.username !== 'Usuário' ? partner.username : null) ||
+        (localMatch?.partnerName && localMatch.partnerName !== 'Usuário' ? localMatch.partnerName : null) ||
+        (friendMatch?.friendName && friendMatch.friendName !== 'Usuário' ? friendMatch.friendName : null) ||
+        'Usuário';
+
       return {
         id: c.id,
         partnerId,
-        partnerName: partner?.username || 'Usuário',
-        partnerAvatarUrl: partner?.avatar_url || null,
-        partnerTag: generateUserTag(partnerId),
-        updatedAt: c.updated_at,
+        partnerName: resolvedName,
+        partnerAvatarUrl: partner?.avatar_url || localMatch?.partnerAvatarUrl || friendMatch?.friendAvatarUrl || null,
+        partnerTag: localMatch?.partnerTag || friendMatch?.friendTag || generateUserTag(partnerId),
+        updatedAt: c.updated_at || localMatch?.updatedAt || new Date().toISOString(),
       };
     });
 
-    localStorage.setItem('concord_direct_chats', JSON.stringify(list));
-    return list;
+    // Mesclar conversas locais que ainda não estejam na nuvem ou cujo parceiro seja distinto
+    const merged: DirectChat[] = [...cloudList];
+    for (const lc of localChats) {
+      const existsIdx = merged.findIndex(mc =>
+        mc.id === lc.id ||
+        (mc.partnerId && lc.partnerId && mc.partnerId === lc.partnerId) ||
+        (mc.partnerName && lc.partnerName && mc.partnerName !== 'Usuário' && cleanDisplayName(mc.partnerName).toLowerCase() === cleanDisplayName(lc.partnerName).toLowerCase())
+      );
+      if (existsIdx === -1) {
+        merged.push(lc);
+      } else if (merged[existsIdx].partnerName === 'Usuário' && lc.partnerName && lc.partnerName !== 'Usuário') {
+        merged[existsIdx] = {
+          ...merged[existsIdx],
+          partnerName: lc.partnerName,
+          partnerAvatarUrl: merged[existsIdx].partnerAvatarUrl || lc.partnerAvatarUrl,
+        };
+      }
+    }
+
+    localStorage.setItem('concord_direct_chats', JSON.stringify(merged));
+    return merged;
   } catch (err) {
     console.warn('[Supabase] Exceção ao buscar DMs:', err);
-    try {
-      const raw = localStorage.getItem('concord_direct_chats');
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
+    return localChats;
   }
 }
 
@@ -2038,13 +2119,14 @@ export async function getOrCreateDirectChatInSupabase(
       return fallbackChat;
     }
 
-    const { data: existing } = await supabase
+    const { data: existingRows } = await supabase
       .from('direct_chats')
       .select('id, user1_id, user2_id, updated_at')
       .or(`and(user1_id.eq.${user.id},user2_id.eq.${targetUserId}),and(user1_id.eq.${targetUserId},user2_id.eq.${user.id})`)
-      .maybeSingle();
+      .order('updated_at', { ascending: false })
+      .limit(1);
 
-    let chatId = existing?.id;
+    let chatId = existingRows && existingRows.length > 0 ? existingRows[0].id : undefined;
     if (!chatId) {
       const { data: created, error } = await supabase
         .from('direct_chats')
@@ -2074,7 +2156,7 @@ export async function getOrCreateDirectChatInSupabase(
     const resultChat: DirectChat = {
       id: chatId,
       partnerId: targetUserId,
-      partnerName: partnerProfile?.username || targetClean,
+      partnerName: (partnerProfile?.username && partnerProfile.username !== 'Usuário' ? partnerProfile.username : null) || targetClean,
       partnerAvatarUrl: partnerProfile?.avatar_url || targetAvatar || null,
       partnerTag: targetTag || generateUserTag(targetUserId),
       updatedAt: new Date().toISOString(),
@@ -2090,27 +2172,50 @@ export async function getOrCreateDirectChatInSupabase(
 }
 
 export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<DirectMessage[]> {
-  const activeChat = useAppStore.getState().activeDmChat;
-  const myName = cleanDisplayName(useAppStore.getState().myName || localStorage.getItem('concord_username') || '').toLowerCase();
-  const partnerName = activeChat?.partnerName ? cleanDisplayName(activeChat.partnerName).toLowerCase() : '';
+  const storeState = useAppStore.getState();
+  const activeChat = storeState.activeDmChat;
+  const knownChat = storeState.directChats?.find(c => c.id === chatId);
+  const myName = cleanDisplayName(storeState.myName || localStorage.getItem('concord_username') || '').toLowerCase();
+  const rawPartnerName = activeChat?.partnerName || knownChat?.partnerName || '';
+  const partnerName = rawPartnerName ? cleanDisplayName(rawPartnerName).toLowerCase() : '';
   const pairKey = [myName, partnerName].filter(Boolean).sort().join('__');
 
-  const keysToCheck = [
+  const keysToCheck = Array.from(new Set([
     `concord_dm_${chatId}`,
-    ...(pairKey ? [`concord_dm_pair_${pairKey}`] : []),
+    ...(activeChat?.id ? [`concord_dm_${activeChat.id}`] : []),
+    ...(pairKey ? [`concord_dm_pair_${pairKey}`, `concord_dm_dm-pair-${pairKey}`] : []),
     ...(partnerName ? [`concord_dm_user_${partnerName}`] : []),
-  ];
+  ]));
 
-    let localList: DirectMessage[] = [];
+  let localList: DirectMessage[] = [];
   for (const k of keysToCheck) {
     try {
       const raw = localStorage.getItem(k);
       if (raw) {
         const parsed: DirectMessage[] = JSON.parse(raw);
-        for (const item of parsed) {
-          if (!localList.some(m => m.id === item.id || (m.id?.startsWith?.('opt-') && m.content === item.content && m.senderName === item.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(item.createdAt).getTime()) < 5000))) {
+        let modified = false;
+        for (let idx = 0; idx < parsed.length; idx++) {
+          const item = parsed[idx];
+          if (!item || typeof item !== 'object') continue;
+          if (!item.id) {
+            item.id = `dm-legacy-${new Date(item.createdAt || Date.now()).getTime()}-${idx}`;
+            modified = true;
+          }
+          const isDuplicate = localList.some(m =>
+            (m.id && item.id && m.id === item.id) ||
+            ((m.id?.startsWith?.('opt-') || item.id?.startsWith?.('opt-')) &&
+              m.content === item.content &&
+              m.senderName === item.senderName &&
+              Math.abs(new Date(m.createdAt).getTime() - new Date(item.createdAt).getTime()) < 3000)
+          );
+          if (!isDuplicate) {
             localList.push(item);
           }
+        }
+        if (modified) {
+          try {
+            localStorage.setItem(k, JSON.stringify(parsed));
+          } catch {}
         }
       }
     } catch {}
@@ -2146,15 +2251,25 @@ export async function fetchDirectMessagesFromSupabase(chatId: string): Promise<D
     }));
 
     const merged = [...cloudList];
+    const matchedCloudIds = new Set<string>();
     for (const lm of localList) {
-      const exists = merged.some(cm => 
-        cm.id === lm.id || 
-        (lm.id?.startsWith?.('opt-') && cm.content === lm.content && cm.senderName === lm.senderName && Math.abs(new Date(cm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 5000)
+      const exactMatch = merged.find(cm => cm.id && lm.id && cm.id === lm.id);
+      if (exactMatch) continue;
+
+      const fuzzyMatch = merged.find(cm =>
+        !matchedCloudIds.has(cm.id) &&
+        cm.content === lm.content &&
+        cleanDisplayName(cm.senderName).toLowerCase() === cleanDisplayName(lm.senderName).toLowerCase() &&
+        Math.abs(new Date(cm.createdAt).getTime() - new Date(lm.createdAt).getTime()) < 4000
       );
-      if (!exists) {
-        merged.push(lm);
+      if (fuzzyMatch) {
+        matchedCloudIds.add(fuzzyMatch.id);
+        continue;
       }
+      merged.push(lm);
     }
+
+    merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
     try {
       localStorage.setItem(`concord_dm_${chatId}`, JSON.stringify(merged));
@@ -2173,33 +2288,50 @@ export async function sendDirectMessageToSupabase(
   fileUrl?: string,
   fileName?: string,
   targetPartnerId?: string,
-  targetPartnerName?: string
+  targetPartnerName?: string,
+  customId?: string
 ): Promise<DirectMessage | null> {
-  const currentName = cleanDisplayName(useAppStore.getState().myName || localStorage.getItem('concord_username') || 'Eu');
-  const currentAvatar = useAppStore.getState().myAvatarUrl || null;
-  const activeChat = useAppStore.getState().activeDmChat;
+  const storeState = useAppStore.getState();
+  const currentName = cleanDisplayName(storeState.myName || localStorage.getItem('concord_username') || 'Eu');
+  const currentAvatar = storeState.myAvatarUrl || null;
+  const activeChat = storeState.activeDmChat;
   
   let partnerId = targetPartnerId || activeChat?.partnerId || (activeChat as any)?.other_user_id;
   let rawPartner = targetPartnerName || activeChat?.partnerName || (activeChat as any)?.other_user_name;
   let partnerName = rawPartner ? cleanDisplayName(rawPartner) : undefined;
 
-  // Fallback para chats conhecidos caso partnerId ou partnerName estejam ausentes
-  if (!partnerName || !partnerId) {
+  // Fallback para chats conhecidos ou lista de amigos caso partnerId ou partnerName estejam ausentes
+  if (!partnerName || partnerName === 'Usuário' || !partnerId) {
     try {
       const rawChats = localStorage.getItem('concord_direct_chats');
-      const chatList = rawChats ? JSON.parse(rawChats) : [];
-      const found = chatList.find((c: any) => c.id === chatId);
+      const chatList: any[] = rawChats ? JSON.parse(rawChats) : (storeState.directChats || []);
+      const found = chatList.find((c: any) => c.id === chatId || (partnerId && c.partnerId === partnerId));
       if (found) {
         if (!partnerId) partnerId = found.partnerId || found.other_user_id;
-        if (!partnerName && (found.partnerName || found.other_user_name)) {
-          partnerName = cleanDisplayName(found.partnerName || found.other_user_name);
+        const candidateName = found.partnerName || found.other_user_name;
+        if ((!partnerName || partnerName === 'Usuário') && candidateName && candidateName !== 'Usuário') {
+          partnerName = cleanDisplayName(candidateName);
         }
       }
     } catch {}
   }
 
+  if (!partnerName || partnerName === 'Usuário' || !partnerId) {
+    const friendsList = storeState.friends || [];
+    const friendMatch = friendsList.find(f =>
+      (partnerId && (f.friendId === partnerId || f.id === partnerId)) ||
+      (partnerName && partnerName !== 'Usuário' && cleanDisplayName(f.friendName).toLowerCase() === partnerName.toLowerCase())
+    );
+    if (friendMatch) {
+      if (!partnerId && friendMatch.friendId) partnerId = friendMatch.friendId;
+      if ((!partnerName || partnerName === 'Usuário') && friendMatch.friendName) {
+        partnerName = cleanDisplayName(friendMatch.friendName);
+      }
+    }
+  }
+
   const myNameLower = currentName.toLowerCase();
-  if (!partnerName && chatId.startsWith('dm-pair-')) {
+  if ((!partnerName || partnerName === 'Usuário') && chatId.startsWith('dm-pair-')) {
     const parts = chatId.replace('dm-pair-', '').split('__');
     const matchOther = parts.find(p => p.toLowerCase() !== myNameLower);
     if (matchOther) partnerName = matchOther;
@@ -2207,10 +2339,16 @@ export async function sendDirectMessageToSupabase(
   const partnerLower = partnerName ? partnerName.toLowerCase() : '';
   const pairKey = [myNameLower, partnerLower].filter(Boolean).sort().join('__');
 
+  const generatedId =
+    customId ||
+    (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `dm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
   const localMsg: DirectMessage = {
-    id: `dm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: generatedId,
     chatId,
-    senderId: useAppStore.getState().myId || 'me',
+    senderId: storeState.myId || 'me',
     senderName: currentName,
     avatarUrl: currentAvatar,
     content,
@@ -2220,29 +2358,33 @@ export async function sendDirectMessageToSupabase(
     createdAt: new Date().toISOString(),
   };
 
-  // 1. Salvar IMEDIATAMENTE no localStorage
-  const keysToSave = [
+  // 1. Salvar IMEDIATAMENTE no localStorage (garantindo que nunca haja duplicata do mesmo ID)
+  const keysToSave = Array.from(new Set([
     `concord_dm_${chatId}`,
-    ...(pairKey ? [`concord_dm_pair_${pairKey}`] : []),
+    ...(activeChat?.id ? [`concord_dm_${activeChat.id}`] : []),
+    ...(pairKey ? [`concord_dm_pair_${pairKey}`, `concord_dm_dm-pair-${pairKey}`] : []),
     ...(partnerLower ? [`concord_dm_user_${partnerLower}`] : []),
-  ];
+  ]));
 
   for (const k of keysToSave) {
     try {
       const raw = localStorage.getItem(k);
       const list: DirectMessage[] = raw ? JSON.parse(raw) : [];
-      list.push(localMsg);
-      localStorage.setItem(k, JSON.stringify(list));
+      if (!list.some(m => m && m.id === localMsg.id)) {
+        list.push(localMsg);
+        localStorage.setItem(k, JSON.stringify(list));
+      }
     } catch {}
   }
 
   // 2. Emitir via Socket.IO e Supabase Realtime para entrega em tempo real para o destinatário
   const sock = (window as any).__concord_socket;
   const dmPayload = {
+    id: localMsg.id,
     chatId,
     targetUserId: partnerId,
     targetName: partnerName,
-    senderId: useAppStore.getState().myId || sock?.id,
+    senderId: storeState.myId || sock?.id,
     senderName: currentName,
     senderAvatarUrl: currentAvatar,
     content,
@@ -2258,18 +2400,22 @@ export async function sendDirectMessageToSupabase(
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
+        const insertPayload: Record<string, any> = {
+          chat_id: chatId,
+          sender_id: user.id,
+          sender_name: currentName,
+          avatar_url: currentAvatar,
+          content,
+          msg_type: msgType,
+          file_url: fileUrl || null,
+          file_name: fileName || null,
+        };
+        if (isUuid(localMsg.id)) {
+          insertPayload.id = localMsg.id;
+        }
         await supabase
           .from('direct_messages')
-          .insert({
-            chat_id: chatId,
-            sender_id: user.id,
-            sender_name: currentName,
-            avatar_url: currentAvatar,
-            content,
-            msg_type: msgType,
-            file_url: fileUrl || null,
-            file_name: fileName || null,
-          });
+          .insert(insertPayload);
       }
     } catch (err) {
       console.warn('[Supabase] Erro ao persistir mensagem direta na nuvem:', err);
@@ -2996,19 +3142,29 @@ export async function leaveServerFromSupabase(
   }
 }
 
-export async function fetchServerMembers(serverId: string): Promise<DbMember[]> {
-  if (!serverId) return [];
+export async function fetchServerMembers(serverId: string, serverCode?: string): Promise<DbMember[]> {
+  if (!serverId && !serverCode) return [];
 
   // Obter membros conhecidos do cache local
   const localMap = new Map<string, DbMember>();
-  for (const m of getLocalServerMembers(serverId)) {
-    localMap.set(m.username.trim().toLowerCase(), m);
+  if (serverId) {
+    for (const m of getLocalServerMembers(serverId)) {
+      localMap.set(m.username.trim().toLowerCase(), m);
+    }
+  }
+  if (serverCode && serverCode !== serverId) {
+    for (const m of getLocalServerMembers(serverCode)) {
+      localMap.set(m.username.trim().toLowerCase(), m);
+    }
   }
 
   let actualServerId = serverId;
   if (!isUuid(serverId)) {
     try {
-      const dbRoom = await findRoomInSupabase(serverId);
+      let dbRoom = await findRoomInSupabase(serverId);
+      if (!dbRoom && serverCode) {
+        dbRoom = await findRoomInSupabase(serverCode);
+      }
       if (dbRoom?.id && isUuid(dbRoom.id)) {
         actualServerId = dbRoom.id;
         for (const m of getLocalServerMembers(actualServerId)) {
@@ -3096,23 +3252,30 @@ function getLocalMessageCacheKey(roomId: string, channelId?: string | null): str
   return `concord_msgs_${roomId}_${channelId || 'all'}`;
 }
 
-export async function fetchChannelMessages(roomId: string, channelId?: string | null): Promise<DbMessage[]> {
+export async function fetchChannelMessages(roomId: string, channelId?: string | null, roomCode?: string | null): Promise<DbMessage[]> {
   const cacheKey = getLocalMessageCacheKey(roomId, channelId);
   let cached: DbMessage[] = [];
   try {
     const raw = localStorage.getItem(cacheKey);
     if (raw) cached = JSON.parse(raw);
+    else if (roomCode && roomCode !== roomId) {
+      const rawCode = localStorage.getItem(getLocalMessageCacheKey(roomCode, channelId));
+      if (rawCode) cached = JSON.parse(rawCode);
+    }
   } catch {}
 
   if (!supabaseUrl || !supabaseAnonKey) return cached;
 
   try {
     // Resolver quarto/servidor para obter o ID canônico
-    const dbRoom = await findRoomInSupabase(roomId);
+    let dbRoom = await findRoomInSupabase(roomId);
+    if (!dbRoom && roomCode) {
+      dbRoom = await findRoomInSupabase(roomCode);
+    }
     
     // Postgres falhará se passarmos strings comuns (ex: 'CONCORD') para uma coluna UUID
     const isValidUUID = (id: string) => isUuid(id);
-    const rawIds = [roomId, dbRoom?.id].filter(Boolean) as string[];
+    const rawIds = [roomId, roomCode, dbRoom?.id].filter(Boolean) as string[];
     const roomIdsToMatch = Array.from(new Set(rawIds.filter(isValidUUID)));
 
     if (roomIdsToMatch.length === 0) {
@@ -3138,6 +3301,9 @@ export async function fetchChannelMessages(roomId: string, channelId?: string | 
 
     // Salva no cache local
     localStorage.setItem(cacheKey, JSON.stringify(data));
+    if (roomCode && roomCode !== roomId) {
+      localStorage.setItem(getLocalMessageCacheKey(roomCode, channelId), JSON.stringify(data));
+    }
     return data as DbMessage[];
   } catch (err) {
     console.warn('[Supabase] Erro ao buscar histórico de mensagens:', err);

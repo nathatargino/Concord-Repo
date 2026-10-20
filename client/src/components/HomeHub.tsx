@@ -70,6 +70,13 @@ export const HomeHub: React.FC = () => {
 
   // Modal de Aviso de Migração e Escalabilidade
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+  const [isMigrationAcknowledged, setIsMigrationAcknowledged] = useState(() => {
+    try {
+      return localStorage.getItem('concord_migration_notice_acknowledged') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // Adicionar amigo input
   const [addFriendInput, setAddFriendInput] = useState('');
@@ -197,6 +204,8 @@ export const HomeHub: React.FC = () => {
 
       setIsServer(isServer);
       if (dbRoom.name) setServerName(dbRoom.name);
+      setActiveDmChat(null);
+      setHomeTab('hub');
       setActiveRailContext(roomId);
       navigate(`/room/${roomId}?code=${roomCode}${isServer ? '&server=1' : ''}`);
     } catch {
@@ -377,6 +386,7 @@ export const HomeHub: React.FC = () => {
       if (chat) {
         setActiveDmChat(chat);
         setHomeTab('dm');
+        setActiveRailContext('home');
         setShowVideoPlayer(false);
       } else {
         toast.error('Não foi possível abrir a mensagem direta.');
@@ -390,6 +400,8 @@ export const HomeHub: React.FC = () => {
   const handleJoinRecentRoom = (room: { id: string; code: string }) => {
     setIsServer(false);
     setActiveRailContext(room.id);
+    setActiveDmChat(null);
+    setHomeTab('hub');
     navigate(`/room/${room.id}?code=${room.code}`);
   };
 
@@ -1042,22 +1054,24 @@ export const HomeHub: React.FC = () => {
       )}
 
       {/* ── BOTÃO FLUTUANTE DE ATENÇÃO (MIGRAÇÃO & ESCALABILIDADE) ── */}
-      <div
-        className={styles.floatingAlertBtn}
-        onClick={() => setIsMigrationModalOpen(true)}
-        role="button"
-        tabIndex={0}
-        title="Aviso de Migração e Escalabilidade"
-      >
-        <div className={styles.floatingAlertBadge} />
-        <i className={`fa-solid fa-triangle-exclamation ${styles.floatingAlertIcon}`} />
-        <span className={styles.floatingAlertTooltip}>
-          Aviso Importante: Migração em Breve ⚠️
-        </span>
-      </div>
+      {!isMigrationAcknowledged && (
+        <div
+          className={styles.floatingAlertBtn}
+          onClick={() => setIsMigrationModalOpen(true)}
+          role="button"
+          tabIndex={0}
+          title="Aviso de Migração e Escalabilidade"
+        >
+          <div className={styles.floatingAlertBadge} />
+          <i className={`fa-solid fa-triangle-exclamation ${styles.floatingAlertIcon}`} />
+          <span className={styles.floatingAlertTooltip}>
+            Aviso Importante: Migração em Breve ⚠️
+          </span>
+        </div>
+      )}
 
       {/* ── MODAL: AVISO DE MIGRAÇÃO E ESCALABILIDADE ── */}
-      {isMigrationModalOpen && createPortal(
+      {!isMigrationAcknowledged && isMigrationModalOpen && createPortal(
         <div
           className={styles.migrationOverlay}
           onClick={() => setIsMigrationModalOpen(false)}
@@ -1131,7 +1145,13 @@ export const HomeHub: React.FC = () => {
               <button
                 type="button"
                 className={styles.migrationConfirmBtn}
-                onClick={() => setIsMigrationModalOpen(false)}
+                onClick={() => {
+                  try {
+                    localStorage.setItem('concord_migration_notice_acknowledged', 'true');
+                  } catch {}
+                  setIsMigrationAcknowledged(true);
+                  setIsMigrationModalOpen(false);
+                }}
               >
                 <i className="fa-solid fa-check" />
                 <span>Entendido</span>

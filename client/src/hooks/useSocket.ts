@@ -32,6 +32,7 @@ interface ServerToClientEvents {
     roomId?: string,
     customRole?: any
   ) => void;
+  message_history: (history: any[], roomId: string) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
   play_youtube: (videoId: string, startSeconds: number, token: number) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
@@ -133,6 +134,7 @@ interface ClientToServerEvents {
   watch_session_heartbeat: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; positionSeconds: number; isPlaying: boolean; url: string }) => void;
   set_member_custom_role: (data: any) => void;
   send_direct_message: (data: {
+    id?: string;
     chatId: string;
     targetUserId?: string;
     targetName?: string;
@@ -407,10 +409,86 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
     });
 
+    let historyBatchBuffer: ChatMessage[] = [];
+    let historyBatchTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flushHistoryBatch = () => {
+      if (historyBatchBuffer.length === 0) return;
+      const batch = [...historyBatchBuffer];
+      historyBatchBuffer = [];
+      const appState = useAppStore.getState();
+      const currentMsgs = appState.messages;
+      const existingSignatures = new Set(
+        currentMsgs.map(m => `${m.roomId || ''}_${m.userName}_${m.message}_${m.timestamp}`)
+      );
+      const newBatch = batch.filter(
+        m => !existingSignatures.has(`${m.roomId || ''}_${m.userName}_${m.message}_${m.timestamp}`)
+      );
+      if (newBatch.length > 0) {
+        store.setMessages([...currentMsgs, ...newBatch]);
+      }
+    };
+
+    socket.on('message_history', (history, historyRoomId) => {
+      if (!Array.isArray(history) || history.length === 0) return;
+      const appState = useAppStore.getState();
+      const targetRoomId = historyRoomId || appState.room?.id || appState.room?.code;
+      const loaded: ChatMessage[] = history.map((msg: any) => {
+        const isSystem = msg.userName === 'Sistema' || (msg.type as string) === 'system' || (typeof msg.message === 'string' && msg.message.startsWith('O usuário ') && msg.message.includes(' executou o comando /'));
+        return {
+          id: msg.id || `msg-hist-${msg.sentAt || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          roomId: msg.roomId || targetRoomId,
+          userName: isSystem ? 'Sistema' : msg.userName,
+          message: msg.message,
+          timestamp: msg.timestamp,
+          isSystem,
+          type: msg.type || 'text',
+          url: msg.url,
+          filename: msg.filename,
+          channelId: msg.channelId || (appState.isServer ? 'ch-geral' : undefined),
+          avatarUrl: isSystem ? null : (msg.avatarUrl || null),
+          customRole: msg.customRole || null,
+        };
+      });
+      const currentMsgs = appState.messages;
+      const existingSignatures = new Set(
+        currentMsgs.map(m => `${m.roomId || ''}_${m.userName}_${m.message}_${m.timestamp}`)
+      );
+      const newBatch = loaded.filter(
+        m => !existingSignatures.has(`${m.roomId || ''}_${m.userName}_${m.message}_${m.timestamp}`)
+      );
+      if (newBatch.length > 0) {
+        store.setMessages([...currentMsgs, ...newBatch]);
+      }
+    });
+
     socket.on('receive_message', (userName, message, timestamp, type, url, filename, channelId, avatarUrl, isHistory, sentAt, roomId, customRole) => {
       const isSystem = userName === 'Sistema' || (type as string) === 'system' || (typeof message === 'string' && message.startsWith('O usuário ') && message.includes(' executou o comando /'));
       const appState = useAppStore.getState();
-      const targetRoomId = roomId || appState.room?.id;
+      const targetRoomId = roomId || appState.room?.id || appState.room?.code;
+
+      // Agrupar mensagens de histórico em lote para evitar renderização sequencial individual (stutter)
+      if (isHistory) {
+        const histMsg: ChatMessage = {
+          id: `msg-hist-${sentAt || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          roomId: targetRoomId,
+          userName: isSystem ? 'Sistema' : userName,
+          message,
+          timestamp,
+          isSystem,
+          type: type || 'text',
+          url,
+          filename,
+          channelId: channelId || (appState.isServer ? 'ch-geral' : undefined),
+          avatarUrl: isSystem ? null : (avatarUrl || null),
+          customRole: customRole || null,
+        };
+        historyBatchBuffer.push(histMsg);
+        if (historyBatchTimer) clearTimeout(historyBatchTimer);
+        historyBatchTimer = setTimeout(flushHistoryBatch, 50);
+        return;
+      }
+
       const newMsg: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         roomId: targetRoomId,
@@ -426,11 +504,6 @@ export function useSocket(callbacks: SocketCallbacks) {
         customRole: customRole || null,
       };
       store.addMessage(newMsg);
-
-      // NUNCA notificar mensagens históricas recebidas ao carregar ou entrar na sala
-      if (isHistory) {
-        return;
-      }
 
       // NUNCA notificar mensagens enviadas antes de abrir o aplicativo Concord
       if (typeof sentAt === 'number' && sentAt > 0 && sentAt < APP_SOCKET_START_TIME) {
@@ -764,18 +837,35 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('server_members' as any, (members: any[]) => {
       if (members && Array.isArray(members)) {
-        store.setServerMembers(members.map(m => ({
-          id: m.id || m.username,
-          username: m.username,
-          avatarUrl: m.avatarUrl || null,
-          isOnline: false,
-          inVoice: false,
-          role: m.role || 'member',
-        })));
+        const currentMembers = useAppStore.getState().serverMembers;
+        const memberMap = new Map<string, typeof currentMembers[0]>();
+        for (const m of currentMembers) {
+          const key = (m.username || '').trim().toLowerCase();
+          if (key) memberMap.set(key, m);
+        }
+        for (const m of members) {
+          const key = (m.username || '').trim().toLowerCase();
+          if (!key) continue;
+          const existing = memberMap.get(key);
+          memberMap.set(key, {
+            id: m.id || existing?.id || m.username,
+            username: m.username,
+            avatarUrl: m.avatarUrl || existing?.avatarUrl || null,
+            isOnline: existing?.isOnline ?? false,
+            inVoice: existing?.inVoice ?? false,
+            role: m.role || existing?.role || 'member',
+            customRole: m.customRole || existing?.customRole,
+          });
+        }
+        store.setServerMembers(Array.from(memberMap.values()));
       }
     });
 
     return () => {
+      if (historyBatchTimer) {
+        clearTimeout(historyBatchTimer);
+        historyBatchTimer = null;
+      }
       if (watchActionDebounceTimer) {
         clearTimeout(watchActionDebounceTimer);
         watchActionDebounceTimer = null;

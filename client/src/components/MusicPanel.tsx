@@ -43,7 +43,7 @@ export const YouTubeIcon = ({ active }: { active?: boolean }) => (
 export const PLATFORMS: { id: Platform; label: string }[] = [
   { id: 'youtube', label: 'YouTube' },
   { id: 'netflix', label: 'Netflix' },
-  { id: 'prime', label: 'Prime Video' },
+  { id: 'prime', label: 'Prime' },
   { id: 'crunchyroll', label: 'Crunchyroll' },
 ];
 
@@ -61,6 +61,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [trackTitle, setTrackTitle] = useState<string | null>(null);
 
+  const [isOpeningStreaming, setIsOpeningStreaming] = useState(false);
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const {
     musicQueue,
@@ -154,6 +155,22 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     const label = service === 'netflix' ? 'Netflix' : service === 'prime' ? 'Prime Video' : 'Crunchyroll';
     notifyInChat(`🎬 Watch Party iniciada na ${label}! Todos na call já podem clicar em Sincronizar.`);
     setShowVideoPlayer(true);
+  };
+
+  const handleOpenStreaming = async (service: 'netflix' | 'prime' | 'crunchyroll', targetUrl?: string) => {
+    if (!inVoice) {
+      notifyInChat(`Você precisa estar em uma call de voz para assistir ${service === 'netflix' ? 'a Netflix' : service === 'prime' ? 'o Prime' : 'a Crunchyroll'}.`);
+      return;
+    }
+    setIsOpeningStreaming(true);
+    try {
+      setActiveStreaming({ service: service as any, url: targetUrl });
+      (setActiveMediaTab as any)(service);
+      (setStreamingSession as any)(service, true);
+      setShowVideoPlayer(true);
+    } finally {
+      setIsOpeningStreaming(false);
+    }
   };
 
   const handleCloseStreaming = () => {
@@ -277,9 +294,7 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       <div className={styles.platformTabs} role="tablist" aria-label="Selecionar plataforma">
         {PLATFORMS.map((p) => {
           const isActive = selectedPlatform === p.id;
-          const isLive = p.id === 'youtube'
-            ? Boolean(currentVideoId && isPlaying)
-            : Boolean((streamingSessions as any)?.[p.id] || activeStreaming?.service === p.id || (watchSession && watchSession.platform === p.id));
+          const isLive = p.id === 'youtube' && Boolean(currentVideoId && isPlaying);
 
           return (
             <button
@@ -534,19 +549,26 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                         ? styles.actionButtonPrime
                         : styles.actionButtonCrunchyroll
                     }
-                    disabled={true}
-                    style={{ opacity: 0.6, cursor: 'not-allowed', pointerEvents: 'none' }}
-                    title="Em breve"
+                    onClick={() => {
+                      if (watchSession && watchSession.platform === selectedPlatform) {
+                        handleSyncAndWatch(watchSession);
+                      } else {
+                        handleOpenStreaming(selectedPlatform);
+                      }
+                    }}
+                    disabled={isOpeningStreaming || !inVoice}
+                    title={inVoice ? undefined : "Entre na call de voz para abrir streaming"}
                   >
-                    <i className="fa-solid fa-clock"></i>
-                    <span>Em Breve</span>
+                    <i className={isOpeningStreaming ? 'fa-solid fa-spinner fa-spin' : (watchSession && watchSession.platform === selectedPlatform ? 'fa-solid fa-arrows-rotate' : 'fa-solid fa-play')}></i>
+                    <span>
+                      {isOpeningStreaming
+                        ? 'Iniciando...'
+                        : (watchSession && watchSession.platform === selectedPlatform
+                            ? `Sincronizar e Assistir ${selectedPlatform === 'netflix' ? 'Netflix' : selectedPlatform === 'prime' ? 'Prime' : 'Crunchyroll'}`
+                            : (selectedPlatform === 'netflix' ? 'Iniciar Netflix' : selectedPlatform === 'prime' ? 'Iniciar Prime' : 'Iniciar Crunchyroll'))}
+                    </span>
                   </button>
                 )}
-
-                <div className={styles.infoNotice}>
-                  <i className="fa-solid fa-shield-halved"></i>
-                  <span>Sessão e cookies sincronizados com segurança no Concord.</span>
-                </div>
               </div>
             )}
           </div>

@@ -39,6 +39,9 @@ import { SERVER_URL } from '../config';
 const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || 'gD2L1Yb68ZOGLLvErUw4BMuyLIdgyVzx';
 const gf = new GiphyFetch(GIPHY_API_KEY);
 
+// Cache em memória de mensagens por sala/canal para troca instantânea sem flash vazio
+const channelMessageCache = new Map<string, ChatMessage[]>();
+
 function escapeHtml(text: string): string {
   if (!text) return '';
   return text
@@ -346,6 +349,7 @@ export function ChatPanel({
     openUserProfile,
     activeDmChat,
     homeTab,
+    activeRailContext,
     friends,
     systemNotificationsEnabled,
     showConfirmModal,
@@ -439,8 +443,10 @@ export function ChatPanel({
   }, [viewingImage]);
 
   // ── DM (Direct Message) Mode ──
-  const isDmMode = homeTab === 'dm' && Boolean(activeDmChat);
+  // O modo DM é exclusivo da visualização inicial (Home) e nunca deve sobrepor um servidor ou sala
+  const isDmMode = activeRailContext === 'home' && !room?.id && homeTab === 'dm' && Boolean(activeDmChat);
   const [dmMessages, setDmMessages] = useState<DirectMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState<boolean>(false);
   const isPartnerBlocked = useMemo(() => {
     if (!isDmMode || !activeDmChat) return false;
     const pId = activeDmChat.partnerId;
@@ -457,13 +463,19 @@ export function ChatPanel({
     if (!isDmMode || !activeDmChat) return true;
     const pId = activeDmChat.partnerId;
     const pName = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').toLowerCase();
-    return friends.some(f => 
+    const matchedAccepted = friends.some(f => 
       f.status === 'accepted' && (
-        (pId && (f.friendId === pId || f.userId === pId)) ||
-        (pName && cleanDisplayName(f.friendName || (f as any).userName || '').toLowerCase() === pName)
+        (pId && (f.friendId === pId || f.userId === pId || f.id === pId)) ||
+        (pName && pName !== 'usuário' && cleanDisplayName(f.friendName || (f as any).userName || '').toLowerCase() === pName)
       )
     );
-  }, [isDmMode, activeDmChat, friends]);
+    if (matchedAccepted) return true;
+    // Se já há histórico de conversa real com este parceiro e ele não está bloqueado, permitir envio contínuo
+    if (!isPartnerBlocked && dmMessages.some(m => m.senderId !== 'system' && m.msgType !== 'system_error')) {
+      return true;
+    }
+    return false;
+  }, [isDmMode, activeDmChat, friends, isPartnerBlocked, dmMessages]);
 
   const handleToggleReaction = useCallback((messageId: string, emoji: string) => {
     const authorName = myName || 'Eu';
@@ -620,61 +632,6 @@ export function ChatPanel({
       isPlaying: true,
     });
     toast.success('Watch Party iniciada! Seus amigos já podem clicar em Sincronizar.');
-  };
-
-  // ── Sincronização Manual com o Líder da Watch Party ──
-  const handleManualSync = async () => {
-    const currentSession = useAppStore.getState().watchSession;
-    const electron = (window as any).electron;
-    const effectiveInVoice = inVoice || Boolean(useAppStore.getState().inVoice);
-    if (!effectiveInVoice) {
-      toast.error('Você precisa estar em uma call de voz para sincronizar.');
-      return;
-    }
-    if (!currentSession) {
-      // Se não houver Watch Party ativa mas o usuário estiver com uma plataforma aberta, inicia a Watch Party automaticamente!
-      const isStreamingTab = activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll';
-      if (isStreamingTab && electron?.getStreamingState) {
-        await handleStartWatchParty(activeMediaTab as any);
-        return;
-      }
-      toast('Nenhuma Watch Party ativa. Abra um título e clique em "Iniciar Watch Party".', { icon: 'ℹ️' });
-      return;
-    }
-
-    const elapsed = currentSession.isPlaying
-      ? Math.max(0, (Date.now() - currentSession.lastUpdated) / 1000)
-      : 0;
-    const targetTime = currentSession.positionSeconds + elapsed;
-    const minutes = Math.floor(targetTime / 60);
-    const seconds = Math.floor(targetTime % 60);
-    const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-
-    toast.success(`Sincronizando com ${currentSession.startedByName || 'o líder'} (${formattedTime})...`);
-
-    if (activeMediaTab !== currentSession.platform) {
-      setActiveMediaTab(currentSession.platform);
-      electron?.setActiveMediaTab?.(currentSession.platform);
-    }
-    setActiveStreaming({ service: currentSession.platform as any, url: currentSession.titleUrl });
-    (setStreamingSession as any)(currentSession.platform, true);
-    if (!showVideoPlayer) {
-      setShowVideoPlayer(true);
-    }
-
-    // Navegar diretamente para a URL do filme se necessário
-    electron?.navigateToTitle?.({
-      service: currentSession.platform,
-      url: currentSession.titleUrl,
-      autoPlay: true,
-    });
-
-    // Enviar comando para aplicar a reprodução no segundo exato
-    electron?.syncStreamingPlayback?.({
-      action: currentSession.isPlaying ? 'play' : 'pause',
-      positionSeconds: targetTime,
-      service: currentSession.platform,
-    });
   };
 
 
@@ -849,22 +806,36 @@ export function ChatPanel({
   useEffect(() => {
     if (!isDmMode || !activeDmChat?.id) return;
     let isMounted = true;
+    setIsLoadingMessages(true);
+    setDmMessages([]);
 
+    let initialLoadDone = false;
     const loadDms = async () => {
       try {
         const list = await fetchDirectMessagesFromSupabase(activeDmChat.id);
         if (isMounted) {
           setDmMessages((prev) => {
             const map = new Map<string, DirectMessage>();
-            for (const item of list) {
-              map.set(item.id, item);
+            for (let i = 0; i < list.length; i++) {
+              const item = list[i];
+              if (!item) continue;
+              const safeId = item.id || `dm-loaded-${new Date(item.createdAt || Date.now()).getTime()}-${i}`;
+              map.set(safeId, { ...item, id: safeId });
             }
-            for (const item of prev) {
+            for (let i = 0; i < prev.length; i++) {
+              const item = prev[i];
+              if (!item) continue;
+              const safeId = item.id || `dm-prev-${new Date(item.createdAt || Date.now()).getTime()}-${i}`;
               const alreadyHas = list.some(
-                (l) => l.id === item.id || (item.id?.startsWith?.('opt-') && l.content === item.content && l.senderName === item.senderName && Math.abs(new Date(l.createdAt).getTime() - new Date(item.createdAt).getTime()) < 5000)
+                (l) =>
+                  (l.id && item.id && l.id === item.id) ||
+                  (item.id?.startsWith?.('opt-') &&
+                    l.content === item.content &&
+                    cleanDisplayName(l.senderName).toLowerCase() === cleanDisplayName(item.senderName).toLowerCase() &&
+                    Math.abs(new Date(l.createdAt).getTime() - new Date(item.createdAt).getTime()) < 4000)
               );
               if (!alreadyHas) {
-                map.set(item.id, item);
+                map.set(safeId, { ...item, id: safeId });
               }
             }
             const res = Array.from(map.values());
@@ -872,23 +843,41 @@ export function ChatPanel({
             return res;
           });
         }
-      } catch {}
+      } catch {} finally {
+        if (!initialLoadDone && isMounted) {
+          initialLoadDone = true;
+          setTimeout(() => {
+            if (isMounted) {
+              setIsLoadingMessages(false);
+              setTimeout(() => scrollToBottom(false), 20);
+            }
+          }, 260);
+        }
+      }
     };
     loadDms();
     const timer = setInterval(loadDms, 3000);
 
     const handleNewDmMessage = (e: any) => {
-      const newMsg = e.detail;
-      if (!newMsg || !isMounted) return;
+      const rawMsg = e.detail;
+      if (!rawMsg || !isMounted) return;
+      const newMsg: DirectMessage = {
+        ...rawMsg,
+        id: rawMsg.id || `dm-evt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      };
       const msgSenderClean = cleanDisplayName(newMsg.senderName || '').toLowerCase();
       const chatPartnerClean = cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || '').toLowerCase();
       const myClean = cleanDisplayName(myName || '').toLowerCase();
-      const targetClean = cleanDisplayName(newMsg.targetName || '').toLowerCase();
+      const targetClean = cleanDisplayName((newMsg as any).targetName || '').toLowerCase();
 
       const pairKeyExpected = [myClean, chatPartnerClean].filter(Boolean).sort().join('__');
       const pairKeyActual = [msgSenderClean, targetClean].filter(Boolean).sort().join('__');
 
-      const isSenderPartner = (msgSenderClean === chatPartnerClean || chatPartnerClean.includes(msgSenderClean) || msgSenderClean.includes(chatPartnerClean));
+      const isSenderPartner = Boolean(
+        msgSenderClean &&
+        chatPartnerClean &&
+        (msgSenderClean === chatPartnerClean || chatPartnerClean.includes(msgSenderClean) || msgSenderClean.includes(chatPartnerClean))
+      );
       const isTargetMe = targetClean ? (targetClean === myClean || myClean.includes(targetClean) || targetClean.includes(myClean)) : true;
 
       const matchesChat = Boolean(
@@ -902,8 +891,20 @@ export function ChatPanel({
 
       if (matchesChat) {
         setDmMessages((prev) => {
-          if (prev.some(m => m.id === newMsg.id || (m.id?.startsWith?.('opt-') && m.content === newMsg.content && m.senderName === newMsg.senderName && Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 5000))) {
-            return prev.map(m => (m.id?.startsWith?.('opt-') && m.content === newMsg.content && m.senderName === newMsg.senderName ? newMsg : m));
+          if (prev.some(m => m.id && newMsg.id && m.id === newMsg.id)) {
+            return prev;
+          }
+          const optIdx = prev.findIndex(
+            m =>
+              m.id?.startsWith?.('opt-') &&
+              m.content === newMsg.content &&
+              cleanDisplayName(m.senderName).toLowerCase() === cleanDisplayName(newMsg.senderName).toLowerCase() &&
+              Math.abs(new Date(m.createdAt).getTime() - new Date(newMsg.createdAt).getTime()) < 4000
+          );
+          if (optIdx !== -1) {
+            const updated = [...prev];
+            updated[optIdx] = newMsg;
+            return updated;
           }
           const next = [...prev, newMsg];
           next.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -931,8 +932,13 @@ export function ChatPanel({
     let dmChannel: any = null;
     if (isUuid(activeDmChat.id)) {
       try {
+        const channelName = `dm-chat-${activeDmChat.id}`;
+        const existingCh = supabase.getChannels().find((c) => c.topic === `realtime:${channelName}`);
+        if (existingCh) {
+          supabase.removeChannel(existingCh);
+        }
         dmChannel = supabase
-          .channel(`dm-chat-${activeDmChat.id}`)
+          .channel(channelName)
           .on(
             'postgres_changes',
             {
@@ -946,9 +952,9 @@ export function ChatPanel({
               const newMsg = payload.new as any;
               if (!newMsg) return;
               setDmMessages((prev) => {
-                if (prev.some((m) => m.id === newMsg.id)) return prev;
+                if (prev.some((m) => m.id && newMsg.id && m.id === newMsg.id)) return prev;
                 const formatted: DirectMessage = {
-                  id: newMsg.id,
+                  id: newMsg.id || `dm-rt-${Date.now()}`,
                   chatId: newMsg.chat_id,
                   senderId: newMsg.sender_id,
                   content: newMsg.content,
@@ -959,6 +965,18 @@ export function ChatPanel({
                   senderName: newMsg.sender_name || (newMsg.sender_id === myId ? myName : activeDmChat.partnerName),
                   avatarUrl: newMsg.sender_avatar_url || newMsg.avatar_url || (newMsg.sender_id === myId ? myAvatarUrl : activeDmChat.partnerAvatarUrl),
                 };
+                const optIdx = prev.findIndex(
+                  (m) =>
+                    m.id?.startsWith?.('opt-') &&
+                    m.content === formatted.content &&
+                    cleanDisplayName(m.senderName).toLowerCase() === cleanDisplayName(formatted.senderName).toLowerCase() &&
+                    Math.abs(new Date(m.createdAt).getTime() - new Date(formatted.createdAt).getTime()) < 4000
+                );
+                if (optIdx !== -1) {
+                  const updated = [...prev];
+                  updated[optIdx] = formatted;
+                  return updated;
+                }
                 return [...prev, formatted];
               });
             }
@@ -1332,16 +1350,39 @@ export function ChatPanel({
     return channels.find((c) => c.id === activeChannelId) || { id: 'ch-geral', name: 'Geral' };
   }, [channels, activeChannelId]);
 
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (messageListRef.current) {
+      messageListRef.current.scrollTo({
+        top: messageListRef.current.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
+    bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  }, []);
+
   // Carregar mensagens persistentes do canal via Supabase/Local cache
   useEffect(() => {
     if (!room?.id) {
       setMessages([]);
+      setIsLoadingMessages(false);
       return;
     }
-    setMessages([]);
     const chId = isServer ? (activeChannelId || 'ch-geral') : null;
+    const cacheKey = `${room.id}:${chId || 'room'}`;
 
-    fetchChannelMessages(room.id, chId).then((history) => {
+    setIsLoadingMessages(true);
+    const cached = channelMessageCache.get(cacheKey);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+    } else {
+      setMessages([]);
+    }
+
+    let isCancelled = false;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    fetchChannelMessages(room.id, chId, room.code).then((history) => {
+      if (isCancelled) return;
       if (history && history.length > 0) {
         const loaded: ChatMessage[] = history.map((m) => {
           const isSystem = m.sender_name === 'Sistema' || (m.msg_type as string) === 'system' || (typeof m.content === 'string' && m.content.startsWith('O usuário ') && m.content.includes(' executou o comando /'));
@@ -1358,10 +1399,36 @@ export function ChatPanel({
             isSystem,
           };
         });
-        setMessages(loaded);
+        const currentMsgs = useAppStore.getState().messages;
+        const loadedSigs = new Set(loaded.map(l => `${l.roomId || ''}_${l.userName}_${l.message}_${l.timestamp}`));
+        const extraFromSocket = currentMsgs.filter(m => !loadedSigs.has(`${m.roomId || ''}_${m.userName}_${m.message}_${m.timestamp}`));
+        const merged = [...loaded, ...extraFromSocket];
+        channelMessageCache.set(cacheKey, merged);
+        setMessages(merged);
       }
+    }).finally(() => {
+      if (isCancelled) return;
+      settleTimer = setTimeout(() => {
+        if (!isCancelled) {
+          setIsLoadingMessages(false);
+          setTimeout(() => scrollToBottom(false), 20);
+        }
+      }, 360);
     });
-  }, [room?.id, activeChannelId, isServer, setMessages]);
+
+    return () => {
+      isCancelled = true;
+      if (settleTimer) clearTimeout(settleTimer);
+    };
+  }, [room?.id, room?.code, activeChannelId, isServer, setMessages, scrollToBottom]);
+
+  useEffect(() => {
+    if (room?.id && messages.length > 0) {
+      const chId = isServer ? (activeChannelId || 'ch-geral') : null;
+      const cacheKey = `${room.id}:${chId || 'room'}`;
+      channelMessageCache.set(cacheKey, messages);
+    }
+  }, [messages, room?.id, activeChannelId, isServer]);
 
   // Filtrar mensagens para o canal atual (em servidores) ou DM atual
   const channelMessages = useMemo(() => {
@@ -1424,16 +1491,6 @@ export function ChatPanel({
     );
   }, [channelMessages, searchQuery]);
 
-  const scrollToBottom = useCallback((smooth = true) => {
-    if (messageListRef.current) {
-      messageListRef.current.scrollTo({
-        top: messageListRef.current.scrollHeight,
-        behavior: smooth ? 'smooth' : 'auto',
-      });
-    }
-    bottomRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
-  }, []);
-
   // ResizeObserver para manter rolagem no fim quando imagens carregam
   useEffect(() => {
     const listEl = messageListRef.current;
@@ -1466,24 +1523,14 @@ export function ChatPanel({
     };
   }, []);
 
-  // Timers múltiplos de alinhamento suave ao entrar no servidor ou mudar de canal
+  // Alinhamento imediato ao mudar de canal ou receber nova mensagem
   useEffect(() => {
     if (!searchQuery) {
       scrollToBottom(false);
-      const t1 = setTimeout(() => scrollToBottom(false), 50);
-      const t2 = setTimeout(() => scrollToBottom(false), 150);
-      const t3 = setTimeout(() => scrollToBottom(true), 350);
-      const t4 = setTimeout(() => scrollToBottom(true), 700);
-      const t5 = setTimeout(() => scrollToBottom(true), 1200);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-        clearTimeout(t4);
-        clearTimeout(t5);
-      };
+      const t1 = setTimeout(() => scrollToBottom(false), 40);
+      return () => clearTimeout(t1);
     }
-  }, [displayedMessages.length, activeChannelId, searchQuery, scrollToBottom]);
+  }, [displayedMessages.length, activeChannelId, activeDmChat?.id, searchQuery, scrollToBottom]);
 
   const stageFiles = useCallback((filesToAdd: FileList | File[]) => {
     const newStaged: StagedAttachment[] = [];
@@ -1605,30 +1652,46 @@ export function ChatPanel({
 
       // Otimismo imediato se for texto puro sem anexos
       if (stagedFiles.length === 0 && trimmed) {
-        setInput('');
-        setReplyingTo(null);
+        try {
+          let finalQuotePrefix = '';
+          if (replyingTo) {
+            const quoteSnippet = replyingTo.message.length > 70 ? replyingTo.message.slice(0, 67) + '...' : replyingTo.message;
+            finalQuotePrefix = `> **@${replyingTo.userName}**: ${quoteSnippet}\n`;
+          }
+          const dmContent = finalQuotePrefix ? `${finalQuotePrefix}${trimmed}` : trimmed;
+          setInput('');
+          setReplyingTo(null);
 
-        const optimisticDm: DirectMessage = {
-          id: `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          chatId: activeDmChat.id,
-          senderId: myName || 'me',
-          senderName: myName || 'Você',
-          avatarUrl: myAvatarUrl,
-          content: trimmed,
-          msgType: 'text',
-          createdAt: new Date().toISOString(),
-        };
-        setDmMessages((prev) => [...prev, optimisticDm]);
-        sendDirectMessageToSupabase(
-          activeDmChat.id,
-          trimmed,
-          'text',
-          undefined,
-          undefined,
-          activeDmChat.partnerId,
-          activeDmChat.partnerName
-        );
-        isSendingRef.current = false;
+          const msgId =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `dm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+          const authorName = cleanDisplayName(myName || localStorage.getItem('concord_username') || 'Você');
+          const optimisticDm: DirectMessage = {
+            id: msgId,
+            chatId: activeDmChat.id,
+            senderId: myId || myName || 'me',
+            senderName: authorName,
+            avatarUrl: myAvatarUrl,
+            content: dmContent,
+            msgType: 'text',
+            createdAt: new Date().toISOString(),
+          };
+          setDmMessages((prev) => (prev.some((m) => m.id === msgId) ? prev : [...prev, optimisticDm]));
+          sendDirectMessageToSupabase(
+            activeDmChat.id,
+            dmContent,
+            'text',
+            undefined,
+            undefined,
+            activeDmChat.partnerId,
+            activeDmChat.partnerName,
+            msgId
+          );
+        } finally {
+          isSendingRef.current = false;
+        }
         return;
       }
 
@@ -1665,11 +1728,16 @@ export function ChatPanel({
             const msgType: 'image' | 'file' = item.isImage ? 'image' : 'file';
             const messageContent = (i === 0 && trimmed) ? trimmed : (item.isImage ? '📷 Imagem' : `📎 ${item.file.name}`);
 
-            const authorName = (myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : '') || '').trim() || 'Você';
+            const authorName = cleanDisplayName(myName || (typeof window !== 'undefined' ? (localStorage.getItem('concord_username') || localStorage.getItem('concord_username_v1')) : '') || 'Você');
+            const msgId =
+              typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `dm-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`;
+
             const optimisticDm: DirectMessage = {
-              id: `opt-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+              id: msgId,
               chatId: activeDmChat.id,
-              senderId: myName || 'me',
+              senderId: myId || myName || 'me',
               senderName: authorName,
               avatarUrl: myAvatarUrl,
               content: messageContent,
@@ -1678,7 +1746,7 @@ export function ChatPanel({
               fileName: item.file.name,
               createdAt: new Date().toISOString(),
             };
-            setDmMessages((prev) => [...prev, optimisticDm]);
+            setDmMessages((prev) => (prev.some((m) => m.id === msgId) ? prev : [...prev, optimisticDm]));
 
             sendDirectMessageToSupabase(
               activeDmChat.id,
@@ -1687,12 +1755,9 @@ export function ChatPanel({
               fileUrl,
               item.file.name,
               activeDmChat.partnerId,
-              activeDmChat.partnerName
-            ).then((created) => {
-              if (created) {
-                setDmMessages((prev) => prev.map((m) => (m.id === optimisticDm.id ? created : m)));
-              }
-            });
+              activeDmChat.partnerName,
+              msgId
+            );
           }
         } catch (err: any) {
           console.error('Erro ao enviar anexos:', err);
@@ -1704,6 +1769,8 @@ export function ChatPanel({
         }
         return;
       }
+      isSendingRef.current = false;
+      return;
     }
 
     // Interceptação direta dos comandos de música
@@ -1836,7 +1903,7 @@ export function ChatPanel({
       onSendMessage?.(msgText, 'text', undefined, undefined, currentChannel, myAvatarUrl);
       isSendingRef.current = false;
     }
-  }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles, isUploading]);
+  }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myId, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles, isUploading]);
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
     const clipboardData = (e as any).clipboardData;
@@ -2135,37 +2202,29 @@ export function ChatPanel({
             </>
           )}
 
-          <div className={styles.searchWrapper}>
-            <i className={`fa-solid fa-magnifying-glass ${styles.searchIcon}`}></i>
-            <input
-              type="text"
-              className={styles.searchInput}
-              placeholder="Buscar..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button
-                className={styles.clearSearchBtn}
-                onClick={() => setSearchQuery('')}
-                title="Limpar busca"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* Botão rápido de iniciar/sincronizar Watch Party no cabeçalho quando player aberto */}
-          {showVideoPlayer && watchSession && (
-            <button
-              className={styles.headerWatchSyncBtn}
-              onClick={handleManualSync}
-              title={`Sincronizar com Watch Party de ${watchSession.startedByName || 'Líder'}`}
-            >
-              <i className="fa-solid fa-arrows-rotate"></i>
-              <span>Sincronizar</span>
-            </button>
+          {!showVideoPlayer && (
+            <div className={styles.searchWrapper}>
+              <i className={`fa-solid fa-magnifying-glass ${styles.searchIcon}`}></i>
+              <input
+                type="text"
+                className={styles.searchInput}
+                placeholder="Buscar..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button
+                  className={styles.clearSearchBtn}
+                  onClick={() => setSearchQuery('')}
+                  title="Limpar busca"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           )}
+
+          {/* Botão rápido de iniciar Watch Party no cabeçalho quando player aberto */}
           {showVideoPlayer && !watchSession && activeMediaTab !== 'youtube' && (
             <button
               className={styles.headerWatchSyncBtn}
@@ -2226,7 +2285,19 @@ export function ChatPanel({
 
             {/* Message list */}
             <div ref={messageListRef} className={styles.messageList} onClick={handleMessageListClick}>
-              {displayedMessages.length === 0 ? (
+              {isLoadingMessages ? (
+                <div className={styles.chatLoadingContainer}>
+                  <div className={styles.chatLoadingSpinner} />
+                  <p className={styles.chatLoadingTitle}>Carregando mensagens...</p>
+                  <p className={styles.chatLoadingSubtitle}>
+                    {isDmMode && activeDmChat
+                      ? `Sincronizando conversa com ${cleanDisplayName(activeDmChat.partnerName || (activeDmChat as any).other_user_name || 'amigo')}`
+                      : isServer
+                      ? `Sincronizando histórico de #${activeChannel.name}`
+                      : 'Sincronizando mensagens da sala'}
+                  </p>
+                </div>
+              ) : displayedMessages.length === 0 ? (
                 <div className={styles.emptyMessages}>
                   {searchQuery ? (
                     <p>Nenhuma mensagem encontrada para &quot;{searchQuery}&quot;</p>
@@ -2933,15 +3004,11 @@ export function ChatPanel({
                     const electron = (window as any).electron;
                     if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('netflix');
                   }}
-                  title="Netflix"
+                  title="Netflix (Beta)"
                 >
                   <NetflixIcon />
                   <span className={styles.mediaTabTitle}>Netflix</span>
-                  {watchSession?.platform === 'netflix' ? (
-                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
-                  ) : streamingSessions.netflix ? (
-                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
-                  ) : null}
+                  <span className={styles.mediaTabActiveBadge} title="Recurso em Beta">BETA</span>
                 </button>
 
                 {/* Prime Video Tab */}
@@ -2954,15 +3021,11 @@ export function ChatPanel({
                     const electron = (window as any).electron;
                     if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('prime');
                   }}
-                  title="Prime Video"
+                  title="Prime (Beta)"
                 >
                   <PrimeIcon />
-                  <span className={styles.mediaTabTitle}>Prime Video</span>
-                  {watchSession?.platform === 'prime' ? (
-                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
-                  ) : streamingSessions.prime ? (
-                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
-                  ) : null}
+                  <span className={styles.mediaTabTitle}>Prime</span>
+                  <span className={styles.mediaTabActiveBadge} title="Recurso em Beta">BETA</span>
                 </button>
 
                 {/* Crunchyroll Tab */}
@@ -2975,15 +3038,11 @@ export function ChatPanel({
                     const electron = (window as any).electron;
                     if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab('crunchyroll');
                   }}
-                  title="Crunchyroll"
+                  title="Crunchyroll (Beta)"
                 >
                   <CrunchyrollIcon />
                   <span className={styles.mediaTabTitle}>Crunchyroll</span>
-                  {watchSession?.platform === 'crunchyroll' ? (
-                    <span className={styles.mediaTabActiveBadge} style={{ background: '#7C3AED' }} title="Watch Party em andamento">Watch Party</span>
-                  ) : (streamingSessions as any).crunchyroll ? (
-                    <span className={styles.mediaTabActiveBadge} title="Sessão ativa">Ativo</span>
-                  ) : null}
+                  <span className={styles.mediaTabActiveBadge} title="Recurso em Beta">BETA</span>
                 </button>
                 <button
                   type="button"
@@ -3014,7 +3073,7 @@ export function ChatPanel({
                 {(() => {
                   const currentService: 'netflix' | 'prime' | 'crunchyroll' = (activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll') ? (activeMediaTab as any) : 'prime';
                   const isSessionActive = Boolean((streamingSessions as any)[currentService] || activeStreaming?.service === currentService || (watchSession?.platform === currentService));
-                  const platformLabel = currentService === 'netflix' ? 'Netflix' : currentService === 'prime' ? 'Prime Video' : 'Crunchyroll';
+                  const platformLabel = currentService === 'netflix' ? 'Netflix' : currentService === 'prime' ? 'Prime' : 'Crunchyroll';
 
                   if (!isSessionActive) {
                     return (
@@ -3022,19 +3081,24 @@ export function ChatPanel({
                         <div className={`${styles.streamingLauncherIcon} ${currentService === 'netflix' ? styles.streamingLauncherNetflix : currentService === 'prime' ? styles.streamingLauncherPrime : styles.streamingLauncherCrunchyroll}`}>
                           {currentService === 'netflix' ? <NetflixIcon /> : currentService === 'prime' ? <i className="fa-solid fa-play" style={{ color: '#00A8E1', fontSize: '20px' }}></i> : <CrunchyrollIcon />}
                         </div>
-                        <h3 className={styles.streamingLauncherTitle}>
-                          Sessão da {platformLabel} não iniciada
+                        <h3 className={styles.streamingLauncherTitle} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                          <span>Sessão da {platformLabel}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 7px', borderRadius: '6px', background: 'rgba(139, 92, 246, 0.22)', color: '#c4b5fd', border: '1px solid rgba(139, 92, 246, 0.4)' }}>BETA</span>
                         </h3>
                         <p className={styles.streamingLauncherDesc}>
-                          Em breve você poderá assistir {platformLabel} com suporte a Watch Party diretamente no Concord.
+                          Assista {platformLabel} com seus amigos em tempo real com suporte a Watch Party e Widevine DRM diretamente no Concord (versão Beta).
                         </p>
                         <button
                           className={`${styles.streamingLauncherBtn} ${currentService === 'netflix' ? styles.streamingLauncherBtnNetflix : currentService === 'prime' ? styles.streamingLauncherBtnPrime : styles.streamingLauncherBtnCrunchyroll}`}
-                          disabled={true}
-                          style={{ opacity: 0.6, cursor: 'not-allowed', pointerEvents: 'none' }}
-                          title="Em breve"
+                          onClick={() => {
+                            setActiveStreaming({ service: currentService as any });
+                            (setStreamingSession as any)(currentService, true);
+                            const electron = (window as any).electron;
+                            if (electron?.setActiveMediaTab && renderMedia) electron.setActiveMediaTab(currentService);
+                          }}
+                          title={`Iniciar ${platformLabel} (Beta)`}
                         >
-                          <i className="fa-solid fa-clock" style={{ marginRight: '6px' }}></i> Em Breve
+                          <i className="fa-solid fa-play" style={{ marginRight: '6px' }}></i> Iniciar {platformLabel}
                         </button>
                       </div>
                     );
@@ -3176,60 +3240,21 @@ export function ChatPanel({
                             <span>/skip</span>
                           </button>
 
-                          {/* Botão de Iniciar Watch Party / Sincronizar na grade de controles */}
                           <button
-                            type="button"
-                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutSync}`}
-                            onClick={() => {
-                              if (watchSession && watchSession.platform === currentService) {
-                                handleManualSync();
-                              } else {
-                                handleStartWatchParty(currentService);
-                              }
-                            }}
-                            title={watchSession && watchSession.platform === currentService ? 'Sincronizar reprodução com o líder' : 'Iniciar Watch Party para o grupo'}
-                          >
-                            <i className={`fa-solid ${watchSession && watchSession.platform === currentService ? 'fa-arrows-rotate' : 'fa-tower-broadcast'}`}></i>
-                            <span>{watchSession && watchSession.platform === currentService ? 'Sincronizar' : 'Watch Party'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutBack}`}
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
                             onClick={() => {
                               const electron = (window as any).electron;
-                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('back', { service: currentService });
-                              else if (electron?.streamingCommand) electron.streamingCommand('back', { service: currentService });
-                              // Fallback no modo Web SPA (iframe)
-                              if (!electron) {
-                                const catalogUrl = currentService === 'netflix'
-                                  ? 'https://www.netflix.com/browse'
-                                  : currentService === 'prime'
-                                  ? 'https://www.primevideo.com'
-                                  : 'https://www.crunchyroll.com/';
-                                const iframe = document.getElementById(`streaming-frame-${currentService}`) as HTMLIFrameElement | null;
-                                if (iframe) {
-                                  iframe.src = catalogUrl;
-                                }
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('stop', { service: currentService });
+                              else if (electron?.streamingCommand) electron.streamingCommand('stop', { service: currentService });
+                              const currentSession = useAppStore.getState().watchSession || watchSession;
+                              if (currentSession && currentSession.platform === currentService) {
+                                onWatchSessionAction?.({ action: 'pause', positionSeconds: 0 });
                               }
                             }}
-                            title={`Voltar ao catálogo de ${platformLabel}`}
+                            title="Limpar e resetar reprodução"
                           >
-                            <i className="fa-solid fa-arrow-left"></i>
-                            <span>Voltar</span>
-                          </button>
-
-                          <button
-                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
-                            onClick={() => {
-                              const electron = (window as any).electron;
-                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('fullscreen', { service: currentService });
-                              else if (electron?.streamingCommand) electron.streamingCommand('fullscreen', { service: currentService });
-                            }}
-                            title="Tela Cheia"
-                          >
-                            <i className="fa-solid fa-expand"></i>
-                            <span>Tela Cheia</span>
+                            <i className="fa-solid fa-trash-can"></i>
+                            <span>/clear</span>
                           </button>
                         </div>
 
@@ -3584,25 +3609,6 @@ export function ChatPanel({
                     >
                       <i className="fa-solid fa-trash-can"></i>
                       <span>/clear</span>
-                    </button>
-                    <button
-                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutClear}`}
-                      onClick={() => {
-                        setRenderMedia(false);
-                        setShowVideoPlayer(false);
-                      }}
-                      title="Voltar ao chat"
-                    >
-                      <i className="fa-solid fa-arrow-left"></i>
-                      <span>Sair</span>
-                    </button>
-                    <button
-                      className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
-                      onClick={toggleFullscreen}
-                      title="Tela Cheia"
-                    >
-                      <i className="fa-solid fa-expand"></i>
-                      <span>Tela Cheia</span>
                     </button>
                   </div>
                 </div>
