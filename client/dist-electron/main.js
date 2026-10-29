@@ -404,9 +404,9 @@ function startLocalServer() {
         });
     });
 }
-// Tamanho mínimo da janela principal para evitar quebras no layout responsivo
-const MIN_WINDOW_WIDTH = 1152;
-const MIN_WINDOW_HEIGHT = 864;
+// Tamanho mínimo da janela principal para permitir redimensionamento livre sem quebras no layout responsivo
+const MIN_WINDOW_WIDTH = 760;
+const MIN_WINDOW_HEIGHT = 500;
 function createWindow(showWindow = !process.argv.includes('--hidden')) {
     fs.appendFileSync(logFile, `createWindow called! isDev=${isDev}, showWindow=${showWindow}\n`);
     const appIconPath = getAppIconPath();
@@ -419,6 +419,7 @@ function createWindow(showWindow = !process.argv.includes('--hidden')) {
         height: 900,
         minWidth: MIN_WINDOW_WIDTH,
         minHeight: MIN_WINDOW_HEIGHT,
+        resizable: true,
         backgroundColor: '#0e0e18',
         show: showWindow,
         webPreferences: {

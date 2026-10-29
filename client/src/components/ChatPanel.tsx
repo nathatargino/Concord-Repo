@@ -382,6 +382,7 @@ export function ChatPanel({
     total: number;
   } | null>(null);
   const isSendingRef = useRef(false);
+  const lastPasteTimeRef = useRef<number>(0);
   const [isDragging, setIsDragging] = useState(false);
   const dragCounterRef = useRef<number>(0);
   const [stagedFiles, setStagedFiles] = useState<StagedAttachment[]>([]);
@@ -1906,33 +1907,69 @@ export function ChatPanel({
   }, [input, stagedFiles, replyingTo, onSendMessage, activeChannelId, isServer, executeMusicCommand, room?.id, myId, myName, myAvatarUrl, isDmMode, activeDmChat, isPartnerBlocked, isPartnerFriend, addMessage, clearStagedFiles, isUploading]);
 
   const handlePaste = (e: React.ClipboardEvent | ClipboardEvent) => {
+    const now = Date.now();
+    if (now - lastPasteTimeRef.current < 300) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof (e as any).stopPropagation === 'function') (e as any).stopPropagation();
+      return;
+    }
+    lastPasteTimeRef.current = now;
+
     const clipboardData = (e as any).clipboardData;
     if (!clipboardData) return;
 
-    // 1. Arquivos copiados diretamente no clipboard (ex: explorer do Windows, arquivo de foto)
+    // 1. Itens de clipboard (ex: print screen, Lightshot, Snipping Tool, cópia de imagem)
+    const items = clipboardData.items ? Array.from(clipboardData.items as DataTransferItemList) : [];
+    const imageItems = items.filter((it: any) => it.kind === 'file' && (it.type?.startsWith('image/') || it.type?.indexOf('image') !== -1));
+
+    // Quando o usuário copia com Lightshot (prnt.sc) ou ferramentas de print, o Windows disponibiliza
+    // a mesma captura em múltiplos formatos simultâneos (PNG, BMP, JPEG).
+    // Filtramos para extrair exclusivamente a melhor imagem (PNG), garantindo que apenas 1 imagem seja colada!
+    if (imageItems.length > 0) {
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof (e as any).stopPropagation === 'function') (e as any).stopPropagation();
+
+      const pngItem = imageItems.find((it: any) => it.type === 'image/png');
+      const targetItem = pngItem || imageItems[0];
+      const file = targetItem.getAsFile();
+      if (file) {
+        stageFiles([file]);
+        return;
+      }
+    }
+
+    // 2. Arquivos copiados do Explorer do Windows (ex: múltiplos arquivos reais)
     const files = clipboardData.files;
     if (files && files.length > 0) {
-      e.preventDefault();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+      if (typeof (e as any).stopPropagation === 'function') (e as any).stopPropagation();
+
+      const filesArray = Array.from(files as FileList);
+      // Se for duplicata de screenshot em múltiplos formatos genéricos (image.png, image.bmp, etc)
+      const isAllGenericScreenshots = filesArray.every(f => f.type.startsWith('image/') && (f.name === 'image.png' || f.name === 'image.jpeg' || f.name === 'image.bmp'));
+      if (isAllGenericScreenshots && filesArray.length > 1) {
+        const bestFile = filesArray.find(f => f.type === 'image/png') || filesArray[0];
+        stageFiles([bestFile]);
+        return;
+      }
+
       stageFiles(files);
       return;
     }
 
-    // 2. Itens de clipboard (ex: print screen, print de área, imagem copiada do navegador)
-    const items = clipboardData.items;
-    if (items) {
-      const pastedFiles: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.type.indexOf('image') !== -1 || item.kind === 'file') {
-          const file = item.getAsFile();
-          if (file) {
-            pastedFiles.push(file);
-          }
+    // 3. Outros itens não-imagem do clipboard
+    if (items.length > 0) {
+      const otherFiles: File[] = [];
+      for (const it of items) {
+        if ((it as any).kind === 'file') {
+          const f = (it as any).getAsFile();
+          if (f) otherFiles.push(f);
         }
       }
-      if (pastedFiles.length > 0) {
-        e.preventDefault();
-        stageFiles(pastedFiles);
+      if (otherFiles.length > 0) {
+        if (typeof e.preventDefault === 'function') e.preventDefault();
+        if (typeof (e as any).stopPropagation === 'function') (e as any).stopPropagation();
+        stageFiles(otherFiles);
         return;
       }
     }
@@ -2002,11 +2039,15 @@ export function ChatPanel({
     }
   };
 
+  const handlePasteRef = useRef(handlePaste);
+  handlePasteRef.current = handlePaste;
+
   // Listener global de paste para capturar Ctrl+V mesmo com o foco fora do input
   useEffect(() => {
     const onWindowPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && target.id !== 'chatInput') {
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        // Se o foco já está em um campo (como o chatInput), o evento onPaste do próprio elemento cuida disso
         return;
       }
       const clipboardData = e.clipboardData;
@@ -2016,7 +2057,7 @@ export function ChatPanel({
         );
         const hasFiles = clipboardData.files && clipboardData.files.length > 0;
         if (hasImageItem || hasFiles) {
-          handlePaste(e);
+          handlePasteRef.current(e);
         }
       }
     };

@@ -720,7 +720,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       socket.emit('music_queue_update', [...room.musicQueue]);
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
-        const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
+        const elapsed = Math.max(0, Math.floor((Date.now() - room.currentMusicStartTime) / 1000));
         socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
       }
       if (room.watchSession) {
@@ -1482,7 +1482,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('music_seek', (time: number) => {
       const room = getCurrentRoom();
       if (!room) return;
-      io.to(room.id).emit('music_seek', time);
+      const validTime = Math.max(0, Number(time) || 0);
+      room.currentMusicStartTime = Date.now() - Math.floor(validTime * 1000);
+      io.to(room.id).emit('music_seek', validTime);
     });
 
     // ─── REMOVE FROM QUEUE ─────────────────────────────────────────

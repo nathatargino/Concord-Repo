@@ -190,32 +190,10 @@ export const ScreenSharePanel: React.FC<Props> = ({
           <div className={`${styles.header} drag-handle`}>
             <div className={styles.titleArea}>
               <span className={styles.icon}>🖥️</span>
-              <span className={styles.title}>
+              <span className={styles.title} title={`Tela de ${screenShareUserName}`}>
                 Tela de {screenShareUserName}
               </span>
               <span className={styles.liveBadge}>AO VIVO</span>
-
-              {/* Pílulas para alternar entre transmissões ativas */}
-              {otherBroadcasters.length > 1 && (
-                <div 
-                  className={styles.multiStreamSwitcher}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
-                >
-                  {otherBroadcasters.map((u) => (
-                    <button
-                      key={u.id}
-                      type="button"
-                      className={`${styles.streamPillBtn} ${u.id === screenShareUserId ? styles.streamPillBtnActive : ''}`}
-                      onClick={() => setScreenShare(u.id, u.name)}
-                      title={`Assistir transmissão de ${u.name}`}
-                    >
-                      <span>📺</span>
-                      <span>{u.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
             <div 
               className={styles.actions}
@@ -273,7 +251,33 @@ export const ScreenSharePanel: React.FC<Props> = ({
             </div>
           </div>
 
-          <div className={styles.videoContainer}>
+          {/* Barra dedicada para alternar transmissões sem poluir o cabeçalho nem sobrepor o botão de Tela Cheia */}
+          {otherBroadcasters.length > 1 && (
+            <div 
+              className={styles.multiStreamSwitcherBar}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <span className={styles.switcherLabel}>Transmissões:</span>
+              <div className={styles.switcherPills}>
+                {otherBroadcasters.map((u) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    className={`${styles.streamPillBtn} ${u.id === screenShareUserId ? styles.streamPillBtnActive : ''}`}
+                    onClick={() => setScreenShare(u.id, u.name)}
+                    title={`Assistir transmissão de ${u.name}`}
+                  >
+                    <span className={styles.pillIcon}>📺</span>
+                    <span className={styles.pillName}>{u.name}</span>
+                    {u.id === screenShareUserId && <span className={styles.pillDot} />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className={styles.videoContainer} onDoubleClick={toggleFullscreen} title="Dois cliques para alternar Tela Cheia">
             <video
               id="screen-share-video"
               ref={videoRef}

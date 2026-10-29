@@ -260,8 +260,8 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     }
     onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title, false);
     setSelectedPlatform('youtube');
-    setIsSearchModalOpen(false);
-    setIsYouTubeSearchOpen(false);
+    notifyInChat(`"${title || 'Vídeo'}" adicionado à fila!`);
+    // Mantém o modal de busca do YouTube aberto para permitir adicionar mais músicas consecutivas
   };
 
   const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
