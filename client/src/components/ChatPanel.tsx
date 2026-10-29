@@ -328,6 +328,7 @@ export function ChatPanel({
     activeChannelId,
     currentVideoId,
     currentTrackTitle,
+    currentRequestedBy,
     isPiPActive,
     isPlaying,
     musicStartTime,
@@ -3368,7 +3369,14 @@ export function ChatPanel({
                       {currentVideoId && (
                         <div className={styles.customVideoOverlay} style={{ zIndex: 100, pointerEvents: 'none' }}>
                           <div className={styles.videoOverlayTop}>
-                            <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '85%' }}>
+                              <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
+                              {currentRequestedBy && (
+                                <span style={{ fontSize: '11px', color: '#cbd5e1', textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)' }}>
+                                  por {currentRequestedBy}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           <button

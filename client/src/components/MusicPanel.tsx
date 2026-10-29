@@ -66,6 +66,8 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   const {
     musicQueue,
     currentVideoId,
+    currentTrackTitle,
+    currentRequestedBy,
     isPlaying,
     activeStreaming,
     setActiveStreaming,
@@ -265,7 +267,8 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
   };
 
   const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
-  const activeTitle = trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
+  const activeTitle = currentTrackTitle || trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
+  const activeRequestedBy = currentRequestedBy || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.requestedBy : null);
 
   const isStreamingPlatform = selectedPlatform === 'netflix' || selectedPlatform === 'prime' || selectedPlatform === 'crunchyroll';
   const platformName = selectedPlatform === 'netflix' ? 'Netflix' : selectedPlatform === 'prime' ? 'Prime Video' : 'Crunchyroll';
@@ -341,6 +344,9 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
                   <span className={styles.trackName} title={activeTitle || activeVideoId}>
                     {activeTitle || 'Música do YouTube'}
                   </span>
+                  {activeRequestedBy && (
+                    <span className={styles.trackBy}>por {activeRequestedBy}</span>
+                  )}
                 </div>
               </div>
             )}
