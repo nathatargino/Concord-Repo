@@ -1443,3 +1443,17 @@
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 0;
 }
+
+@media (max-width: 1100px) {
+  .sidebar {
+    width: 240px;
+    min-width: 220px;
+  }
+}
+
+@media (max-width: 860px) {
+  .sidebar {
+    width: 210px;
+    min-width: 190px;
+  }
+}

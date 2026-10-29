@@ -34,7 +34,7 @@ interface ServerToClientEvents {
   ) => void;
   message_history: (history: any[], roomId: string) => void;
   server_updated: (data: { serverId: string; name?: string; iconUrl?: string }) => void;
-  play_youtube: (videoId: string, startSeconds: number, token: number) => void;
+  play_youtube: (videoId: string, startSeconds: number, token: number, requestedBy?: string, title?: string) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
   music_pause: () => void;
@@ -582,7 +582,9 @@ export function useSocket(callbacks: SocketCallbacks) {
       store.setMusicQueue(queue);
     });
 
-    socket.on('play_youtube', (videoId, startSeconds, token) => {
+    socket.on('play_youtube', (videoId, startSeconds, token, requestedBy?, title?) => {
+      if (title) store.setCurrentTrackTitle(title);
+      store.setCurrentRequestedBy(requestedBy || null);
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
       store.setActiveMediaTab('youtube');
@@ -601,6 +603,8 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('stop_youtube', (token) => {
       store.setCurrentVideoId(null);
+      store.setCurrentTrackTitle(null);
+      store.setCurrentRequestedBy(null);
       store.setIsPlaying(false);
       callbacksRef.current.onStopYouTube(token);
       if (useAppStore.getState().isPiPActive) {

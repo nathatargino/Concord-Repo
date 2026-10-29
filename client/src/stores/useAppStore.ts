@@ -185,6 +185,8 @@ interface AppState {
   setCurrentVideoId: (id: string | null) => void;
   currentTrackTitle: string | null;
   setCurrentTrackTitle: (title: string | null) => void;
+  currentRequestedBy: string | null;
+  setCurrentRequestedBy: (requestedBy: string | null) => void;
   musicStartTime: number | null;
   setMusicStartTime: (time: number | null) => void;
   isPlaying: boolean;
@@ -567,6 +569,8 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
   currentTrackTitle: null,
   setCurrentTrackTitle: (title) => set({ currentTrackTitle: title }),
+  currentRequestedBy: null,
+  setCurrentRequestedBy: (requestedBy) => set({ currentRequestedBy: requestedBy }),
   musicStartTime: null,
   setMusicStartTime: (time) => set({ musicStartTime: time }),
   isPlaying: false,
@@ -640,6 +644,7 @@ export const useAppStore = create<AppState>((set) => ({
       musicQueue: [],
       currentVideoId: null,
       currentTrackTitle: null,
+      currentRequestedBy: null,
       isPlaying: false,
       visualizerActive: false,
       activeMediaTab: 'youtube',
