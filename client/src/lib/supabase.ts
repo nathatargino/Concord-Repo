@@ -383,36 +383,6 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
 
   const clean = codeOrId.trim();
 
-  // Mapeamento canônico instantâneo para unificar servidores conhecidos com aliases legados
-  const CANONICAL_ROOMS: Record<string, DbRoom> = {
-    'SRV-OYTM9': {
-      id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-      code: 'SRV-0IK3X',
-      name: "MIZERAS GAMEPLAY'S",
-      is_server: true,
-      created_at: '2026-10-10T19:04:32.968429+00:00',
-    },
-    'SRV-Y1U2B': {
-      id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-      code: 'SRV-0IK3X',
-      name: "MIZERAS GAMEPLAY'S",
-      is_server: true,
-      created_at: '2026-10-10T19:04:32.968429+00:00',
-    },
-    '49219008-7258-4A77-82AB-8D8C0C1BAFD3': {
-      id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-      code: 'SRV-0IK3X',
-      name: "MIZERAS GAMEPLAY'S",
-      is_server: true,
-      created_at: '2026-10-10T19:04:32.968429+00:00',
-    },
-  };
-
-  const aliasMatch = CANONICAL_ROOMS[clean.toUpperCase()];
-  if (aliasMatch) {
-    return aliasMatch;
-  }
-
   if (!supabaseUrl || !supabaseAnonKey) {
     return {
       id: clean,
@@ -453,22 +423,6 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
           is_server: byId.is_server !== undefined ? Boolean(byId.is_server) : byId.code?.toUpperCase().startsWith('SRV-'),
         } as DbRoom;
       }
-    }
-
-    // 3. Fallback: buscar por nome do servidor no Supabase
-    const { data: byName } = await supabase
-      .from('rooms')
-      .select('*')
-      .ilike('name', clean)
-      .order('created_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (byName) {
-      return {
-        ...byName,
-        is_server: byName.is_server !== undefined ? Boolean(byName.is_server) : byName.code?.toUpperCase().startsWith('SRV-'),
-      } as DbRoom;
     }
 
     return null;
@@ -2922,43 +2876,8 @@ function getServerMembersCacheKey(serverId: string): string {
 export function getLocalServerMembers(serverId: string): DbMember[] {
   if (!serverId) return [];
   try {
-    const clean = serverId.trim().toLowerCase();
-    const mizerasAliases = ['srv-oytm9', 'srv-0ik3x', 'srv-y1u2b', 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', '49219008-7258-4a77-82ab-8d8c0c1bafd3'];
-    const keysToSearch = mizerasAliases.includes(clean)
-      ? Array.from(new Set(mizerasAliases.map(getServerMembersCacheKey)))
-      : [getServerMembersCacheKey(clean)];
-
-    const combined = new Map<string, DbMember>();
-    for (const key of keysToSearch) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const list: DbMember[] = JSON.parse(raw);
-          for (const m of list) {
-            if (m && m.username) {
-              const uKey = m.username.trim().toLowerCase();
-              if (!combined.has(uKey)) {
-                combined.set(uKey, {
-                  ...m,
-                  server_id: mizerasAliases.includes(clean) ? 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b' : m.server_id,
-                });
-              }
-            }
-          }
-        } catch {}
-      }
-    }
-    const result = Array.from(combined.values());
-    if (result.length > 0 && mizerasAliases.includes(clean)) {
-      try {
-        const canonicalKey = getServerMembersCacheKey('cfc637b3-6d1f-42a6-83b5-3f7853c38a6b');
-        const codeKey = getServerMembersCacheKey('srv-0ik3x');
-        const serialized = JSON.stringify(result);
-        if (localStorage.getItem(canonicalKey) !== serialized) localStorage.setItem(canonicalKey, serialized);
-        if (localStorage.getItem(codeKey) !== serialized) localStorage.setItem(codeKey, serialized);
-      } catch {}
-    }
-    return result;
+    const raw = localStorage.getItem(getServerMembersCacheKey(serverId));
+    if (raw) return JSON.parse(raw);
   } catch {}
   return [];
 }
@@ -3305,9 +3224,37 @@ export async function fetchServerMembers(serverId: string, serverCode?: string):
       }
     }
 
-    // Mesclar resultados remotos no mapa
-    for (const rm of remoteMembers) {
-      localMap.set(rm.username.trim().toLowerCase(), rm);
+    // Se a tabela server_members estiver vazia ou não configurada no Supabase,
+    // carregar os perfis registrados da comunidade como membros do servidor (modo fallback resiliente)
+    if (remoteMembers.length === 0) {
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .limit(50);
+        if (profs && profs.length > 0) {
+          for (const p of profs) {
+            const name = (p.display_name || p.username || '').trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!localMap.has(key)) {
+              localMap.set(key, {
+                id: p.id,
+                server_id: actualServerId,
+                user_id: p.id,
+                username: name,
+                avatar_url: p.avatar_url || null,
+                role: 'member',
+                joined_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch {}
+    } else {
+      for (const rm of remoteMembers) {
+        localMap.set(rm.username.trim().toLowerCase(), rm);
+      }
     }
 
     const merged = Array.from(localMap.values());

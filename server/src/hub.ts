@@ -141,66 +141,32 @@ export function createRoom(
     knownMembers: new Map(),
   };
   rooms.set(id, room);
-  if (code) {
-    rooms.set(code, room);
-    codeToRoomId.set(code, id);
-    codeToRoomId.set(code.toUpperCase(), id);
-  }
-  codeToRoomId.set(id, id);
-  codeToRoomId.set(id.toUpperCase(), id);
+  codeToRoomId.set(code, id);
   console.log(`[Room] Created ${isServer ? 'server' : 'room'} ${id} (code: ${code})`);
   return room;
 }
 
 export function getRoom(idOrCode: string): RoomState | null {
-  if (!idOrCode) return null;
-  let clean = idOrCode.trim();
-
-  const CANONICAL_ALIASES: Record<string, string> = {
-    'SRV-OYTM9': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-    'SRV-Y1U2B': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-    '49219008-7258-4A77-82AB-8D8C0C1BAFD3': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
-  };
-  if (CANONICAL_ALIASES[clean.toUpperCase()]) {
-    clean = CANONICAL_ALIASES[clean.toUpperCase()];
-  }
-
-  // 1. Try direct ID
-  if (rooms.has(clean)) {
-    const room = rooms.get(clean)!;
+  // Try direct ID first
+  if (rooms.has(idOrCode)) {
+    const room = rooms.get(idOrCode)!;
     if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
     return room;
   }
-
-  // 2. Try by code mapping in codeToRoomId
-  const mappedId = codeToRoomId.get(clean.toUpperCase()) || codeToRoomId.get(clean);
-  if (mappedId && rooms.has(mappedId)) {
-    const room = rooms.get(mappedId)!;
+  // Try by code
+  const id = codeToRoomId.get(idOrCode.toUpperCase());
+  if (id) {
+    const room = rooms.get(id);
+    if (!room) return null;
     if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
     return room;
   }
-
-  // 3. Scan all active rooms in memory (case-insensitive by id or code)
-  const lowerClean = clean.toLowerCase();
-  for (const r of rooms.values()) {
-    if (
-      r.id.toLowerCase() === lowerClean ||
-      (r.code && r.code.toLowerCase() === lowerClean)
-    ) {
-      if (!r.isServer && Date.now() > r.expiresAt) {
-        destroyRoom(r.id);
-        return null;
-      }
-      return r;
-    }
-  }
-
   return null;
 }
 
@@ -287,14 +253,8 @@ function extractVideoId(url: string): string | null {
 
 function broadcastUserList(io: IoServer, room: RoomState) {
   io.to(room.id).emit('user_list', Array.from(room.users.values()));
-  if (room.code) {
-    io.to(room.code).emit('user_list', Array.from(room.users.values()));
-  }
   if (room.isServer && room.knownMembers) {
     (io.to(room.id) as any).emit('server_members', Array.from(room.knownMembers.values()));
-    if (room.code) {
-      (io.to(room.code) as any).emit('server_members', Array.from(room.knownMembers.values()));
-    }
   }
 }
 
@@ -324,9 +284,6 @@ function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState
 
 function broadcastQueueUpdate(io: IoServer, room: RoomState) {
   io.to(room.id).emit('music_queue_update', [...room.musicQueue]);
-  if (room.code) {
-    io.to(room.code).emit('music_queue_update', [...room.musicQueue]);
-  }
 }
 
 function playNextInQueue(io: IoServer, room: RoomState) {
@@ -346,9 +303,6 @@ function playNextInQueue(io: IoServer, room: RoomState) {
   room.currentMusicTitle = next.title || next.videoId;
   room.currentMusicRequestedBy = next.requestedBy || null;
   io.to(room.id).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
-  if (room.code) {
-    io.to(room.code).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
-  }
   broadcastQueueUpdate(io, room);
 }
 
@@ -384,7 +338,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     function getCurrentRoom(): RoomState | null {
       const roomId = socket.data.roomId;
       if (!roomId) return null;
-      return getRoom(roomId);
+      return rooms.get(roomId) ?? null;
     }
 
     // ─── CREATE ROOM / SERVER ──────────────────────────────────────
@@ -400,27 +354,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── JOIN ROOM / SERVER ────────────────────────────────────────
-    socket.on('join_room', async (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string | null, usernameHint?: string) => {
-      if (usernameHint && !user.name) {
-        user.name = usernameHint.trim().slice(0, 32);
-        socket.data.user = user;
-      }
-      let cleanIdOrCode = (roomIdOrCode || '').trim();
-
-      const CANONICAL_MAP: Record<string, { id: string; code: string; name: string }> = {
-        'SRV-OYTM9': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
-        'SRV-Y1U2B': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
-        '49219008-7258-4A77-82AB-8D8C0C1BAFD3': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
-      };
-
-      const matchedAlias = CANONICAL_MAP[cleanIdOrCode.toUpperCase()] || (fallbackCode ? CANONICAL_MAP[fallbackCode.toUpperCase()] : null);
-      if (matchedAlias) {
-        cleanIdOrCode = matchedAlias.id;
-        fallbackCode = matchedAlias.code;
-        roomIdOrCode = matchedAlias.id;
-        serverNameHint = matchedAlias.name;
-        isServerHint = true;
-      }
+    socket.on('join_room', async (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string) => {
+      const cleanIdOrCode = (roomIdOrCode || '').trim();
       let room = getRoom(cleanIdOrCode);
       if (!room && fallbackCode) {
         room = getRoom(fallbackCode.trim());
@@ -466,26 +401,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             if (dbRoom) {
               const isServerRoom = Boolean(dbRoom.is_server);
               isServer = isServerRoom;
-
-              // Unificação de duplicatas: Se já existir sala em memória com mesmo nome e mesmo dono, reutilizar
-              const duplicateServer = isServerRoom ? Array.from(rooms.values()).find(r =>
-                r.isServer && (
-                  r.id === dbRoom.id ||
-                  (r.code && dbRoom.code && r.code.toUpperCase() === dbRoom.code.toUpperCase()) ||
-                  (r.name && dbRoom.name && r.name.trim().toLowerCase() === dbRoom.name.trim().toLowerCase() && (r.ownerId === dbRoom.created_by || r.ownerId === dbRoom.owner_id))
-                )
-              ) : null;
-
-              if (duplicateServer) {
-                console.log(`[Room] Unificando duplicata de servidor "${dbRoom.name}" (${dbRoom.code}) para o servidor existente (${duplicateServer.id})`);
-                room = duplicateServer;
-                rooms.set(dbRoom.id, duplicateServer);
-                if (dbRoom.code) {
-                  codeToRoomId.set(dbRoom.code.toUpperCase(), duplicateServer.id);
-                  rooms.set(dbRoom.code, duplicateServer);
-                }
-              } else {
-                console.log(`[Room] Restaurando ${isServerRoom ? 'servidor' : 'sala temporária'} "${dbRoom.name}" (${dbRoom.id}) do Supabase`);
+              console.log(`[Room] Restaurando ${isServerRoom ? 'servidor' : 'sala temporária'} "${dbRoom.name}" (${dbRoom.id}) do Supabase`);
 
               // Buscar canais se for servidor
               let restoredChannels: any[] = [];
@@ -570,16 +486,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 knownMembers: restoredKnownMembers,
               };
               rooms.set(restored.id, restored);
-              if (restored.code) {
-                rooms.set(restored.code, restored);
-                rooms.set(restored.code.toUpperCase(), restored);
-                codeToRoomId.set(restored.code, restored.id);
-                codeToRoomId.set(restored.code.toUpperCase(), restored.id);
-              }
-              codeToRoomId.set(restored.id, restored.id);
-              codeToRoomId.set(restored.id.toUpperCase(), restored.id);
+              codeToRoomId.set(restored.code, restored.id);
               room = restored;
-              }
             }
           } catch (sbErr) {
             console.warn('[Room] Falha ao consultar Supabase para restaurar servidor:', sbErr);
@@ -641,9 +549,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       // Sair completamente da sala/servidor anterior ao trocar de sala para nunca misturar listas de usuários
       const prevRoomId = socket.data.roomId;
-      if (prevRoomId) {
-        const prevRoom = getRoom(prevRoomId);
-        if (prevRoom && prevRoom.id !== room.id) {
+      if (prevRoomId && prevRoomId !== room.id) {
+        const prevRoom = rooms.get(prevRoomId);
+        if (prevRoom) {
           handleLeaveVoice(socket, io, user, prevRoom);
           prevRoom.users.delete(socket.id);
           if (prevRoom.users.size === 0 && !prevRoom.isServer) {
@@ -652,8 +560,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             handleAdminReassignment(socket.id, io, prevRoom);
             broadcastUserList(io, prevRoom);
           }
-          socket.leave(prevRoom.id);
-          if (prevRoom.code) socket.leave(prevRoom.code);
           socket.leave(prevRoomId);
         }
       }
@@ -664,9 +570,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       
       socket.join(room.id);
-      if (room.code) {
-        socket.join(room.code);
-      }
 
       // Cancelar qualquer timer de destruição agendada para esta sala
       const emptyTimer = emptyRoomCleanupTimers.get(room.id);
@@ -1546,9 +1449,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicTitle = title;
         room.currentMusicRequestedBy = user.name;
         io.to(room.id).emit('play_youtube', videoId, 0, token, user.name, title);
-        if (room.code) {
-          io.to(room.code).emit('play_youtube', videoId, 0, token, user.name, title);
-        }
         broadcastQueueUpdate(io, room);
         io.to(room.id).emit('toast_notification', `${user.name} iniciou a reprodução de "${title || videoId}"`, 'info');
       } else {
@@ -1784,12 +1684,12 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (!room) return;
 
       // Se já estava em call em outra sala/servidor, sai da call anterior
-      if (socket.data.voiceRoomId) {
-        const prevVoiceRoom = getRoom(socket.data.voiceRoomId);
-        if (prevVoiceRoom && prevVoiceRoom.id !== room.id) {
+      if (socket.data.voiceRoomId && socket.data.voiceRoomId !== room.id) {
+        const prevVoiceRoom = rooms.get(socket.data.voiceRoomId);
+        if (prevVoiceRoom) {
           handleLeaveVoice(socket, io, user, prevVoiceRoom);
-          socket.leave(prevVoiceRoom.id);
-          if (prevVoiceRoom.code) socket.leave(prevVoiceRoom.code);
+          prevVoiceRoom.users.delete(socket.id);
+          socket.leave(socket.data.voiceRoomId);
         }
       }
       socket.data.voiceRoomId = room.id;
@@ -1802,9 +1702,6 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       socket.emit('existing_voice_users', existingInVoice);
       if (!alreadyInVoice) {
         socket.to(room.id).emit('user_joined_voice', socket.id);
-        if (room.code) {
-          socket.to(room.code).emit('user_joined_voice', socket.id);
-        }
       }
       broadcastUserList(io, room);
 

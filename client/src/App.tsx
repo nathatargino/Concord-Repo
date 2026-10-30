@@ -446,17 +446,9 @@ export default function App() {
       return;
     }
     store.setActiveRailContext(roomId);
-    const isSameActiveRoom = Boolean(
-      store.room && (
-        store.room.id === roomId ||
-        (store.room.code && store.room.code.toUpperCase() === roomId.toUpperCase())
-      )
-    );
-    if (!isSameActiveRoom) {
-      store.clearMessages();
-      store.setUsers([]);
-      store.setServerMembers([]);
-    }
+    store.clearMessages();
+    store.setUsers([]);
+    store.setServerMembers([]);
 
     const persistentId = getOrCreatePersistentId();
     const searchParams = new URLSearchParams(window.location.search);
@@ -510,7 +502,7 @@ export default function App() {
     });
 
     const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
-    socket.emit('join_room', initialRoomId, persistentId, initialCode, initialIsServer, initialName, currentAvatar, store.myName || undefined);
+    socket.emit('join_room', initialRoomId, persistentId, initialCode, initialIsServer, initialName, currentAvatar);
 
     // 2. Consulta de enriquecimento de metadados no Supabase em segundo plano (não bloqueia a navegação)
     (async () => {
@@ -525,13 +517,6 @@ export default function App() {
         const isServer = dbRoom?.is_server !== undefined ? dbRoom.is_server : initialIsServer;
         const targetName = dbRoom?.name || initialName;
         const targetIconUrl = dbRoom?.icon_url || initialIconUrl;
-
-        // Se o servidor foi canonicalizado para outro ID ou código canônico, redirecionar socket e rota imediatamente
-        if (targetRoomId !== initialRoomId || targetCode !== initialCode) {
-          console.log(`[App] Canonicalizando conexão de ${initialCode} (${initialRoomId}) para ${targetCode} (${targetRoomId})`);
-          socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName, currentAvatar, store.myName || undefined);
-          navigate(`/room/${targetRoomId}?code=${targetCode}&server=1`, { replace: true });
-        }
 
         let isOwner = initialIsOwner;
         const { data: { user } } = await supabase.auth.getUser();
@@ -578,7 +563,6 @@ export default function App() {
           };
           saveMyServer(srvData);
           store.recordRecentServer(srvData);
-          store.setServers(prev => prev.map(s => (s.id === initialRoomId || s.code === initialCode || (s.name && s.name.toLowerCase() === targetName.toLowerCase())) ? { ...s, ...srvData } : s));
           joinServerInSupabase(targetRoomId).catch(() => {});
         } else {
           saveRecentRoom({

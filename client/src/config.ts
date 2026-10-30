@@ -5,7 +5,7 @@
  * while allowing local development with .env.development.local.
  */
 
-export const DEFAULT_PROD_SERVER_URL = 'https://concord-repo-production.up.railway.app';
+export const DEFAULT_PROD_SERVER_URL = 'https://concord-repo.onrender.com';
 export const DEFAULT_DEV_SERVER_URL = 'http://localhost:3001';
 
 /**

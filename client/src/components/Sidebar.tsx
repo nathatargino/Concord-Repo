@@ -472,22 +472,17 @@ export const Sidebar: React.FC<Props> = ({
 
   // Categorias de Usuários com fallback imediato para o usuário atual
   const effectiveUsers = React.useMemo(() => {
-    if (!myName) return users;
-    const cleanMy = myName.trim().toLowerCase();
-    const hasMe = users.some(u => u.id === myId || (u.name && u.name.trim().toLowerCase() === cleanMy));
-    if (hasMe) return users;
-    return [
-      ...users,
-      {
-        id: myId || 'me',
-        name: myName,
-        avatarUrl: myAvatarUrl || null,
-        inVoice: Boolean(inVoice),
-        screenSharing: false,
-        micMuted: false,
-        callMuted: false
-      }
-    ];
+    if (users.length > 0) return users;
+    if (!myName) return [];
+    return [{
+      id: myId || 'me',
+      name: myName,
+      avatarUrl: myAvatarUrl || null,
+      inVoice: Boolean(inVoice),
+      screenSharing: false,
+      micMuted: false,
+      callMuted: false
+    }];
   }, [users, myName, myId, myAvatarUrl, inVoice]);
 
   const voiceUsers = effectiveUsers.filter((u) => u.inVoice);
@@ -823,7 +818,7 @@ export const Sidebar: React.FC<Props> = ({
                 <i className="fa-solid fa-circle-check" style={{ color: '#7c5cff', fontSize: '12px' }} />
               </h1>
               <p className={styles.serverSubtitle}>
-                {Math.max(effectiveUsers.length + offlineMembers.length, serverMembers.length, effectiveUsers.length)} {Math.max(effectiveUsers.length + offlineMembers.length, serverMembers.length, effectiveUsers.length) === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
+                {users.length} {users.length === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
               </p>
             </div>
           </div>

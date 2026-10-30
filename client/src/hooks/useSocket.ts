@@ -6,7 +6,7 @@ import { useAudioStore } from '../stores/useAudioStore';
 import { playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
 import { notifyInChat } from '../utils/systemMessage';
-import { getOrCreatePersistentId, getSavedUsername, saveLocalServerMember } from '../lib/supabase';
+import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
 import {
   handleIncomingFriendRequest,
   handleIncomingFriendResponse,
@@ -90,8 +90,7 @@ interface ClientToServerEvents {
     fallbackCode?: string,
     isServer?: boolean,
     serverName?: string,
-    initialAvatarUrl?: string | null,
-    usernameHint?: string
+    initialAvatarUrl?: string | null
   ) => void;
   send_message: (
     message: string,
@@ -210,6 +209,13 @@ export function useSocket(callbacks: SocketCallbacks) {
     socketRef.current = socket;
     (window as any).__concord_socket = socket;
 
+    // Keep-alive ping para manter o servidor ativo enquanto o app estiver aberto
+    const pingInterval = setInterval(() => {
+      try {
+        fetch(`${SOCKET_URL}/health`).catch(() => {});
+      } catch {}
+    }, 4 * 60 * 1000);
+
     socket.io.on('reconnect_attempt', (attempt) => {
       console.log(`[Socket] Tentativa de reconexão #${attempt}...`);
     });
@@ -326,46 +332,6 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('user_list', (users) => {
       store.setUsers(users);
-      if (Array.isArray(users) && users.length > 0) {
-        const appState = useAppStore.getState();
-        const currentServerId = appState.room?.id;
-        const currentServerCode = appState.room?.code;
-        const currentMembers = appState.serverMembers;
-        const memberMap = new Map<string, typeof currentMembers[0]>();
-        for (const m of currentMembers) {
-          const key = (m.username || '').trim().toLowerCase();
-          if (key) memberMap.set(key, m);
-        }
-        for (const u of users) {
-          const key = (u.name || '').trim().toLowerCase();
-          if (!key) continue;
-          const existing = memberMap.get(key);
-          memberMap.set(key, {
-            id: u.id || existing?.id || u.name,
-            username: u.name,
-            avatarUrl: u.avatarUrl || existing?.avatarUrl || null,
-            isOnline: true,
-            inVoice: Boolean(u.inVoice),
-            role: (u.role as any) || existing?.role || 'member',
-            customRole: u.customRole || existing?.customRole,
-          });
-          if (currentServerId) {
-            saveLocalServerMember(currentServerId, {
-              username: u.name,
-              avatar_url: u.avatarUrl,
-              role: u.role,
-            });
-          }
-          if (currentServerCode && currentServerCode !== currentServerId) {
-            saveLocalServerMember(currentServerCode, {
-              username: u.name,
-              avatar_url: u.avatarUrl,
-              role: u.role,
-            });
-          }
-        }
-        store.setServerMembers(Array.from(memberMap.values()));
-      }
     });
 
     // ─── NOTIFICAÇÕES E SOLICITAÇÕES DE AMIZADE EM TEMPO REAL ─────────
@@ -624,13 +590,8 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('play_youtube', (videoId, startSeconds, token, requestedBy?, title?) => {
-      const state = useAppStore.getState();
-      const cached = state.trackMetaCache[videoId];
-      const finalTitle = title || cached?.title || state.currentTrackTitle;
-      const finalRequestedBy = requestedBy || cached?.requestedBy || (state.musicQueue.find(m => m.videoId === videoId)?.requestedBy) || state.currentRequestedBy;
-
-      if (finalTitle) store.setCurrentTrackTitle(finalTitle);
-      if (finalRequestedBy) store.setCurrentRequestedBy(finalRequestedBy);
+      if (title) store.setCurrentTrackTitle(title);
+      store.setCurrentRequestedBy(requestedBy || null);
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
       store.setActiveMediaTab('youtube');
@@ -906,23 +867,6 @@ export function useSocket(callbacks: SocketCallbacks) {
             role: m.role || existing?.role || 'member',
             customRole: m.customRole || existing?.customRole,
           });
-          const appState = useAppStore.getState();
-          const currentServerId = appState.room?.id;
-          const currentServerCode = appState.room?.code;
-          if (currentServerId) {
-            saveLocalServerMember(currentServerId, {
-              username: m.username,
-              avatar_url: m.avatarUrl,
-              role: m.role,
-            });
-          }
-          if (currentServerCode && currentServerCode !== currentServerId) {
-            saveLocalServerMember(currentServerCode, {
-              username: m.username,
-              avatar_url: m.avatarUrl,
-              role: m.role,
-            });
-          }
         }
         store.setServerMembers(Array.from(memberMap.values()));
       }
@@ -942,6 +886,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       }
       socket.io.removeAllListeners();
       socket.removeAllListeners();
+      clearInterval(pingInterval);
       socket.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

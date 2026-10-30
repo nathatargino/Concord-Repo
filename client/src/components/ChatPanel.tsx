@@ -1576,11 +1576,7 @@ export function ChatPanel({
     }
 
     if (newStaged.length > 0) {
-      setStagedFiles((prev) => {
-        const deduplicatedNew = newStaged.filter(n => !prev.some(p => p.file.size === n.file.size && (p.file.name === n.file.name || (p.isImage && n.isImage))));
-        if (deduplicatedNew.length === 0) return prev;
-        return [...prev, ...deduplicatedNew];
-      });
+      setStagedFiles((prev) => [...prev, ...newStaged]);
       if (newStaged.length === 1) {
         toast.success(`Arquivo "${newStaged[0].file.name}" anexado!`);
       } else {
