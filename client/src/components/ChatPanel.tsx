@@ -1576,7 +1576,11 @@ export function ChatPanel({
     }
 
     if (newStaged.length > 0) {
-      setStagedFiles((prev) => [...prev, ...newStaged]);
+      setStagedFiles((prev) => {
+        const deduplicatedNew = newStaged.filter(n => !prev.some(p => p.file.size === n.file.size && (p.file.name === n.file.name || (p.isImage && n.isImage))));
+        if (deduplicatedNew.length === 0) return prev;
+        return [...prev, ...deduplicatedNew];
+      });
       if (newStaged.length === 1) {
         toast.success(`Arquivo "${newStaged[0].file.name}" anexado!`);
       } else {
@@ -2139,7 +2143,6 @@ export function ChatPanel({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onPaste={handlePaste}
     >
       {/* Background Ambient Glows (Idêntico ao Hub Concord) */}
       <div className={styles.blob1} />

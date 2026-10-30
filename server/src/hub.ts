@@ -278,8 +278,14 @@ function extractVideoId(url: string): string | null {
 
 function broadcastUserList(io: IoServer, room: RoomState) {
   io.to(room.id).emit('user_list', Array.from(room.users.values()));
+  if (room.code) {
+    io.to(room.code).emit('user_list', Array.from(room.users.values()));
+  }
   if (room.isServer && room.knownMembers) {
     (io.to(room.id) as any).emit('server_members', Array.from(room.knownMembers.values()));
+    if (room.code) {
+      (io.to(room.code) as any).emit('server_members', Array.from(room.knownMembers.values()));
+    }
   }
 }
 
@@ -309,6 +315,9 @@ function handleAdminReassignment(socketId: string, io: IoServer, room: RoomState
 
 function broadcastQueueUpdate(io: IoServer, room: RoomState) {
   io.to(room.id).emit('music_queue_update', [...room.musicQueue]);
+  if (room.code) {
+    io.to(room.code).emit('music_queue_update', [...room.musicQueue]);
+  }
 }
 
 function playNextInQueue(io: IoServer, room: RoomState) {
@@ -328,6 +337,9 @@ function playNextInQueue(io: IoServer, room: RoomState) {
   room.currentMusicTitle = next.title || next.videoId;
   room.currentMusicRequestedBy = next.requestedBy || null;
   io.to(room.id).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
+  if (room.code) {
+    io.to(room.code).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
+  }
   broadcastQueueUpdate(io, room);
 }
 
@@ -430,7 +442,26 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             if (dbRoom) {
               const isServerRoom = Boolean(dbRoom.is_server);
               isServer = isServerRoom;
-              console.log(`[Room] Restaurando ${isServerRoom ? 'servidor' : 'sala temporária'} "${dbRoom.name}" (${dbRoom.id}) do Supabase`);
+
+              // Unificação de duplicatas: Se já existir sala em memória com mesmo nome e mesmo dono, reutilizar
+              const duplicateServer = isServerRoom ? Array.from(rooms.values()).find(r =>
+                r.isServer && (
+                  r.id === dbRoom.id ||
+                  (r.code && dbRoom.code && r.code.toUpperCase() === dbRoom.code.toUpperCase()) ||
+                  (r.name && dbRoom.name && r.name.trim().toLowerCase() === dbRoom.name.trim().toLowerCase() && (r.ownerId === dbRoom.created_by || r.ownerId === dbRoom.owner_id))
+                )
+              ) : null;
+
+              if (duplicateServer) {
+                console.log(`[Room] Unificando duplicata de servidor "${dbRoom.name}" (${dbRoom.code}) para o servidor existente (${duplicateServer.id})`);
+                room = duplicateServer;
+                rooms.set(dbRoom.id, duplicateServer);
+                if (dbRoom.code) {
+                  codeToRoomId.set(dbRoom.code.toUpperCase(), duplicateServer.id);
+                  rooms.set(dbRoom.code, duplicateServer);
+                }
+              } else {
+                console.log(`[Room] Restaurando ${isServerRoom ? 'servidor' : 'sala temporária'} "${dbRoom.name}" (${dbRoom.id}) do Supabase`);
 
               // Buscar canais se for servidor
               let restoredChannels: any[] = [];
@@ -524,6 +555,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
               codeToRoomId.set(restored.id, restored.id);
               codeToRoomId.set(restored.id.toUpperCase(), restored.id);
               room = restored;
+              }
             }
           } catch (sbErr) {
             console.warn('[Room] Falha ao consultar Supabase para restaurar servidor:', sbErr);
@@ -1490,6 +1522,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicTitle = title;
         room.currentMusicRequestedBy = user.name;
         io.to(room.id).emit('play_youtube', videoId, 0, token, user.name, title);
+        if (room.code) {
+          io.to(room.code).emit('play_youtube', videoId, 0, token, user.name, title);
+        }
         broadcastQueueUpdate(io, room);
         io.to(room.id).emit('toast_notification', `${user.name} iniciou a reprodução de "${title || videoId}"`, 'info');
       } else {
@@ -1743,6 +1778,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       socket.emit('existing_voice_users', existingInVoice);
       if (!alreadyInVoice) {
         socket.to(room.id).emit('user_joined_voice', socket.id);
+        if (room.code) {
+          socket.to(room.code).emit('user_joined_voice', socket.id);
+        }
       }
       broadcastUserList(io, room);
 

@@ -624,8 +624,13 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('play_youtube', (videoId, startSeconds, token, requestedBy?, title?) => {
-      if (title) store.setCurrentTrackTitle(title);
-      store.setCurrentRequestedBy(requestedBy || null);
+      const state = useAppStore.getState();
+      const cached = state.trackMetaCache[videoId];
+      const finalTitle = title || cached?.title || state.currentTrackTitle;
+      const finalRequestedBy = requestedBy || cached?.requestedBy || (state.musicQueue.find(m => m.videoId === videoId)?.requestedBy) || state.currentRequestedBy;
+
+      if (finalTitle) store.setCurrentTrackTitle(finalTitle);
+      if (finalRequestedBy) store.setCurrentRequestedBy(finalRequestedBy);
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
       store.setActiveMediaTab('youtube');

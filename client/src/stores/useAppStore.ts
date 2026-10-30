@@ -187,6 +187,8 @@ interface AppState {
   setCurrentTrackTitle: (title: string | null) => void;
   currentRequestedBy: string | null;
   setCurrentRequestedBy: (requestedBy: string | null) => void;
+  trackMetaCache: Record<string, { title?: string; requestedBy?: string }>;
+  cacheTrackMeta: (videoId: string, meta: { title?: string; requestedBy?: string }) => void;
   musicStartTime: number | null;
   setMusicStartTime: (time: number | null) => void;
   isPlaying: boolean;
@@ -593,13 +595,34 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Music
   musicQueue: [],
-  setMusicQueue: (musicQueue) => set({ musicQueue }),
+  setMusicQueue: (musicQueue) => set((state) => {
+    const newCache = { ...state.trackMetaCache };
+    for (const item of musicQueue) {
+      if (item && item.videoId) {
+        newCache[item.videoId] = {
+          title: item.title || newCache[item.videoId]?.title,
+          requestedBy: item.requestedBy || newCache[item.videoId]?.requestedBy,
+        };
+      }
+    }
+    return { musicQueue, trackMetaCache: newCache };
+  }),
   currentVideoId: null,
   setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
   currentTrackTitle: null,
   setCurrentTrackTitle: (title) => set({ currentTrackTitle: title }),
   currentRequestedBy: null,
   setCurrentRequestedBy: (requestedBy) => set({ currentRequestedBy: requestedBy }),
+  trackMetaCache: {},
+  cacheTrackMeta: (videoId, meta) => set((state) => ({
+    trackMetaCache: {
+      ...state.trackMetaCache,
+      [videoId]: {
+        title: meta.title || state.trackMetaCache[videoId]?.title,
+        requestedBy: meta.requestedBy || state.trackMetaCache[videoId]?.requestedBy,
+      },
+    },
+  })),
   musicStartTime: null,
   setMusicStartTime: (time) => set({ musicStartTime: time }),
   isPlaying: false,
