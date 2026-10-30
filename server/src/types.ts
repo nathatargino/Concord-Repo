@@ -67,10 +67,12 @@ export interface ClientToServerEvents {
   create_room: (persistentId: string, isServer?: boolean, serverName?: string) => void;
   join_room: (
     roomIdOrCode: string,
-    persistentId: string,
+    persistentId?: string,
     fallbackCode?: string,
     isServer?: boolean,
-    serverName?: string
+    serverName?: string,
+    initialAvatarUrl?: string | null,
+    usernameHint?: string
   ) => void;
   send_message: (
     message: string,
