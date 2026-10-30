@@ -141,32 +141,57 @@ export function createRoom(
     knownMembers: new Map(),
   };
   rooms.set(id, room);
-  codeToRoomId.set(code, id);
+  if (code) {
+    rooms.set(code, room);
+    codeToRoomId.set(code, id);
+    codeToRoomId.set(code.toUpperCase(), id);
+  }
+  codeToRoomId.set(id, id);
+  codeToRoomId.set(id.toUpperCase(), id);
   console.log(`[Room] Created ${isServer ? 'server' : 'room'} ${id} (code: ${code})`);
   return room;
 }
 
 export function getRoom(idOrCode: string): RoomState | null {
-  // Try direct ID first
-  if (rooms.has(idOrCode)) {
-    const room = rooms.get(idOrCode)!;
+  if (!idOrCode) return null;
+  const clean = idOrCode.trim();
+
+  // 1. Try direct ID
+  if (rooms.has(clean)) {
+    const room = rooms.get(clean)!;
     if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
     return room;
   }
-  // Try by code
-  const id = codeToRoomId.get(idOrCode.toUpperCase());
-  if (id) {
-    const room = rooms.get(id);
-    if (!room) return null;
+
+  // 2. Try by code mapping in codeToRoomId
+  const mappedId = codeToRoomId.get(clean.toUpperCase()) || codeToRoomId.get(clean);
+  if (mappedId && rooms.has(mappedId)) {
+    const room = rooms.get(mappedId)!;
     if (!room.isServer && Date.now() > room.expiresAt) {
       destroyRoom(room.id);
       return null;
     }
     return room;
   }
+
+  // 3. Scan all active rooms in memory (case-insensitive by id or code)
+  const lowerClean = clean.toLowerCase();
+  for (const r of rooms.values()) {
+    if (
+      r.id.toLowerCase() === lowerClean ||
+      (r.code && r.code.toLowerCase() === lowerClean)
+    ) {
+      if (!r.isServer && Date.now() > r.expiresAt) {
+        destroyRoom(r.id);
+        return null;
+      }
+      return r;
+    }
+  }
+
   return null;
 }
 
@@ -338,7 +363,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     function getCurrentRoom(): RoomState | null {
       const roomId = socket.data.roomId;
       if (!roomId) return null;
-      return rooms.get(roomId) ?? null;
+      return getRoom(roomId);
     }
 
     // ─── CREATE ROOM / SERVER ──────────────────────────────────────
@@ -354,7 +379,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── JOIN ROOM / SERVER ────────────────────────────────────────
-    socket.on('join_room', async (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string) => {
+    socket.on('join_room', async (roomIdOrCode: string, persistentId?: string, fallbackCode?: string, isServerHint?: boolean, serverNameHint?: string, initialAvatarUrl?: string | null, usernameHint?: string) => {
+      if (usernameHint && !user.name) {
+        user.name = usernameHint.trim().slice(0, 32);
+        socket.data.user = user;
+      }
       const cleanIdOrCode = (roomIdOrCode || '').trim();
       let room = getRoom(cleanIdOrCode);
       if (!room && fallbackCode) {
@@ -486,7 +515,14 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 knownMembers: restoredKnownMembers,
               };
               rooms.set(restored.id, restored);
-              codeToRoomId.set(restored.code, restored.id);
+              if (restored.code) {
+                rooms.set(restored.code, restored);
+                rooms.set(restored.code.toUpperCase(), restored);
+                codeToRoomId.set(restored.code, restored.id);
+                codeToRoomId.set(restored.code.toUpperCase(), restored.id);
+              }
+              codeToRoomId.set(restored.id, restored.id);
+              codeToRoomId.set(restored.id.toUpperCase(), restored.id);
               room = restored;
             }
           } catch (sbErr) {
@@ -549,9 +585,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       // Sair completamente da sala/servidor anterior ao trocar de sala para nunca misturar listas de usuários
       const prevRoomId = socket.data.roomId;
-      if (prevRoomId && prevRoomId !== room.id) {
-        const prevRoom = rooms.get(prevRoomId);
-        if (prevRoom) {
+      if (prevRoomId) {
+        const prevRoom = getRoom(prevRoomId);
+        if (prevRoom && prevRoom.id !== room.id) {
           handleLeaveVoice(socket, io, user, prevRoom);
           prevRoom.users.delete(socket.id);
           if (prevRoom.users.size === 0 && !prevRoom.isServer) {
@@ -560,6 +596,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
             handleAdminReassignment(socket.id, io, prevRoom);
             broadcastUserList(io, prevRoom);
           }
+          socket.leave(prevRoom.id);
+          if (prevRoom.code) socket.leave(prevRoom.code);
           socket.leave(prevRoomId);
         }
       }
@@ -570,6 +608,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
       
       socket.join(room.id);
+      if (room.code) {
+        socket.join(room.code);
+      }
 
       // Cancelar qualquer timer de destruição agendada para esta sala
       const emptyTimer = emptyRoomCleanupTimers.get(room.id);
@@ -1684,12 +1725,12 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       if (!room) return;
 
       // Se já estava em call em outra sala/servidor, sai da call anterior
-      if (socket.data.voiceRoomId && socket.data.voiceRoomId !== room.id) {
-        const prevVoiceRoom = rooms.get(socket.data.voiceRoomId);
-        if (prevVoiceRoom) {
+      if (socket.data.voiceRoomId) {
+        const prevVoiceRoom = getRoom(socket.data.voiceRoomId);
+        if (prevVoiceRoom && prevVoiceRoom.id !== room.id) {
           handleLeaveVoice(socket, io, user, prevVoiceRoom);
-          prevVoiceRoom.users.delete(socket.id);
-          socket.leave(socket.data.voiceRoomId);
+          socket.leave(prevVoiceRoom.id);
+          if (prevVoiceRoom.code) socket.leave(prevVoiceRoom.code);
         }
       }
       socket.data.voiceRoomId = room.id;

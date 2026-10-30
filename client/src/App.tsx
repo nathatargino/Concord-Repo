@@ -446,9 +446,17 @@ export default function App() {
       return;
     }
     store.setActiveRailContext(roomId);
-    store.clearMessages();
-    store.setUsers([]);
-    store.setServerMembers([]);
+    const isSameActiveRoom = Boolean(
+      store.room && (
+        store.room.id === roomId ||
+        (store.room.code && store.room.code.toUpperCase() === roomId.toUpperCase())
+      )
+    );
+    if (!isSameActiveRoom) {
+      store.clearMessages();
+      store.setUsers([]);
+      store.setServerMembers([]);
+    }
 
     const persistentId = getOrCreatePersistentId();
     const searchParams = new URLSearchParams(window.location.search);
@@ -502,7 +510,7 @@ export default function App() {
     });
 
     const currentAvatar = store.myAvatarUrl || localStorage.getItem('concord_avatar_url') || null;
-    socket.emit('join_room', initialRoomId, persistentId, initialCode, initialIsServer, initialName, currentAvatar);
+    socket.emit('join_room', initialRoomId, persistentId, initialCode, initialIsServer, initialName, currentAvatar, store.myName || undefined);
 
     // 2. Consulta de enriquecimento de metadados no Supabase em segundo plano (não bloqueia a navegação)
     (async () => {

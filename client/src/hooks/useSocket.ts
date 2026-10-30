@@ -6,7 +6,7 @@ import { useAudioStore } from '../stores/useAudioStore';
 import { playLeaveSound, playScreenShareStartSound, playScreenShareStopSound } from '../utils/soundEffects';
 import { showNativeChatNotification } from '../utils/nativeNotification';
 import { notifyInChat } from '../utils/systemMessage';
-import { getOrCreatePersistentId, getSavedUsername } from '../lib/supabase';
+import { getOrCreatePersistentId, getSavedUsername, saveLocalServerMember } from '../lib/supabase';
 import {
   handleIncomingFriendRequest,
   handleIncomingFriendResponse,
@@ -90,7 +90,8 @@ interface ClientToServerEvents {
     fallbackCode?: string,
     isServer?: boolean,
     serverName?: string,
-    initialAvatarUrl?: string | null
+    initialAvatarUrl?: string | null,
+    usernameHint?: string
   ) => void;
   send_message: (
     message: string,
@@ -325,6 +326,46 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('user_list', (users) => {
       store.setUsers(users);
+      if (Array.isArray(users) && users.length > 0) {
+        const appState = useAppStore.getState();
+        const currentServerId = appState.room?.id;
+        const currentServerCode = appState.room?.code;
+        const currentMembers = appState.serverMembers;
+        const memberMap = new Map<string, typeof currentMembers[0]>();
+        for (const m of currentMembers) {
+          const key = (m.username || '').trim().toLowerCase();
+          if (key) memberMap.set(key, m);
+        }
+        for (const u of users) {
+          const key = (u.name || '').trim().toLowerCase();
+          if (!key) continue;
+          const existing = memberMap.get(key);
+          memberMap.set(key, {
+            id: u.id || existing?.id || u.name,
+            username: u.name,
+            avatarUrl: u.avatarUrl || existing?.avatarUrl || null,
+            isOnline: true,
+            inVoice: Boolean(u.inVoice),
+            role: (u.role as any) || existing?.role || 'member',
+            customRole: u.customRole || existing?.customRole,
+          });
+          if (currentServerId) {
+            saveLocalServerMember(currentServerId, {
+              username: u.name,
+              avatar_url: u.avatarUrl,
+              role: u.role,
+            });
+          }
+          if (currentServerCode && currentServerCode !== currentServerId) {
+            saveLocalServerMember(currentServerCode, {
+              username: u.name,
+              avatar_url: u.avatarUrl,
+              role: u.role,
+            });
+          }
+        }
+        store.setServerMembers(Array.from(memberMap.values()));
+      }
     });
 
     // ─── NOTIFICAÇÕES E SOLICITAÇÕES DE AMIZADE EM TEMPO REAL ─────────
@@ -860,6 +901,23 @@ export function useSocket(callbacks: SocketCallbacks) {
             role: m.role || existing?.role || 'member',
             customRole: m.customRole || existing?.customRole,
           });
+          const appState = useAppStore.getState();
+          const currentServerId = appState.room?.id;
+          const currentServerCode = appState.room?.code;
+          if (currentServerId) {
+            saveLocalServerMember(currentServerId, {
+              username: m.username,
+              avatar_url: m.avatarUrl,
+              role: m.role,
+            });
+          }
+          if (currentServerCode && currentServerCode !== currentServerId) {
+            saveLocalServerMember(currentServerCode, {
+              username: m.username,
+              avatar_url: m.avatarUrl,
+              role: m.role,
+            });
+          }
         }
         store.setServerMembers(Array.from(memberMap.values()));
       }

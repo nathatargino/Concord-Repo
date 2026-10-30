@@ -323,19 +323,48 @@ export const useAppStore = create<AppState>((set) => ({
   room: null,
   setRoom: (room) =>
     set((state) => {
-      const roomChanged = !state.room || !room || state.room.id !== room.id;
+      if (!room) {
+        return {
+          room: null,
+          isServer: false,
+          serverName: '',
+          serverIconUrl: null,
+          channels: [{ id: 'ch-geral', name: 'Geral' }],
+          activeChannelId: 'ch-geral',
+          messages: [],
+          users: [],
+          serverMembers: [],
+          watchSession: null,
+        };
+      }
+
+      const isSameRoom = Boolean(
+        state.room && (
+          state.room.id === room.id ||
+          (state.room.code && room.code && state.room.code.toUpperCase() === room.code.toUpperCase()) ||
+          (state.room.code && state.room.code.toUpperCase() === room.id.toUpperCase()) ||
+          (room.code && state.room.id.toUpperCase() === room.code.toUpperCase())
+        )
+      );
+
+      const roomChanged = !isSameRoom;
+
       return {
         room,
         isServer: Boolean(room?.isServer),
-        serverName: room?.name || '',
-        serverIconUrl: room?.iconUrl || null,
-        channels: room?.channels && room.channels.length > 0 ? room.channels : [{ id: 'ch-geral', name: 'Geral' }],
-        activeChannelId: room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral',
+        serverName: room?.name || (isSameRoom ? state.serverName : ''),
+        serverIconUrl: room?.iconUrl !== undefined ? room.iconUrl : (isSameRoom ? state.serverIconUrl : null),
+        channels: room?.channels && room.channels.length > 0
+          ? room.channels
+          : (isSameRoom && state.channels.length > 0 ? state.channels : [{ id: 'ch-geral', name: 'Geral' }]),
+        activeChannelId: isSameRoom && state.activeChannelId && (room?.channels || state.channels || []).some((c) => c.id === state.activeChannelId)
+          ? state.activeChannelId
+          : (room?.channels && room.channels.length > 0 ? room.channels[0].id : 'ch-geral'),
         messages: roomChanged ? [] : state.messages,
-        users: roomChanged ? [] : state.users,
-        serverMembers: roomChanged ? [] : state.serverMembers,
+        users: (isSameRoom && state.users.length > 0) ? state.users : (roomChanged ? [] : state.users),
+        serverMembers: (isSameRoom && state.serverMembers.length > 0) ? state.serverMembers : (roomChanged ? [] : state.serverMembers),
         watchSession: roomChanged ? null : state.watchSession,
-        ...(room && state.activeRailContext !== 'home' ? { activeDmChat: null, homeTab: 'hub' } : {}),
+        ...(state.activeRailContext !== 'home' ? { activeDmChat: null, homeTab: 'hub' } : {}),
       };
     }),
   isServer: false,
