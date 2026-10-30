@@ -51,6 +51,8 @@ export interface RoomState {
   currentMusicToken: number | null;
   currentMusicVideoId: string | null;
   currentMusicStartTime: number | null;
+  currentMusicTitle: string | null;
+  currentMusicRequestedBy: string | null;
   watchSession: WatchSession | null;
   messageHistory: StoredMessage[];
   knownMembers?: Map<string, any>;
@@ -132,6 +134,8 @@ export function createRoom(
     currentMusicToken: null,
     currentMusicVideoId: null,
     currentMusicStartTime: null,
+    currentMusicTitle: null,
+    currentMusicRequestedBy: null,
     watchSession: null,
     messageHistory: [],
     knownMembers: new Map(),
@@ -288,13 +292,17 @@ function playNextInQueue(io: IoServer, room: RoomState) {
     room.currentMusicToken = null;
     room.currentMusicVideoId = null;
     room.currentMusicStartTime = null;
+    room.currentMusicTitle = null;
+    room.currentMusicRequestedBy = null;
     return;
   }
   const next = room.musicQueue.shift()!;
   room.currentMusicToken = next.token;
   room.currentMusicVideoId = next.videoId;
   room.currentMusicStartTime = Date.now();
-  io.to(room.id).emit('play_youtube', next.videoId, 0, next.token);
+  room.currentMusicTitle = next.title || next.videoId;
+  room.currentMusicRequestedBy = next.requestedBy || null;
+  io.to(room.id).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
   broadcastQueueUpdate(io, room);
 }
 
@@ -471,6 +479,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 currentMusicToken: null,
                 currentMusicVideoId: null,
                 currentMusicStartTime: null,
+                currentMusicTitle: null,
+                currentMusicRequestedBy: null,
                 watchSession: null,
                 messageHistory: [],
                 knownMembers: restoredKnownMembers,
@@ -720,8 +730,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       socket.emit('music_queue_update', [...room.musicQueue]);
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
-        const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
-        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
+        const elapsed = Math.max(0, Math.floor((Date.now() - room.currentMusicStartTime) / 1000));
+        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken, room.currentMusicRequestedBy || undefined, room.currentMusicTitle || undefined);
       }
       if (room.watchSession) {
         socket.emit('watch_session_sync', room.watchSession);
@@ -1436,7 +1446,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicToken = token;
         room.currentMusicVideoId = videoId;
         room.currentMusicStartTime = Date.now();
-        io.to(room.id).emit('play_youtube', videoId, 0, token);
+        room.currentMusicTitle = title;
+        room.currentMusicRequestedBy = user.name;
+        io.to(room.id).emit('play_youtube', videoId, 0, token, user.name, title);
         broadcastQueueUpdate(io, room);
         io.to(room.id).emit('toast_notification', `${user.name} iniciou a reprodução de "${title || videoId}"`, 'info');
       } else {
@@ -1463,6 +1475,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicToken = null;
         room.currentMusicVideoId = null;
         room.currentMusicStartTime = null;
+        room.currentMusicTitle = null;
+        room.currentMusicRequestedBy = null;
         playNextInQueue(io, room);
       } else if (action === 'pause') {
         io.to(room.id).emit('music_pause');
@@ -1473,6 +1487,8 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         room.currentMusicToken = null;
         room.currentMusicVideoId = null;
         room.currentMusicStartTime = null;
+        room.currentMusicTitle = null;
+        room.currentMusicRequestedBy = null;
         io.to(room.id).emit('stop_youtube', 0);
         broadcastQueueUpdate(io, room);
       }
@@ -1482,7 +1498,9 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     socket.on('music_seek', (time: number) => {
       const room = getCurrentRoom();
       if (!room) return;
-      io.to(room.id).emit('music_seek', time);
+      const validTime = Math.max(0, Number(time) || 0);
+      room.currentMusicStartTime = Date.now() - Math.floor(validTime * 1000);
+      io.to(room.id).emit('music_seek', validTime);
     });
 
     // ─── REMOVE FROM QUEUE ─────────────────────────────────────────
@@ -1689,7 +1707,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
 
       if (room.currentMusicVideoId && room.currentMusicStartTime !== null && room.currentMusicToken !== null) {
         const elapsed = Math.floor((Date.now() - room.currentMusicStartTime) / 1000);
-        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken);
+        socket.emit('play_youtube', room.currentMusicVideoId, elapsed, room.currentMusicToken, room.currentMusicRequestedBy || undefined, room.currentMusicTitle || undefined);
       }
       if (room.watchSession) {
         socket.emit('watch_session_sync', room.watchSession);
@@ -2012,6 +2030,8 @@ function handleLeaveVoice(
       room.currentMusicToken = null;
       room.currentMusicVideoId = null;
       room.currentMusicStartTime = null;
+      room.currentMusicTitle = null;
+      room.currentMusicRequestedBy = null;
     }
     if (room.watchSession) {
       room.watchSession = null;

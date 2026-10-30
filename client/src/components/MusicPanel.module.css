@@ -373,6 +373,15 @@
   text-overflow: ellipsis;
 }
 
+.trackBy {
+  font-size: 10px;
+  color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
 /* ── Info Notice ── */
 .infoNotice {
   padding: 10px;
@@ -735,6 +744,10 @@
 }
 
 :global(html[data-theme="light"]) .queueBy {
+  color: #64748b;
+}
+
+:global(html[data-theme="light"]) .trackBy {
   color: #64748b;
 }
 
