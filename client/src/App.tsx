@@ -526,6 +526,13 @@ export default function App() {
         const targetName = dbRoom?.name || initialName;
         const targetIconUrl = dbRoom?.icon_url || initialIconUrl;
 
+        // Se o servidor foi canonicalizado para outro ID ou código canônico, redirecionar socket e rota imediatamente
+        if (targetRoomId !== initialRoomId || targetCode !== initialCode) {
+          console.log(`[App] Canonicalizando conexão de ${initialCode} (${initialRoomId}) para ${targetCode} (${targetRoomId})`);
+          socket.emit('join_room', targetRoomId, persistentId, targetCode, isServer, targetName, currentAvatar, store.myName || undefined);
+          navigate(`/room/${targetRoomId}?code=${targetCode}&server=1`, { replace: true });
+        }
+
         let isOwner = initialIsOwner;
         const { data: { user } } = await supabase.auth.getUser();
         if (user && isServer) {
@@ -571,6 +578,7 @@ export default function App() {
           };
           saveMyServer(srvData);
           store.recordRecentServer(srvData);
+          store.setServers(prev => prev.map(s => (s.id === initialRoomId || s.code === initialCode || (s.name && s.name.toLowerCase() === targetName.toLowerCase())) ? { ...s, ...srvData } : s));
           joinServerInSupabase(targetRoomId).catch(() => {});
         } else {
           saveRecentRoom({

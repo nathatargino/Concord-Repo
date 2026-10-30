@@ -154,7 +154,16 @@ export function createRoom(
 
 export function getRoom(idOrCode: string): RoomState | null {
   if (!idOrCode) return null;
-  const clean = idOrCode.trim();
+  let clean = idOrCode.trim();
+
+  const CANONICAL_ALIASES: Record<string, string> = {
+    'SRV-OYTM9': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
+    'SRV-Y1U2B': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
+    '49219008-7258-4A77-82AB-8D8C0C1BAFD3': 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b',
+  };
+  if (CANONICAL_ALIASES[clean.toUpperCase()]) {
+    clean = CANONICAL_ALIASES[clean.toUpperCase()];
+  }
 
   // 1. Try direct ID
   if (rooms.has(clean)) {
@@ -396,7 +405,22 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         user.name = usernameHint.trim().slice(0, 32);
         socket.data.user = user;
       }
-      const cleanIdOrCode = (roomIdOrCode || '').trim();
+      let cleanIdOrCode = (roomIdOrCode || '').trim();
+
+      const CANONICAL_MAP: Record<string, { id: string; code: string; name: string }> = {
+        'SRV-OYTM9': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
+        'SRV-Y1U2B': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
+        '49219008-7258-4A77-82AB-8D8C0C1BAFD3': { id: 'cfc637b3-6d1f-42a6-83b5-3f7853c38a6b', code: 'SRV-0IK3X', name: "MIZERAS GAMEPLAY'S" },
+      };
+
+      const matchedAlias = CANONICAL_MAP[cleanIdOrCode.toUpperCase()] || (fallbackCode ? CANONICAL_MAP[fallbackCode.toUpperCase()] : null);
+      if (matchedAlias) {
+        cleanIdOrCode = matchedAlias.id;
+        fallbackCode = matchedAlias.code;
+        roomIdOrCode = matchedAlias.id;
+        serverNameHint = matchedAlias.name;
+        isServerHint = true;
+      }
       let room = getRoom(cleanIdOrCode);
       if (!room && fallbackCode) {
         room = getRoom(fallbackCode.trim());

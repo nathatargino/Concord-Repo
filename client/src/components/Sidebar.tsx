@@ -823,7 +823,7 @@ export const Sidebar: React.FC<Props> = ({
                 <i className="fa-solid fa-circle-check" style={{ color: '#7c5cff', fontSize: '12px' }} />
               </h1>
               <p className={styles.serverSubtitle}>
-                {effectiveUsers.length} {effectiveUsers.length === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
+                {Math.max(effectiveUsers.length + offlineMembers.length, serverMembers.length, effectiveUsers.length)} {Math.max(effectiveUsers.length + offlineMembers.length, serverMembers.length, effectiveUsers.length) === 1 ? 'Membro' : 'Membros'} • {voiceUsers.length} na call
               </p>
             </div>
           </div>
