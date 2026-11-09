@@ -3224,9 +3224,37 @@ export async function fetchServerMembers(serverId: string, serverCode?: string):
       }
     }
 
-    // Mesclar resultados remotos no mapa
-    for (const rm of remoteMembers) {
-      localMap.set(rm.username.trim().toLowerCase(), rm);
+    // Se a tabela server_members estiver vazia ou não configurada no Supabase,
+    // carregar os perfis registrados da comunidade como membros do servidor (modo fallback resiliente)
+    if (remoteMembers.length === 0) {
+      try {
+        const { data: profs } = await supabase
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .limit(50);
+        if (profs && profs.length > 0) {
+          for (const p of profs) {
+            const name = (p.display_name || p.username || '').trim();
+            if (!name) continue;
+            const key = name.toLowerCase();
+            if (!localMap.has(key)) {
+              localMap.set(key, {
+                id: p.id,
+                server_id: actualServerId,
+                user_id: p.id,
+                username: name,
+                avatar_url: p.avatar_url || null,
+                role: 'member',
+                joined_at: new Date().toISOString(),
+              });
+            }
+          }
+        }
+      } catch {}
+    } else {
+      for (const rm of remoteMembers) {
+        localMap.set(rm.username.trim().toLowerCase(), rm);
+      }
     }
 
     const merged = Array.from(localMap.values());

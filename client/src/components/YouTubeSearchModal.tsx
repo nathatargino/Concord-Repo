@@ -20,6 +20,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
   const [results, setResults] = useState<YouTubeSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
 
   
   const searchTimeoutRef = useRef<any>(null);
@@ -36,6 +37,7 @@ export const YouTubeSearchModal: React.FC<Props> = ({
       setQuery('');
       setResults([]);
       setHasSearched(false);
+      setAddedIds(new Set());
     }
   }, [isOpen]);
 
@@ -119,7 +121,11 @@ export const YouTubeSearchModal: React.FC<Props> = ({
 
   const handlePickResult = (item: YouTubeSearchResult) => {
     onSelectVideo(item.videoId, item.title);
-    onClose();
+    setAddedIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.videoId);
+      return next;
+    });
   };
 
   if (!isOpen) return null;
@@ -227,7 +233,14 @@ export const YouTubeSearchModal: React.FC<Props> = ({
                 </div>
 
                 <div className={styles.playActionBtn}>
-                  {isCurrentlyPlaying ? (
+                  {addedIds.has(item.videoId) ? (
+                    <span style={{ color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Adicionado</span>
+                    </span>
+                  ) : isCurrentlyPlaying ? (
                     <>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                         <line x1="12" y1="5" x2="12" y2="19" />

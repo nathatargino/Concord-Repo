@@ -100,6 +100,7 @@ export function useYouTube(
   const pipWindow = useAppStore(state => state.pipWindow);
   const playerRef = useRef<YT.Player | null>(null);
   const currentTokenRef = useRef<number | null>(null);
+  const pendingSeekSecondsRef = useRef<number | null>(null);
   const suppressEndedRef = useRef(false);
   const unlockedRef = useRef(false);
   const volumeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -553,6 +554,22 @@ export function useYouTube(
             }
 
             if (event.data === window.YT.PlayerState.PLAYING) {
+              // Sincronização automática para novos participantes que entram na call
+              if (pendingSeekSecondsRef.current !== null && pendingSeekSecondsRef.current > 0) {
+                const target = pendingSeekSecondsRef.current;
+                pendingSeekSecondsRef.current = null;
+                try {
+                  const ytPlayer = event.target || playerRef.current;
+                  const current = ytPlayer && typeof ytPlayer.getCurrentTime === 'function' ? ytPlayer.getCurrentTime() : 0;
+                  if (Math.abs(current - target) > 2 && ytPlayer && typeof ytPlayer.seekTo === 'function') {
+                    console.log(`[YT Sync] Sincronizando playback para ${target}s (atual era ${current}s)`);
+                    ytPlayer.seekTo(target, true);
+                  }
+                } catch (e) {
+                  console.debug('[YT Sync] erro ao sincronizar seek:', e);
+                }
+              }
+
               // Ensure CC state matches preference on play start
               applyCCState(isCCEnabledRef.current);
 
@@ -630,6 +647,7 @@ export function useYouTube(
       useAppStore.getState().setCurrentVideoId(videoId);
       useAppStore.getState().setMusicStartTime(Date.now() - (startSeconds * 1000));
       useAppStore.getState().setIsPlaying(true);
+      pendingSeekSecondsRef.current = startSeconds > 0 ? startSeconds : null;
 
       let player: YT.Player;
       try {

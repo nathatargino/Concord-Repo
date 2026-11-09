@@ -224,7 +224,7 @@ export interface ServerToClientEvents {
   }) => void;
   screen_viewer_joined: (viewer: { id: string; name: string }) => void;
   screen_viewers_updated: (data: { broadcasterId: string; viewers: Array<{ id: string; name: string }> }) => void;
-  play_youtube: (videoId: string, startSeconds: number, token: number) => void;
+  play_youtube: (videoId: string, startSeconds: number, token: number, requestedBy?: string, title?: string) => void;
   pause_youtube: (videoId: string, atSeconds: number, token: number) => void;
   stop_youtube: (token: number) => void;
   music_pause: () => void;
