@@ -425,6 +425,20 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
                 const isServerRoom = Boolean(data.is_server) || (Boolean(data.code) && data.code.toUpperCase().startsWith('SRV-'));
                 dbRoom = { ...data, is_server: isServerRoom };
                 break;
+              } else {
+                // Fallback por nome caso o candidato seja o nome legível do servidor
+                const { data: nameData } = await supabaseClient
+                  .from('rooms')
+                  .select('*')
+                  .ilike('name', candidate)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                if (nameData) {
+                  const isServerRoom = Boolean(nameData.is_server) || (Boolean(nameData.code) && nameData.code.toUpperCase().startsWith('SRV-'));
+                  dbRoom = { ...nameData, is_server: isServerRoom };
+                  break;
+                }
               }
             }
 
