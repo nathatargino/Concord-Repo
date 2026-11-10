@@ -10,7 +10,7 @@ import {
   ServerToClientEvents,
   SocketData,
 } from './types';
-import { registerHub, createRoom, getRoom, toRoomInfo } from './hub';
+import { registerHub, createRoom, getRoom, toRoomInfo, persistRoomToSupabase } from './hub';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -240,22 +240,9 @@ app.post('/api/rooms', async (req, res) => {
   const info = toRoomInfo(room);
 
   // Asynchronously persist room to Supabase DB if server environment variables are set
+  // (com fallback compatível caso a coluna is_server ainda não exista no schema)
   if (supabase) {
-    try {
-      const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
-      const insertPayload: any = {
-        code: info.code,
-        name: name || (isServer ? 'Servidor Concord' : 'Sala Concord'),
-        is_server: !!isServer,
-      };
-      if (room.id && isUuid(room.id)) {
-        insertPayload.id = room.id;
-      }
-      const { error } = await supabase.from('rooms').insert(insertPayload);
-      if (error) console.error('[Server Supabase] Room insert error:', error.message);
-    } catch (err: any) {
-      console.error('[Server Supabase] Room insert exception:', err);
-    }
+    await persistRoomToSupabase(supabase, room);
   }
 
   res.json(info);

@@ -11,6 +11,7 @@ import {
   joinServerInSupabase,
   getOrCreatePersistentId 
 } from '../lib/supabase';
+import { findLiveRoomInHub } from '../lib/roomLookup';
 import toast from 'react-hot-toast';
 import styles from './ServerActionModal.module.css';
 import { SERVER_URL } from '../config';
@@ -187,7 +188,12 @@ export const ServerActionModal: React.FC = () => {
       }
 
       // Buscar metadados exclusivamente por código de convite ou ID válido
-      const supabaseRoom = await findRoomInSupabase(targetCode) || (targetId ? await findRoomInSupabase(targetId) : null);
+      // (Supabase primeiro; se não persistido, consulta o hub ao vivo no backend)
+      const supabaseRoom =
+        await findRoomInSupabase(targetCode) ||
+        (targetId ? await findRoomInSupabase(targetId) : null) ||
+        await findLiveRoomInHub(targetCode) ||
+        (targetId ? await findLiveRoomInHub(targetId) : null);
       if (!supabaseRoom) {
         setError('Código de convite inválido ou expirado.');
         setLoading(false);

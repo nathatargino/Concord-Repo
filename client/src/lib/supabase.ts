@@ -425,6 +425,22 @@ export async function findRoomInSupabase(codeOrId: string): Promise<DbRoom | nul
       }
     }
 
+    // 3. Fallback resiliente: buscar por nome caso o usuário tenha informado o nome do servidor ou criado com código no nome
+    const { data: byName } = await supabase
+      .from('rooms')
+      .select('*')
+      .ilike('name', clean)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (byName) {
+      return {
+        ...byName,
+        is_server: byName.is_server !== undefined ? Boolean(byName.is_server) : byName.code?.toUpperCase().startsWith('SRV-'),
+      } as DbRoom;
+    }
+
     return null;
   } catch (err) {
     console.warn('[Supabase] Exceção ao buscar sala/servidor:', err);
