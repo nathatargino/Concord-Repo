@@ -146,6 +146,36 @@ export function createRoom(
   return room;
 }
 
+/**
+ * Persiste uma sala/servidor na tabela `rooms` do Supabase.
+ * - Tenta gravar com `is_server`; se a coluna não existir no schema (PGRST204), grava em modo compatível.
+ * - Ignora conflito de código duplicado (23505), pois significa que a sala já está persistida.
+ */
+export async function persistRoomToSupabase(supabaseClient: any, room: RoomState): Promise<void> {
+  const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+  const basePayload: Record<string, unknown> = {
+    code: room.code,
+    name: room.name || (room.isServer ? 'Servidor Concord' : `Sala ${room.code}`),
+  };
+  if (room.id && isUuid(room.id)) {
+    basePayload.id = room.id;
+  }
+
+  try {
+    let { error } = await supabaseClient.from('rooms').insert({ ...basePayload, is_server: !!room.isServer });
+    if (error && (error.code === 'PGRST204' || error.message?.includes('is_server'))) {
+      ({ error } = await supabaseClient.from('rooms').insert(basePayload));
+    }
+    if (error && error.code !== '23505') {
+      console.warn(`[Room] Falha ao persistir ${room.code} no Supabase:`, error.message);
+    } else if (!error) {
+      console.log(`[Room] ${room.isServer ? 'Servidor' : 'Sala'} ${room.code} persistido no Supabase`);
+    }
+  } catch (err) {
+    console.warn(`[Room] Exceção ao persistir ${room.code} no Supabase:`, err);
+  }
+}
+
 export function getRoom(idOrCode: string): RoomState | null {
   // Try direct ID first
   if (rooms.has(idOrCode)) {
@@ -498,6 +528,11 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
         if (!room && fallbackCode && fallbackCode.trim()) {
           room = createRoom(persistentId, fallbackCode.trim().toUpperCase(), cleanIdOrCode, isServer, serverNameHint);
           console.log(`[Room] Auto-created ${isServer ? 'server' : 'temp room'} ${room.id} (code: ${room.code}) on join_room`);
+          // Persistir no Supabase: salas que existiam apenas em memória (ex: criadas quando o insert
+          // original falhou) somem quando o processo reinicia e ficam impossíveis de achar pelo código.
+          if (supabaseClient) {
+            persistRoomToSupabase(supabaseClient, room).catch(() => {});
+          }
         }
 
         if (!room) {

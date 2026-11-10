@@ -26,6 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import styles from './HomeHub.module.css';
 import { SERVER_URL } from '../config';
+import { findLiveRoomInHub } from '../lib/roomLookup';
 
 export const HomeHub: React.FC = () => {
   const navigate = useNavigate();
@@ -177,7 +178,11 @@ export const HomeHub: React.FC = () => {
         targetId = roomMatch[1];
       }
 
-      const dbRoom = await findRoomInSupabase(targetCode) || (targetId ? await findRoomInSupabase(targetId) : null);
+      const dbRoom =
+        await findRoomInSupabase(targetCode) ||
+        (targetId ? await findRoomInSupabase(targetId) : null) ||
+        await findLiveRoomInHub(targetCode) ||
+        (targetId ? await findLiveRoomInHub(targetId) : null);
       if (!dbRoom) {
         toast.error('Código de convite inválido ou expirado.');
         setConnecting(false);
