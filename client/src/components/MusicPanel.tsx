@@ -48,11 +48,29 @@ export const PLATFORMS: { id: Platform; label: string }[] = [
 ];
 
 interface Props {
-  onRequestMusic: (url: string, title?: string, playNow?: boolean) => void;
+  onRequestMusic: (url: string, title?: string, playNow?: boolean, requesterName?: string) => void;
   onRemoveFromQueue: (token: number) => void;
   onReorderQueue: (oldIndex: number, newIndex: number) => void;
   onWatchSessionStart?: (data: { platform: 'netflix' | 'prime' | 'crunchyroll'; titleUrl: string; positionSeconds: number; isPlaying: boolean }) => void;
   inVoice: boolean;
+}
+
+function extractVideoId(url: string): string | null {
+  const trimmed = url.trim();
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
+  const patterns = [
+    /(?:v=)([a-zA-Z0-9_-]{11})/,
+    /(?:youtu\.be\/)([a-zA-Z0-9_-]{11})/,
+    /(?:embed\/)([a-zA-Z0-9_-]{11})/,
+    /(?:shorts\/)([a-zA-Z0-9_-]{11})/,
+    /(?:live\/)([a-zA-Z0-9_-]{11})/,
+    /(?:v\/)([a-zA-Z0-9_-]{11})/,
+  ];
+  for (const pattern of patterns) {
+    const match = trimmed.match(pattern);
+    if (match) return match[1];
+  }
+  return null;
 }
 
 export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue, onReorderQueue, onWatchSessionStart, inVoice }) => {
@@ -68,6 +86,8 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
     currentVideoId,
     currentTrackTitle,
     currentRequestedBy,
+    trackMetaCache,
+    cacheTrackMeta,
     isPlaying,
     activeStreaming,
     setActiveStreaming,
@@ -250,7 +270,15 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       return;
     }
     if (!url.trim()) return;
-    onRequestMusic(url.trim(), undefined, false);
+    const vId = extractVideoId(url.trim());
+    const myName = useAppStore.getState().myName;
+    if (vId) {
+      cacheTrackMeta(vId, { requestedBy: myName });
+      if (!currentVideoId || !isPlaying) {
+        useAppStore.getState().setCurrentRequestedBy(myName);
+      }
+    }
+    onRequestMusic(url.trim(), undefined, false, myName);
     setSelectedPlatform('youtube');
     setUrl('');
   };
@@ -260,15 +288,22 @@ export const MusicPanel: React.FC<Props> = ({ onRequestMusic, onRemoveFromQueue,
       notifyInChat('Você precisa estar em uma call de voz para reproduzir vídeos.');
       return;
     }
-    onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title, false);
+    const myName = useAppStore.getState().myName;
+    cacheTrackMeta(videoId, { title, requestedBy: myName });
+    if (!currentVideoId || !isPlaying) {
+      useAppStore.getState().setCurrentRequestedBy(myName);
+      if (title) useAppStore.getState().setCurrentTrackTitle(title);
+    }
+    onRequestMusic(`https://www.youtube.com/watch?v=${videoId}`, title, false, myName);
     setSelectedPlatform('youtube');
     notifyInChat(`"${title || 'Vídeo'}" adicionado à fila!`);
     // Mantém o modal de busca do YouTube aberto para permitir adicionar mais músicas consecutivas
   };
 
   const activeVideoId = currentVideoId || (isPlaying && musicQueue[0]?.videoId ? musicQueue[0].videoId : null);
-  const activeTitle = currentTrackTitle || trackTitle || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
-  const activeRequestedBy = currentRequestedBy || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.requestedBy : null);
+  const cachedMeta = activeVideoId ? trackMetaCache[activeVideoId] : null;
+  const activeTitle = currentTrackTitle || trackTitle || cachedMeta?.title || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.title : null);
+  const activeRequestedBy = currentRequestedBy || cachedMeta?.requestedBy || (activeVideoId ? musicQueue.find(m => m.videoId === activeVideoId)?.requestedBy : null);
 
   const isStreamingPlatform = selectedPlatform === 'netflix' || selectedPlatform === 'prime' || selectedPlatform === 'crunchyroll';
   const platformName = selectedPlatform === 'netflix' ? 'Netflix' : selectedPlatform === 'prime' ? 'Prime Video' : 'Crunchyroll';

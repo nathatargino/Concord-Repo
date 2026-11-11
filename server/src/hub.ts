@@ -333,6 +333,9 @@ function playNextInQueue(io: IoServer, room: RoomState) {
   room.currentMusicTitle = next.title || next.videoId;
   room.currentMusicRequestedBy = next.requestedBy || null;
   io.to(room.id).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
+  if (room.code) {
+    io.to(room.code).emit('play_youtube', next.videoId, 0, next.token, next.requestedBy, next.title);
+  }
   broadcastQueueUpdate(io, room);
 }
 
@@ -1462,7 +1465,7 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
     });
 
     // ─── REQUEST MUSIC ─────────────────────────────────────────────
-    socket.on('request_music', async (url: string, suggestedTitle?: string, playNow?: boolean) => {
+    socket.on('request_music', async (url: string, suggestedTitle?: string, playNow?: boolean, clientRequestedBy?: string) => {
       const room = getCurrentRoom();
       if (!room) return;
 
@@ -1489,21 +1492,25 @@ export function registerHub(io: IoServer, supabaseClient?: any) {
       }
 
       const token = Date.now();
-      const item: MusicItem = { videoId, token, requestedBy: user.name, title };
+      const requester = (clientRequestedBy && clientRequestedBy.trim()) || user.name || 'Alguém';
+      const item: MusicItem = { videoId, token, requestedBy: requester, title };
 
       if (playNow || room.currentMusicToken === null || !room.currentMusicVideoId) {
         room.currentMusicToken = token;
         room.currentMusicVideoId = videoId;
         room.currentMusicStartTime = Date.now();
         room.currentMusicTitle = title;
-        room.currentMusicRequestedBy = user.name;
-        io.to(room.id).emit('play_youtube', videoId, 0, token, user.name, title);
+        room.currentMusicRequestedBy = requester;
+        io.to(room.id).emit('play_youtube', videoId, 0, token, requester, title);
+        if (room.code) {
+          io.to(room.code).emit('play_youtube', videoId, 0, token, requester, title);
+        }
         broadcastQueueUpdate(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} iniciou a reprodução de "${title || videoId}"`, 'info');
+        io.to(room.id).emit('toast_notification', `${requester} iniciou a reprodução de "${title || videoId}"`, 'info');
       } else {
         room.musicQueue.push(item);
         broadcastQueueUpdate(io, room);
-        io.to(room.id).emit('toast_notification', `${user.name} adicionou "${title || videoId}" à fila`, 'info');
+        io.to(room.id).emit('toast_notification', `${requester} adicionou "${title || videoId}" à fila`, 'info');
       }
     });
 

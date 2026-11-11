@@ -98,6 +98,7 @@ export function useYouTube(
   onMusicEnded: (token: number) => void
 ) {
   const pipWindow = useAppStore(state => state.pipWindow);
+  const inVoice = useAppStore(state => state.inVoice);
   const playerRef = useRef<YT.Player | null>(null);
   const currentTokenRef = useRef<number | null>(null);
   const pendingSeekSecondsRef = useRef<number | null>(null);
@@ -108,6 +109,17 @@ export function useYouTube(
   const targetQualityRef = useRef<string>('auto');
   const availableQualitiesRef = useRef<string[]>(['auto']);
   const playerInitPromiseRef = useRef<Promise<YT.Player> | null>(null);
+
+  // Se o usuário sair da call de voz, pausar e silenciar o YouTube imediatamente
+  useEffect(() => {
+    if (!inVoice && playerRef.current) {
+      try {
+        if (volumeIntervalRef.current) clearInterval(volumeIntervalRef.current);
+        playerRef.current.pauseVideo?.();
+        playerRef.current.mute?.();
+      } catch {}
+    }
+  }, [inVoice]);
 
   const postYTCommand = useCallback((func: string, args: any[] = []) => {
     try {
@@ -594,8 +606,8 @@ export function useYouTube(
                 }
                 
                 const { ytVol, callMuted } = useAudioStore.getState();
-                const { isPiPActive } = useAppStore.getState();
-                const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
+                const { isPiPActive, inVoice: currentInVoice } = useAppStore.getState();
+                const targetVol = (callMuted || isPiPActive || !currentInVoice) ? 0 : ytVol;
                 if (targetVol > 0) {
                   playerRef.current?.unMute();
                   playerRef.current?.setVolume(targetVol);
@@ -631,6 +643,11 @@ export function useYouTube(
 
   const playYouTube = useCallback(
     async (videoId: string, startSeconds: number, token: number) => {
+      // Regra de Ouro: Somente reproduz áudio e vídeo para quem estiver dentro da call de voz
+      if (!useAppStore.getState().inVoice) {
+        console.log('[YT] playYouTube bloqueado: usuário fora da call de voz');
+        return;
+      }
       currentTokenRef.current = token;
       suppressEndedRef.current = false;
 
@@ -689,10 +706,11 @@ export function useYouTube(
       }, 500);
 
       const { ytVol, callMuted } = useAudioStore.getState();
-      const { isPiPActive } = useAppStore.getState();
-      const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
+      const { isPiPActive, inVoice: currentInVoice } = useAppStore.getState();
+      const targetVol = (callMuted || isPiPActive || !currentInVoice) ? 0 : ytVol;
       player.setVolume(targetVol);
       if (targetVol > 0) player.unMute();
+      else player.mute();
     },
     [ensurePlayer, applyCCState, forceQualityOnPlayer]
   );
@@ -728,6 +746,7 @@ export function useYouTube(
   }, []);
 
   const resumeYouTube = useCallback(() => {
+    if (!useAppStore.getState().inVoice) return;
     playerRef.current?.playVideo();
     useAppStore.getState().setIsPlaying(true);
   }, []);
@@ -735,8 +754,8 @@ export function useYouTube(
   const applyYTVolume = useCallback(() => {
     if (!playerRef.current) return;
     const { ytVol, callMuted } = useAudioStore.getState();
-    const { isPiPActive } = useAppStore.getState();
-    const targetVol = (callMuted || isPiPActive) ? 0 : ytVol;
+    const { isPiPActive, inVoice: currentInVoice } = useAppStore.getState();
+    const targetVol = (callMuted || isPiPActive || !currentInVoice) ? 0 : ytVol;
     playerRef.current.setVolume(targetVol);
     
     // The global player always provides the audio. The local Plyr instance is always muted.

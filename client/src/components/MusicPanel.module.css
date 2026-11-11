@@ -374,12 +374,14 @@
 }
 
 .trackBy {
-  font-size: 10px;
-  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 500;
+  color: #a3a6aa;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 1px;
+  margin-top: 2px;
+  display: block;
 }
 
 /* ── Info Notice ── */

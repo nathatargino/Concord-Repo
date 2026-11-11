@@ -590,8 +590,19 @@ export function useSocket(callbacks: SocketCallbacks) {
     });
 
     socket.on('play_youtube', (videoId, startSeconds, token, requestedBy?, title?) => {
-      if (title) store.setCurrentTrackTitle(title);
-      store.setCurrentRequestedBy(requestedBy || null);
+      const meta = store.trackMetaCache[videoId] || {};
+      const finalRequestedBy = requestedBy || meta.requestedBy || null;
+      const finalTitle = title || meta.title || null;
+
+      if (finalTitle) store.setCurrentTrackTitle(finalTitle);
+      if (finalRequestedBy) store.setCurrentRequestedBy(finalRequestedBy);
+      if (finalTitle || finalRequestedBy) {
+        store.cacheTrackMeta(videoId, {
+          title: finalTitle || undefined,
+          requestedBy: finalRequestedBy || undefined,
+        });
+      }
+
       store.setCurrentVideoId(videoId);
       store.setIsPlaying(true);
       store.setActiveMediaTab('youtube');
@@ -599,7 +610,10 @@ export function useSocket(callbacks: SocketCallbacks) {
       if (electron?.setActiveMediaTab) {
         electron.setActiveMediaTab('youtube');
       }
-      callbacksRef.current.onPlayYouTube(videoId, startSeconds, token);
+      // Somente aciona o player local se o usuário estiver dentro da call
+      if (useAppStore.getState().inVoice) {
+        callbacksRef.current.onPlayYouTube(videoId, startSeconds, token);
+      }
     });
 
     socket.on('pause_youtube', (videoId, atSeconds, token) => {
@@ -627,11 +641,15 @@ export function useSocket(callbacks: SocketCallbacks) {
 
     socket.on('music_resume', () => {
       store.setIsPlaying(true);
-      callbacksRef.current.onResumeYouTube();
+      if (useAppStore.getState().inVoice) {
+        callbacksRef.current.onResumeYouTube();
+      }
     });
 
     socket.on('music_seek' as any, (time: number) => {
-      callbacksRef.current.onMusicSeek?.(time);
+      if (useAppStore.getState().inVoice) {
+        callbacksRef.current.onMusicSeek?.(time);
+      }
     });
 
     // ─── WATCH PARTY (STREAMING SYNC) ───

@@ -289,6 +289,7 @@ export default function App() {
     onReceiveAnswer: rtc.onReceiveAnswer,
     onReceiveIce: rtc.onReceiveIce,
     onPlayYouTube: (videoId, startSeconds, token) => {
+      if (!useAppStore.getState().inVoice) return;
       yt.playYouTube(videoId, startSeconds, token);
     },
     onStopYouTube: yt.stopYouTube,
@@ -296,10 +297,13 @@ export default function App() {
       yt.pauseYouTube();
     },
     onResumeYouTube: () => {
+      if (!useAppStore.getState().inVoice) return;
       yt.resumeYouTube();
     },
     onMusicSeek: (time) => {
-      yt.seekTo(time);
+      if (useAppStore.getState().inVoice) {
+        yt.seekTo(time);
+      }
       store.setMusicStartTime(Date.now() - (time * 1000));
     },
     onRoomJoined: (roomInfo) => {
@@ -781,6 +785,15 @@ export default function App() {
 
       socket.emit('update_media_state', useAudioStore.getState().micMuted, useAudioStore.getState().callMuted);
       monitorSpeaking(processedStream, store.myId);
+
+      // Se houver música/vídeo tocando na sala, sincronizar e iniciar reprodução para quem acabou de entrar na call
+      const appState = useAppStore.getState();
+      if (appState.currentVideoId && appState.isPlaying) {
+        const startSecs = appState.musicStartTime
+          ? Math.max(0, Math.floor((Date.now() - appState.musicStartTime) / 1000))
+          : 0;
+        yt.playYouTube(appState.currentVideoId, startSecs, 0);
+      }
     } catch (err) {
       console.error('Voice join error', err);
       alert('Erro ao entrar na chamada de voz. Verifique suas conexões e permissões.');
@@ -792,12 +805,22 @@ export default function App() {
     audio.cleanup();
     store.setInVoice(false);
     store.setActiveCallInfo(null);
+    store.setShowVideoPlayer(false);
+    if (store.screenShareUserId) {
+      store.setScreenShare(null);
+    }
     if (store.amSharing) {
       screenShare.stopScreenShare();
     }
-    // Apenas pausa o YouTube localmente ao sair da call.
-    // NÃO para o player — assim ele retoma quando o usuário voltar à call.
+    // Ao sair da call, pausar e silenciar o YouTube localmente
     yt.pauseYouTube();
+    if (yt.stopYouTube) {
+      yt.stopYouTube();
+    }
+    if (store.isPiPActive) {
+      (window as any).electron?.closePipWindow?.();
+      store.setPiPActive(false);
+    }
     stopSpeaking(store.myId);
 
     // Ensure the raw microphone stream is also stopped
