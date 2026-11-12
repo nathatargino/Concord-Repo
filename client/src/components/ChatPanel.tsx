@@ -329,6 +329,8 @@ export function ChatPanel({
     currentVideoId,
     currentTrackTitle,
     currentRequestedBy,
+    musicQueue,
+    trackMetaCache,
     isPiPActive,
     isPlaying,
     musicStartTime,
@@ -641,6 +643,13 @@ export function ChatPanel({
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
   const [renderMedia, setRenderMedia] = useState(false);
   const streamingHostRef = useRef<HTMLDivElement>(null);
+
+  // Se o usuário não estiver na call, fechar a visualização de assistir/vídeo
+  useEffect(() => {
+    if (!inVoice && showVideoPlayer) {
+      setShowVideoPlayer(false);
+    }
+  }, [inVoice, showVideoPlayer, setShowVideoPlayer]);
 
   // Fallback timer: if onTransitionEnd fails to fire within 650ms, ensure media mounts
   useEffect(() => {
@@ -1576,11 +1585,31 @@ export function ChatPanel({
     }
 
     if (newStaged.length > 0) {
-      setStagedFiles((prev) => [...prev, ...newStaged]);
-      if (newStaged.length === 1) {
-        toast.success(`Arquivo "${newStaged[0].file.name}" anexado!`);
-      } else {
-        toast.success(`${newStaged.length} arquivos anexados!`);
+      // Deduplicação intra-lote: remover duplicatas que possam vir no mesmo evento
+      const uniqueInBatch: StagedAttachment[] = [];
+      for (const item of newStaged) {
+        const isDup = uniqueInBatch.some(
+          (u) => (u.file.size === item.file.size && (u.file.name === item.file.name || (u.isImage && item.isImage))) ||
+                 (u.isImage && item.isImage && u.file.name.replace(/\.[^/.]+$/, '') === item.file.name.replace(/\.[^/.]+$/, ''))
+        );
+        if (!isDup) uniqueInBatch.push(item);
+      }
+
+      setStagedFiles((prev) => {
+        const deduplicatedNew = uniqueInBatch.filter(
+          (n) => !prev.some(
+            (p) => (p.file.size === n.file.size && (p.file.name === n.file.name || (p.isImage && n.isImage))) ||
+                   (p.isImage && n.isImage && p.file.name.replace(/\.[^/.]+$/, '') === n.file.name.replace(/\.[^/.]+$/, ''))
+          )
+        );
+        if (deduplicatedNew.length === 0) return prev;
+        return [...prev, ...deduplicatedNew];
+      });
+
+      if (uniqueInBatch.length === 1) {
+        toast.success(`Arquivo "${uniqueInBatch[0].file.name}" anexado!`);
+      } else if (uniqueInBatch.length > 1) {
+        toast.success(`${uniqueInBatch.length} arquivos anexados!`);
       }
       setTimeout(() => {
         document.getElementById('chatInput')?.focus();
@@ -2277,8 +2306,8 @@ export function ChatPanel({
             </button>
           )}
 
-          {/* Botão de alternar entre Chat e Streaming quando há streaming ativo ou player aberto */}
-          {((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || (streamingSessions as any).crunchyroll || currentVideoId)) || showVideoPlayer) && (
+          {/* Botão de alternar entre Chat e Streaming quando há streaming ativo ou player aberto (disponível apenas dentro da call) */}
+          {inVoice && ((Boolean(activeStreaming || streamingSessions.netflix || streamingSessions.prime || (streamingSessions as any).crunchyroll || currentVideoId)) || showVideoPlayer) && (
             <button
               className={`${styles.watchBtn} ${showVideoPlayer ? styles.watchBtnActive : ''}`}
               onClick={() => {
@@ -3344,13 +3373,13 @@ export function ChatPanel({
                 {(() => {
                   const videoPlayerContent = (
                     <div ref={videoContainerRef} className={`${styles.videoSlotWrapper} ${!currentVideoId ? styles.hiddenSlot : ''}`}>
-                      {/* Global YT Host - stays visible only when on YouTube tab */}
+                      {/* Global YT Host - stays visible only when in voice and on YouTube tab */}
                       <div
                         style={{
-                          display: isPiPActive ? 'none' : 'block',
-                          visibility: 'visible',
-                          opacity: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 1 : 0,
-                          pointerEvents: (showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'auto' : 'none',
+                          display: (isPiPActive || !inVoice) ? 'none' : 'block',
+                          visibility: (inVoice && showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'visible' : 'hidden',
+                          opacity: (inVoice && showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 1 : 0,
+                          pointerEvents: (inVoice && showVideoPlayer && currentVideoId && activeMediaTab === 'youtube') ? 'auto' : 'none',
                           width: '100%',
                           height: '100%'
                         }}
@@ -3365,16 +3394,19 @@ export function ChatPanel({
                       )}
 
                       {/* Custom Overlay Controls - always above YouTube iframe */}
-                      {currentVideoId && (
+                      {inVoice && currentVideoId && (
                         <div className={styles.customVideoOverlay} style={{ zIndex: 100, pointerEvents: 'none' }}>
                           <div className={styles.videoOverlayTop}>
                             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: '85%' }}>
                               <span className={styles.videoOverlayTitle}>{activeTrackTitle}</span>
-                              {currentRequestedBy && (
-                                <span style={{ fontSize: '11px', color: '#cbd5e1', textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)' }}>
-                                  por {currentRequestedBy}
-                                </span>
-                              )}
+                              {(() => {
+                                const reqBy = currentRequestedBy || (currentVideoId ? (trackMetaCache[currentVideoId]?.requestedBy || musicQueue.find(m => m.videoId === currentVideoId)?.requestedBy) : null);
+                                return reqBy ? (
+                                  <span style={{ fontSize: '11px', color: '#cbd5e1', textShadow: '0 1px 4px rgba(0, 0, 0, 0.8)' }}>
+                                    por {reqBy}
+                                  </span>
+                                ) : null;
+                              })()}
                             </div>
                           </div>
 
