@@ -87,7 +87,7 @@ export interface ClientToServerEvents {
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
   start_watching_screen: (broadcasterId: string) => void;
   stop_watching_screen: (broadcasterId: string) => void;
-  request_music: (url: string, title?: string, playNow?: boolean) => void;
+  request_music: (url: string, title?: string, playNow?: boolean, clientRequestedBy?: string) => void;
   music_ended: (token: number) => void;
   join_voice: () => void;
   leave_voice: () => void;

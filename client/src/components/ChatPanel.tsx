@@ -642,6 +642,56 @@ export function ChatPanel({
   // ── Video Player Flip ──
   // renderMedia becomes true only AFTER the flip transition ends (lazy mount)
   const [renderMedia, setRenderMedia] = useState(false);
+  const [isStreamingPiPActive, setIsStreamingPiPActive] = useState(false);
+
+  const toggleStreamingPiP = useCallback((targetService?: 'netflix' | 'prime' | 'crunchyroll') => {
+    const s = targetService || ((activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll') ? activeMediaTab : 'prime');
+    const platformLabel = s === 'netflix' ? 'Netflix' : s === 'prime' ? 'Prime Video' : 'Crunchyroll';
+    const isElectron = /electron/i.test(navigator.userAgent) || !!(window as any).electron;
+
+    if (!isElectron) {
+      toast.error('O Picture-in-Picture com Widevine DRM é exclusivo do Concord Desktop.');
+      return;
+    }
+
+    const electron = (window as any).electron;
+    if (isStreamingPiPActive) {
+      if (electron?.closePipWindow) electron.closePipWindow();
+      setIsStreamingPiPActive(false);
+    } else {
+      setIsStreamingPiPActive(true);
+      if (electron?.openStreamingPip) {
+        electron.openStreamingPip(s as any, `${platformLabel} - Concord PiP`);
+      } else if (electron?.openPipWindow) {
+        electron.openPipWindow({
+          isStreaming: true,
+          service: s,
+          title: `${platformLabel} - Concord PiP`
+        });
+      }
+    }
+  }, [activeMediaTab, isStreamingPiPActive]);
+
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (!electron) return;
+
+    const unsubStreamingOpened = electron.onStreamingPipOpened?.(() => {
+      setIsStreamingPiPActive(true);
+    });
+    const unsubStreamingClosed = electron.onStreamingPipClosed?.(() => {
+      setIsStreamingPiPActive(false);
+    });
+    const unsubPipClosed = electron.onPipClosed?.(() => {
+      setIsStreamingPiPActive(false);
+    });
+
+    return () => {
+      unsubStreamingOpened?.();
+      unsubStreamingClosed?.();
+      unsubPipClosed?.();
+    };
+  }, []);
   const streamingHostRef = useRef<HTMLDivElement>(null);
 
   // Se o usuário não estiver na call, fechar a visualização de assistir/vídeo
@@ -3114,6 +3164,17 @@ export function ChatPanel({
                   <span className={styles.mediaTabTitle}>Crunchyroll</span>
                   <span className={styles.mediaTabActiveBadge} title="Recurso em Beta">BETA</span>
                 </button>
+                {(activeMediaTab === 'netflix' || activeMediaTab === 'prime' || (activeMediaTab as any) === 'crunchyroll') && (
+                  <button
+                    type="button"
+                    className={`${styles.streamingTopPipBtn} ${isStreamingPiPActive ? styles.btnActive : ''}`}
+                    onClick={() => toggleStreamingPiP(activeMediaTab as any)}
+                    title={isStreamingPiPActive ? "Fechar Picture-in-Picture e restaurar" : "Picture-in-Picture (PiP)"}
+                  >
+                    <i className="fa-solid fa-clone" style={{ fontSize: '11px' }}></i>
+                    <span>{isStreamingPiPActive ? 'Fechar PiP' : 'PiP'}</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className={styles.mediaTabCloseBtn}
@@ -3206,7 +3267,24 @@ export function ChatPanel({
                             justifyContent: 'center',
                           }}
                         >
-                          {!isElectron && renderMedia ? (
+                          {isStreamingPiPActive ? (
+                            <div className={styles.streamingPipPlaceholder}>
+                              <div className={styles.streamingPipIconWrapper}>
+                                {currentService === 'netflix' ? <NetflixIcon /> : currentService === 'prime' ? <PrimeIcon /> : <CrunchyrollIcon />}
+                                <i className="fa-solid fa-clone" style={{ position: 'absolute', bottom: '-4px', right: '-4px', fontSize: '15px', color: '#a78bfa' }} />
+                              </div>
+                              <h4 className={styles.streamingPipTitle}>Reproduzindo {platformLabel} no PiP</h4>
+                              <p className={styles.streamingPipSubtitle}>O vídeo está aberto na janela flutuante sobre as outras telas.</p>
+                              <button
+                                type="button"
+                                className={styles.streamingPipRestoreBtn}
+                                onClick={() => toggleStreamingPiP(currentService)}
+                              >
+                                <i className="fa-solid fa-arrow-down-left-and-up-right-to-center" style={{ marginRight: '6px' }}></i>
+                                Restaurar para a janela principal
+                              </button>
+                            </div>
+                          ) : !isElectron && renderMedia ? (
                             <iframe
                               src={activeStreaming?.url || (currentService === 'netflix' ? 'https://www.netflix.com/browse' : currentService === 'prime' ? 'https://www.primevideo.com' : 'https://www.crunchyroll.com')}
                               title={platformLabel}
@@ -3325,6 +3403,39 @@ export function ChatPanel({
                           >
                             <i className="fa-solid fa-trash-can"></i>
                             <span>/clear</span>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutPip} ${isStreamingPiPActive ? styles.videoShortcutPipActive : ''}`}
+                            onClick={() => toggleStreamingPiP(currentService)}
+                            title={isStreamingPiPActive ? "Fechar Picture-in-Picture e restaurar" : "Assistir em Picture-in-Picture"}
+                          >
+                            <i className="fa-solid fa-clone"></i>
+                            <span>{isStreamingPiPActive ? '/fechar-pip' : '/pip'}</span>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutFullscreen}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('fullscreen', { service: currentService });
+                            }}
+                            title="Alternar Tela Cheia"
+                          >
+                            <i className="fa-solid fa-expand"></i>
+                            <span>/fullscreen</span>
+                          </button>
+
+                          <button
+                            className={`${styles.videoShortcutBtn} ${styles.videoShortcutBack}`}
+                            onClick={() => {
+                              const electron = (window as any).electron;
+                              if (electron?.sendStreamingCommand) electron.sendStreamingCommand('back', { service: currentService });
+                            }}
+                            title="Voltar ao Catálogo do Streaming"
+                          >
+                            <i className="fa-solid fa-arrow-left"></i>
+                            <span>/catálogo</span>
                           </button>
                         </div>
 

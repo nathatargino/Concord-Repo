@@ -105,7 +105,7 @@ interface ClientToServerEvents {
   delete_channel: (channelId: string) => void;
   update_server: (serverId: string, newName?: string, newIconUrl?: string) => void;
   set_user_role: (targetId: string, role: 'owner' | 'sub_owner' | 'member') => void;
-  request_music: (url: string, title?: string, playNow?: boolean) => void;
+  request_music: (url: string, title?: string, playNow?: boolean, requester?: string) => void;
   music_action: (action: 'skip' | 'pause' | 'play' | 'clear') => void;
   music_seek: (time: number) => void;
   remove_from_queue: (token: number) => void;
@@ -595,7 +595,7 @@ export function useSocket(callbacks: SocketCallbacks) {
       const finalTitle = title || meta.title || null;
 
       if (finalTitle) store.setCurrentTrackTitle(finalTitle);
-      if (finalRequestedBy) store.setCurrentRequestedBy(finalRequestedBy);
+      store.setCurrentRequestedBy(finalRequestedBy || null);
       if (finalTitle || finalRequestedBy) {
         store.cacheTrackMeta(videoId, {
           title: finalTitle || undefined,

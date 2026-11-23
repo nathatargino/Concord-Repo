@@ -76,6 +76,17 @@ const electronBridge = {
     loadSecureToken: (key) => electron_1.ipcRenderer.invoke('load-secure-token', key),
     toggleMiniPlayer: (isMini) => electron_1.ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState) => electron_1.ipcRenderer.send('open-pip-window', initialState),
+    openStreamingPip: (service, title) => electron_1.ipcRenderer.send('open-streaming-pip', { service, title }),
+    onStreamingPipOpened: (callback) => {
+        const subscription = (_event, data) => callback(data);
+        electron_1.ipcRenderer.on('streaming-pip-opened', subscription);
+        return () => electron_1.ipcRenderer.removeListener('streaming-pip-opened', subscription);
+    },
+    onStreamingPipClosed: (callback) => {
+        const subscription = () => callback();
+        electron_1.ipcRenderer.on('streaming-pip-closed', subscription);
+        return () => electron_1.ipcRenderer.removeListener('streaming-pip-closed', subscription);
+    },
     closePipWindow: () => electron_1.ipcRenderer.send('close-pip-window'),
     movePipWindow: (deltaX, deltaY) => electron_1.ipcRenderer.send('pip-move', { deltaX, deltaY }),
     sendPipAction: (action, payload) => electron_1.ipcRenderer.send('pip-action', action, payload),

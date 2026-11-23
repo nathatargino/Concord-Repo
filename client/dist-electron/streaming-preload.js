@@ -1,6 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+// Ensure HTML5 video Picture-in-Picture is never artificially disabled by platforms
+try {
+    Object.defineProperty(HTMLVideoElement.prototype, 'disablePictureInPicture', {
+        get: function () { return false; },
+        set: function () { },
+        configurable: true
+    });
+}
+catch (e) { }
 // Immediately disable WebAuthn / Passkeys / USB FIDO security key prompts in streaming view (Netflix, Amazon Prime Video)
 electron_1.webFrame.executeJavaScript(`
   (function() {
@@ -610,6 +619,34 @@ function applyPlaybackCommand(data, retryAttempt = 0) {
             video.currentTime = Math.min((video.duration || Infinity), video.currentTime + step);
         }
         catch (e) { }
+    }
+    else if (data.action === 'toggle' || data.action === 'play-pause') {
+        if (video.paused) {
+            executeMainWorldPlayback('play');
+            try {
+                video.play();
+            }
+            catch (e) { }
+        }
+        else {
+            executeMainWorldPlayback('pause');
+            try {
+                video.pause();
+            }
+            catch (e) { }
+        }
+    }
+    else if (data.action === 'pip' || data.action === 'toggle-pip') {
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => { });
+        }
+        else if (typeof video.requestPictureInPicture === 'function') {
+            try {
+                video.disablePictureInPicture = false;
+            }
+            catch (e) { }
+            video.requestPictureInPicture().catch(() => { });
+        }
     }
     else if (data.action === 'play') {
         if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.0) {

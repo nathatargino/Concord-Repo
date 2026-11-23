@@ -1,5 +1,14 @@
 import { ipcRenderer, webFrame } from 'electron';
 
+// Ensure HTML5 video Picture-in-Picture is never artificially disabled by platforms
+try {
+  Object.defineProperty(HTMLVideoElement.prototype, 'disablePictureInPicture', {
+    get: function() { return false; },
+    set: function() {},
+    configurable: true
+  });
+} catch(e) {}
+
 // Immediately disable WebAuthn / Passkeys / USB FIDO security key prompts in streaming view (Netflix, Amazon Prime Video)
 webFrame.executeJavaScript(`
   (function() {
@@ -236,7 +245,7 @@ const MAX_SYNC_RETRIES = 12;
 const SYNC_RETRY_DELAY_MS = 1000;
 
 // Alvo de sincronização pendente (para quando há bumper/anúncio de classificação rodando)
-let pendingSyncTarget: { action: 'play' | 'pause' | 'seek' | 'skip'; positionSeconds?: number; deltaSeconds?: number; timestamp: number } | null = null;
+let pendingSyncTarget: { action: 'play' | 'pause' | 'seek' | 'skip' | 'toggle' | 'play-pause' | 'pip' | 'toggle-pip'; positionSeconds?: number; deltaSeconds?: number; timestamp: number } | null = null;
 
 let currentlyHookedVideo: HTMLVideoElement | null = null;
 
@@ -555,7 +564,7 @@ window.addEventListener('popstate', () => {
 });
 
 // ── Receber comandos remotos do processo principal Concord ──
-ipcRenderer.on('apply-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek' | 'skip'; positionSeconds?: number; deltaSeconds?: number; autoDrift?: boolean }) => {
+ipcRenderer.on('apply-streaming-playback', (_event, data: { action: 'play' | 'pause' | 'seek' | 'skip' | 'toggle' | 'play-pause' | 'pip' | 'toggle-pip'; positionSeconds?: number; deltaSeconds?: number; autoDrift?: boolean }) => {
   // Cancelar retries anteriores se houver novo comando explícito (não autoDrift)
   if (!data.autoDrift && syncRetryTimer) {
     clearTimeout(syncRetryTimer);
@@ -566,7 +575,7 @@ ipcRenderer.on('apply-streaming-playback', (_event, data: { action: 'play' | 'pa
   applyPlaybackCommand(data);
 });
 
-function executeMainWorldPlayback(action: 'play' | 'pause' | 'seek' | 'skip', positionSeconds?: number, deltaSeconds?: number) {
+function executeMainWorldPlayback(action: string, positionSeconds?: number, deltaSeconds?: number) {
   try {
     window.dispatchEvent(new CustomEvent('__concord_playback_cmd', {
       detail: { action, positionSeconds, deltaSeconds }
@@ -585,7 +594,7 @@ function executeMainWorldPlayback(action: 'play' | 'pause' | 'seek' | 'skip', po
   webFrame.executeJavaScript(code).catch(() => {});
 }
 
-function applyPlaybackCommand(data: { action: 'play' | 'pause' | 'seek' | 'skip'; positionSeconds?: number; deltaSeconds?: number; autoDrift?: boolean }, retryAttempt = 0) {
+function applyPlaybackCommand(data: { action: 'play' | 'pause' | 'seek' | 'skip' | 'toggle' | 'play-pause' | 'pip' | 'toggle-pip'; positionSeconds?: number; deltaSeconds?: number; autoDrift?: boolean }, retryAttempt = 0) {
   // PROBLEMA 4: Janela de supressão robusta para evitar loops de echo / ping-pong
   isRemoteAction = true;
   const suppressionDuration = data.autoDrift ? 1000 : 2000;
@@ -659,6 +668,21 @@ function applyPlaybackCommand(data: { action: 'play' | 'pause' | 'seek' | 'skip'
     try {
       video.currentTime = Math.min((video.duration || Infinity), video.currentTime + step);
     } catch(e) {}
+  } else if (data.action === 'toggle' || data.action === 'play-pause') {
+    if (video.paused) {
+      executeMainWorldPlayback('play');
+      try { video.play(); } catch(e) {}
+    } else {
+      executeMainWorldPlayback('pause');
+      try { video.pause(); } catch(e) {}
+    }
+  } else if (data.action === 'pip' || data.action === 'toggle-pip') {
+    if (document.pictureInPictureElement) {
+      document.exitPictureInPicture().catch(() => {});
+    } else if (typeof video.requestPictureInPicture === 'function') {
+      try { (video as any).disablePictureInPicture = false; } catch(e) {}
+      video.requestPictureInPicture().catch(() => {});
+    }
   } else if (data.action === 'play') {
     if (typeof data.positionSeconds === 'number' && Math.abs(video.currentTime - data.positionSeconds) > 2.0) {
       try { video.currentTime = data.positionSeconds; } catch(e) {}

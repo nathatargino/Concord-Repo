@@ -22,6 +22,9 @@ export interface ElectronAPI {
     loadSecureToken?: (key: string) => Promise<string | null>;
     toggleMiniPlayer?: (isMini: boolean) => void;
     openPipWindow?: (initialState: any) => void;
+    openStreamingPip?: (service: 'netflix' | 'prime' | 'crunchyroll', title?: string) => void;
+    onStreamingPipOpened?: (callback: (data: { service: string }) => void) => () => void;
+    onStreamingPipClosed?: (callback: () => void) => () => void;
     closePipWindow?: () => void;
     movePipWindow?: (deltaX: number, deltaY: number) => void;
     sendPipAction?: (action: string, payload?: any) => void;
@@ -147,6 +150,17 @@ const electronBridge: ElectronAPI = {
     loadSecureToken: (key: string) => ipcRenderer.invoke('load-secure-token', key),
     toggleMiniPlayer: (isMini: boolean) => ipcRenderer.send('toggle-mini-player', isMini),
     openPipWindow: (initialState: any) => ipcRenderer.send('open-pip-window', initialState),
+    openStreamingPip: (service: 'netflix' | 'prime' | 'crunchyroll', title?: string) => ipcRenderer.send('open-streaming-pip', { service, title }),
+    onStreamingPipOpened: (callback: (data: { service: string }) => void) => {
+        const subscription = (_event: any, data: any) => callback(data);
+        ipcRenderer.on('streaming-pip-opened', subscription);
+        return () => ipcRenderer.removeListener('streaming-pip-opened', subscription);
+    },
+    onStreamingPipClosed: (callback: () => void) => {
+        const subscription = () => callback();
+        ipcRenderer.on('streaming-pip-closed', subscription);
+        return () => ipcRenderer.removeListener('streaming-pip-closed', subscription);
+    },
     closePipWindow: () => ipcRenderer.send('close-pip-window'),
     movePipWindow: (deltaX: number, deltaY: number) => ipcRenderer.send('pip-move', { deltaX, deltaY }),
     sendPipAction: (action: string, payload?: any) => ipcRenderer.send('pip-action', action, payload),

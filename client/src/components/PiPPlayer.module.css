@@ -367,3 +367,37 @@
   font-size: 11px;
   gap: 8px;
 }
+
+.restoreBtn {
+  -webkit-app-region: no-drag;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.restoreBtn:hover {
+  background: rgba(124, 58, 237, 0.75);
+  border-color: rgba(124, 58, 237, 0.9);
+  color: #fff;
+}
+
+.streamingPipSurface {
+  flex: 1;
+  width: 100%;
+  height: calc(100% - 30px);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}

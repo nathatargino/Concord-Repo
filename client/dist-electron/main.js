@@ -847,6 +847,8 @@ electron_1.app.on('open-url', (event, url) => {
 });
 fs.appendFileSync(logFile, 'Waiting for app.whenReady()...\n');
 let pipWindow = null;
+let isStreamingPiP = false;
+let streamingPiPService = null;
 electron_1.app.whenReady().then(async () => {
     fs.appendFileSync(logFile, 'app.whenReady() fired!\n');
     startAuthLoopbackServer();
@@ -1222,7 +1224,220 @@ electron_1.ipcMain.on('window-close', () => {
     if (mainWindow)
         mainWindow.close();
 });
+function restoreStreamingFromPiP() {
+    if (!isStreamingPiP)
+        return;
+    const targetService = streamingPiPService;
+    isStreamingPiP = false;
+    streamingPiPService = null;
+    if (!targetService)
+        return;
+    const inst = streamingInstances.get(targetService);
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed())
+        return;
+    if (pipWindow && !pipWindow.isDestroyed()) {
+        if (pipWindow.contentView && typeof pipWindow.contentView.removeChildView === 'function') {
+            try {
+                pipWindow.contentView.removeChildView(inst.view);
+            }
+            catch (e) { }
+        }
+        else if (typeof pipWindow.removeBrowserView === 'function') {
+            try {
+                pipWindow.removeBrowserView(inst.view);
+            }
+            catch (e) { }
+        }
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.contentView && typeof mainWindow.contentView.addChildView === 'function') {
+            try {
+                mainWindow.contentView.addChildView(inst.view);
+            }
+            catch (e) { }
+        }
+        else if (typeof mainWindow.addBrowserView === 'function') {
+            try {
+                mainWindow.addBrowserView(inst.view);
+            }
+            catch (e) { }
+        }
+        if (activeStreamingBounds) {
+            inst.view.setBounds(activeStreamingBounds);
+        }
+        if (typeof inst.view.setBorderRadius === 'function') {
+            inst.view.setBorderRadius(16);
+        }
+        try {
+            inst.view.webContents.setAudioMuted(false);
+            inst.view.webContents.focus();
+        }
+        catch (e) { }
+        mainWindow.webContents.send('streaming-pip-closed', { service: targetService });
+        mainWindow.webContents.send('pip-closed');
+    }
+}
+function openStreamingPiPWindow(service, customTitle) {
+    if (!mainWindow || mainWindow.isDestroyed())
+        return;
+    const targetService = service || activeStreamingService || 'prime';
+    const inst = streamingInstances.get(targetService);
+    if (!inst || !inst.view || inst.view.webContents.isDestroyed()) {
+        console.warn('[PiP] Cannot open streaming PiP: instance not found for', targetService);
+        return;
+    }
+    if (pipWindow && !pipWindow.isDestroyed()) {
+        if (isStreamingPiP && streamingPiPService === targetService) {
+            pipWindow.focus();
+            return;
+        }
+        if (isStreamingPiP) {
+            restoreStreamingFromPiP();
+        }
+        try {
+            pipWindow.close();
+        }
+        catch (e) { }
+        pipWindow = null;
+    }
+    isStreamingPiP = true;
+    streamingPiPService = targetService;
+    // Detach view from mainWindow
+    if (mainWindow.contentView && typeof mainWindow.contentView.removeChildView === 'function') {
+        try {
+            mainWindow.contentView.removeChildView(inst.view);
+        }
+        catch (e) { }
+    }
+    else if (typeof mainWindow.removeBrowserView === 'function') {
+        try {
+            mainWindow.removeBrowserView(inst.view);
+        }
+        catch (e) { }
+    }
+    const { width, height } = require('electron').screen.getPrimaryDisplay().workAreaSize;
+    const initialW = 480;
+    const initialH = 300;
+    const MIN_WIDTH = 320;
+    const MIN_HEIGHT = 210;
+    const MAX_WIDTH = Math.min(1280, Math.round(width * 0.85));
+    const MAX_HEIGHT = Math.min(800, Math.round(height * 0.85));
+    const appIcon = getAppIconPath();
+    pipWindow = new electron_1.BrowserWindow({
+        width: initialW,
+        height: initialH,
+        minWidth: MIN_WIDTH,
+        minHeight: MIN_HEIGHT,
+        maxWidth: MAX_WIDTH,
+        maxHeight: MAX_HEIGHT,
+        x: width - initialW - 30,
+        y: height - initialH - 50,
+        alwaysOnTop: true,
+        frame: false,
+        backgroundColor: '#0a0a14',
+        resizable: true,
+        skipTaskbar: false,
+        icon: appIcon,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            webSecurity: false,
+            preload: path.join(__dirname, 'preload.js'),
+            autoplayPolicy: 'no-user-gesture-required'
+        }
+    });
+    if (appIcon && fs.existsSync(appIcon)) {
+        try {
+            pipWindow.setIcon(appIcon);
+        }
+        catch (e) { }
+    }
+    pipWindow.setMinimumSize(MIN_WIDTH, MIN_HEIGHT);
+    pipWindow.setMaximumSize(MAX_WIDTH, MAX_HEIGHT);
+    pipWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    const platformLabel = targetService === 'netflix' ? 'Netflix' : targetService === 'prime' ? 'Prime Video' : 'Crunchyroll';
+    const pipTitle = customTitle || `${platformLabel} - Concord PiP`;
+    const pipUrl = isDev
+        ? `${process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173'}#/pip?streaming=${targetService}`
+        : `http://127.0.0.1:${localServerPort}/#/pip?streaming=${targetService}`;
+    pipWindow.loadURL(pipUrl);
+    const PIP_HEADER_HEIGHT = 30;
+    const attachToPip = () => {
+        if (!pipWindow || pipWindow.isDestroyed() || !inst || !inst.view || inst.view.webContents.isDestroyed())
+            return;
+        const [w, h] = pipWindow.getContentSize();
+        if (pipWindow.contentView && typeof pipWindow.contentView.addChildView === 'function') {
+            try {
+                pipWindow.contentView.addChildView(inst.view);
+            }
+            catch (e) { }
+        }
+        else if (typeof pipWindow.addBrowserView === 'function') {
+            try {
+                pipWindow.addBrowserView(inst.view);
+            }
+            catch (e) { }
+        }
+        else if (typeof pipWindow.setBrowserView === 'function') {
+            try {
+                pipWindow.setBrowserView(inst.view);
+            }
+            catch (e) { }
+        }
+        inst.view.setBounds({
+            x: 0,
+            y: PIP_HEADER_HEIGHT,
+            width: w,
+            height: Math.max(10, h - PIP_HEADER_HEIGHT)
+        });
+        if (typeof inst.view.setVisible === 'function') {
+            inst.view.setVisible(true);
+        }
+        if (typeof inst.view.setBorderRadius === 'function') {
+            inst.view.setBorderRadius(0);
+        }
+        try {
+            inst.view.webContents.setAudioMuted(false);
+            inst.view.webContents.focus();
+        }
+        catch (e) { }
+    };
+    attachToPip();
+    pipWindow.webContents.on('did-finish-load', () => {
+        attachToPip();
+        pipWindow?.webContents.send('pip-sync', {
+            isStreaming: true,
+            service: targetService,
+            title: pipTitle
+        });
+    });
+    pipWindow.on('resize', () => {
+        if (!pipWindow || pipWindow.isDestroyed())
+            return;
+        const [w, h] = pipWindow.getContentSize();
+        if (isStreamingPiP && streamingPiPService === targetService) {
+            const cur = streamingInstances.get(targetService);
+            if (cur && cur.view && !cur.view.webContents.isDestroyed()) {
+                cur.view.setBounds({
+                    x: 0,
+                    y: PIP_HEADER_HEIGHT,
+                    width: w,
+                    height: Math.max(10, h - PIP_HEADER_HEIGHT)
+                });
+            }
+        }
+    });
+    pipWindow.on('closed', () => {
+        restoreStreamingFromPiP();
+        pipWindow = null;
+    });
+    mainWindow.webContents.send('streaming-pip-opened', { service: targetService });
+}
 electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
+    if (initialState?.isStreaming || initialState?.service) {
+        openStreamingPiPWindow(initialState.service || activeStreamingService || 'prime', initialState.title);
+        return;
+    }
     if (pipWindow) {
         pipWindow.focus();
         return;
@@ -1280,7 +1495,13 @@ electron_1.ipcMain.on('open-pip-window', (event, initialState) => {
         }
     });
 });
+electron_1.ipcMain.on('open-streaming-pip', (_event, { service, title }) => {
+    openStreamingPiPWindow(service || activeStreamingService || 'prime', title);
+});
 electron_1.ipcMain.on('close-pip-window', () => {
+    if (isStreamingPiP) {
+        restoreStreamingFromPiP();
+    }
     if (pipWindow) {
         pipWindow.close();
     }
@@ -1328,6 +1549,33 @@ electron_1.ipcMain.on('install-update', () => {
     }
 });
 electron_1.ipcMain.on('pip-action', (event, action, payload) => {
+    if (isStreamingPiP && streamingPiPService) {
+        const inst = streamingInstances.get(streamingPiPService);
+        if (inst && !inst.view.webContents.isDestroyed()) {
+            if (action === 'play') {
+                broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', { action: 'play' });
+            }
+            else if (action === 'pause') {
+                broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', { action: 'pause' });
+            }
+            else if (action === 'play-pause' || action === 'toggle') {
+                broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', { action: 'toggle' });
+            }
+            else if (action === 'skip') {
+                broadcastToStreamingFrames(inst.view.webContents, 'apply-streaming-playback', { action: 'skip', deltaSeconds: 10 });
+            }
+            else if (action === 'restore' || action === 'close') {
+                restoreStreamingFromPiP();
+                if (pipWindow && !pipWindow.isDestroyed()) {
+                    try {
+                        pipWindow.close();
+                    }
+                    catch (e) { }
+                }
+                return;
+            }
+        }
+    }
     // Forward action from PiP window to Main window
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('pip-action', action, payload);
@@ -1997,6 +2245,10 @@ function applyStreamingVolumeToView(view, volume) {
 function hideStreamingView(service) {
     if (!mainWindow || mainWindow.isDestroyed())
         return;
+    if (isStreamingPiP && streamingPiPService === service) {
+        // Do not hide or mute while actively playing in Picture-in-Picture
+        return;
+    }
     const inst = streamingInstances.get(service);
     if (!inst || !inst.view || inst.view.webContents.isDestroyed())
         return;
@@ -2184,6 +2436,15 @@ function closeStreamingInstance(targetService) {
     const s = targetService || activeStreamingService;
     if (!s)
         return;
+    if (isStreamingPiP && streamingPiPService === s) {
+        restoreStreamingFromPiP();
+        if (pipWindow && !pipWindow.isDestroyed()) {
+            try {
+                pipWindow.close();
+            }
+            catch (e) { }
+        }
+    }
     const inst = streamingInstances.get(s);
     if (inst && mainWindow && !mainWindow.isDestroyed()) {
         hideStreamingView(s);
@@ -2706,6 +2967,20 @@ electron_1.ipcMain.on('streaming-command', (_event, command, payload) => {
                 positionSeconds: payload.time,
                 isPlaying: true,
             });
+        }
+    }
+    else if (command === 'pip' || command === 'toggle-pip') {
+        if (isStreamingPiP) {
+            restoreStreamingFromPiP();
+            if (pipWindow && !pipWindow.isDestroyed()) {
+                try {
+                    pipWindow.close();
+                }
+                catch (e) { }
+            }
+        }
+        else {
+            openStreamingPiPWindow(inst.service);
         }
     }
     else if (command === 'fullscreen') {

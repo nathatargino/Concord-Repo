@@ -946,12 +946,13 @@ export default function App() {
         {!isHome && (
           <div className={styles.sidePanels}>
             <MusicPanel
-              onRequestMusic={(url, title, playNow) => {
+              onRequestMusic={(url, title, playNow, requesterName) => {
                 if (!store.inVoice) {
                   notifyInChat('Você precisa estar em uma call de voz para colocar vídeos.');
                   return;
                 }
-                socket.emit('request_music', url, title, playNow);
+                const reqName = requesterName || store.myName || undefined;
+                socket.emit('request_music', url, title, playNow, reqName);
               }}
               onRemoveFromQueue={(token) => socket.emit('remove_from_queue', token)}
               onReorderQueue={(oldIndex, newIndex) => socket.emit('reorder_queue', oldIndex, newIndex)}
