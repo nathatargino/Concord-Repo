@@ -1915,10 +1915,13 @@
 ═══════════════════════════════════════════════ */
 .videoShortcutWrapper {
   flex-shrink: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 12px;
 }
 
 .videoShortcutLabel {
@@ -1931,43 +1934,71 @@
   text-align: center;
 }
 
-.videoShortcutGrid { align-items: center; max-width: 480px; margin: 0 auto; width: 100%;
+.videoShortcutGrid {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px 8px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
-.videoShortcutBtn { max-width: 105px; padding: 6px 12px !important; border-radius: 10px !important; font-size: 11px !important; gap: 6px !important;
-  display: flex;
+.videoShortcutBtn {
+  display: inline-flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 6px 12px !important;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 8px !important;
   cursor: pointer;
   transition: all 0.15s ease;
   background: #181b24;
   color: #e5e7eb;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11px !important;
   font-weight: 600;
-  flex: 1;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .videoShortcutBtn i {
-  font-size: 13px;
+  font-size: 12px;
+  flex-shrink: 0;
 }
 
 .videoShortcutBtn span {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .videoShortcutBtn small {
   display: none;
+}
+
+@media (max-width: 820px) {
+  .videoShortcutGrid {
+    gap: 4px 6px;
+    max-width: 100%;
+  }
+  .videoShortcutBtn {
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+    gap: 4px;
+  }
+  .videoShortcutBtn i {
+    font-size: 11px;
+  }
+  .videoShortcutBtn span {
+    font-size: 10px;
+  }
 }
 
 .videoShortcutBtn:hover {

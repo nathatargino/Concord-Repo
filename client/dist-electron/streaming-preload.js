@@ -1,15 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
-// Ensure HTML5 video Picture-in-Picture is never artificially disabled by platforms
-try {
-    Object.defineProperty(HTMLVideoElement.prototype, 'disablePictureInPicture', {
-        get: function () { return false; },
-        set: function () { },
-        configurable: true
-    });
-}
-catch (e) { }
 // Immediately disable WebAuthn / Passkeys / USB FIDO security key prompts in streaming view (Netflix, Amazon Prime Video)
 electron_1.webFrame.executeJavaScript(`
   (function() {
@@ -150,52 +141,54 @@ electron_1.webFrame.executeJavaScript(`
 
     window.__concord_main_playback = function(action, pos, delta) {
       try {
-        var nfPlayer = window.__concord_get_netflix_player();
+        var isNetflix = window.location.hostname.includes('netflix.com');
+        var nfPlayer = isNetflix ? window.__concord_get_netflix_player() : null;
         var video = window.__concord_get_active_video();
 
         if (action === 'seek' && typeof pos === 'number') {
           if (nfPlayer && typeof nfPlayer.seek === 'function') {
             try { nfPlayer.seek(Math.round(pos * 1000)); } catch(e) {}
-          }
-          if (video) {
+          } else if (video && !isNetflix) {
             try { video.currentTime = pos; } catch(e) {}
           }
         } else if (action === 'skip') {
           var step = typeof delta === 'number' ? delta : 10;
-          var cur = (nfPlayer && typeof nfPlayer.getCurrentTime === 'function')
-            ? (nfPlayer.getCurrentTime() / 1000)
-            : (video ? video.currentTime : 0);
-          var target = cur + step;
           if (nfPlayer && typeof nfPlayer.seek === 'function') {
-            try { nfPlayer.seek(Math.round(target * 1000)); } catch(e) {}
-          }
-          if (video) {
-            try { video.currentTime = Math.min((video.duration || Infinity), target); } catch(e) {}
+            var cur = typeof nfPlayer.getCurrentTime === 'function' ? (nfPlayer.getCurrentTime() / 1000) : (video ? video.currentTime : 0);
+            try { nfPlayer.seek(Math.round((cur + step) * 1000)); } catch(e) {}
+          } else if (video && !isNetflix) {
+            try { video.currentTime = Math.min((video.duration || Infinity), (video.currentTime + step)); } catch(e) {}
           }
         } else if (action === 'play') {
-          if (typeof pos === 'number' && video && Math.abs(video.currentTime - pos) > 2.0) {
-            if (nfPlayer && typeof nfPlayer.seek === 'function') {
-              try { nfPlayer.seek(Math.round(pos * 1000)); } catch(e) {}
+          if (typeof pos === 'number') {
+            if (nfPlayer && typeof nfPlayer.seek === 'function' && typeof nfPlayer.getCurrentTime === 'function') {
+              var curNf = nfPlayer.getCurrentTime() / 1000;
+              if (Math.abs(curNf - pos) > 2.5) {
+                try { nfPlayer.seek(Math.round(pos * 1000)); } catch(e) {}
+              }
+            } else if (video && !isNetflix && Math.abs(video.currentTime - pos) > 2.0) {
+              try { video.currentTime = pos; } catch(e) {}
             }
-            try { video.currentTime = pos; } catch(e) {}
           }
           if (nfPlayer && typeof nfPlayer.play === 'function') {
             try { nfPlayer.play(); } catch(e) {}
-          }
-          if (video && video.paused) {
+          } else if (video && video.paused && !isNetflix) {
             try { video.play().catch(function() {}); } catch(e) {}
           }
         } else if (action === 'pause') {
-          if (typeof pos === 'number' && video && Math.abs(video.currentTime - pos) > 2.0) {
-            if (nfPlayer && typeof nfPlayer.seek === 'function') {
-              try { nfPlayer.seek(Math.round(pos * 1000)); } catch(e) {}
+          if (typeof pos === 'number') {
+            if (nfPlayer && typeof nfPlayer.seek === 'function' && typeof nfPlayer.getCurrentTime === 'function') {
+              var curNfPause = nfPlayer.getCurrentTime() / 1000;
+              if (Math.abs(curNfPause - pos) > 2.5) {
+                try { nfPlayer.seek(Math.round(pos * 1000)); } catch(e) {}
+              }
+            } else if (video && !isNetflix && Math.abs(video.currentTime - pos) > 2.0) {
+              try { video.currentTime = pos; } catch(e) {}
             }
-            try { video.currentTime = pos; } catch(e) {}
           }
           if (nfPlayer && typeof nfPlayer.pause === 'function') {
             try { nfPlayer.pause(); } catch(e) {}
-          }
-          if (video && !video.paused) {
+          } else if (video && !video.paused && !isNetflix) {
             try { video.pause(); } catch(e) {}
           }
         }
@@ -293,6 +286,7 @@ function getActiveVideo() {
  */
 function clickPlayButton() {
     const video = getActiveVideo();
+    const isNetflix = typeof window !== 'undefined' && window.location.hostname.includes('netflix.com');
     if (video && !video.paused)
         return;
     const netflixPlayBtn = document.querySelector('[data-uia="control-play-pause-play"], .button-nfplayerPlay, .pausedOverlayButton');
@@ -319,6 +313,7 @@ function clickPlayButton() {
  */
 function clickPauseButton() {
     const video = getActiveVideo();
+    const isNetflix = typeof window !== 'undefined' && window.location.hostname.includes('netflix.com');
     if (video && video.paused)
         return;
     const netflixPauseBtn = document.querySelector('[data-uia="control-play-pause-pause"], .button-nfplayerPause');
@@ -442,6 +437,7 @@ function hookVideoElement(video) {
 function checkPlaybackState() {
     const url = window.location.href;
     const video = getActiveVideo();
+    const isNetflix = typeof window !== 'undefined' && window.location.hostname.includes('netflix.com');
     if (video) {
         hookVideoElement(video);
         // Se temos um alvo de sincronização pendente esperando o filme carregar após bumper
@@ -557,6 +553,7 @@ function applyPlaybackCommand(data, retryAttempt = 0) {
     if (remoteActionTimeout)
         clearTimeout(remoteActionTimeout);
     const video = getActiveVideo();
+    const isNetflix = typeof window !== 'undefined' && window.location.hostname.includes('netflix.com');
     if (!video) {
         // Executa comando no Main World mesmo sem elemento <video> detectado no preload (ex: player customizado)
         executeMainWorldPlayback(data.action, data.positionSeconds, data.deltaSeconds);
@@ -607,6 +604,14 @@ function applyPlaybackCommand(data, retryAttempt = 0) {
     }
     // PROBLEMA 1: Executar playback via Main World (API Cadmium na Netflix + controller principal)
     executeMainWorldPlayback(data.action, data.positionSeconds, data.deltaSeconds);
+    // Na Netflix, NUNCA manipular video.currentTime ou video.play/pause diretamente no DOM isolado,
+    // pois o player Cadmium gerencia os buffers de DRM e aborta a reprodução com o erro M7375 se houver seek concorrente.
+    if (isNetflix) {
+        remoteActionTimeout = setTimeout(() => {
+            isRemoteAction = false;
+        }, suppressionDuration);
+        return;
+    }
     if (data.action === 'seek' && typeof data.positionSeconds === 'number') {
         try {
             video.currentTime = data.positionSeconds;
@@ -641,10 +646,6 @@ function applyPlaybackCommand(data, retryAttempt = 0) {
             document.exitPictureInPicture().catch(() => { });
         }
         else if (typeof video.requestPictureInPicture === 'function') {
-            try {
-                video.disablePictureInPicture = false;
-            }
-            catch (e) { }
             video.requestPictureInPicture().catch(() => { });
         }
     }
@@ -684,8 +685,8 @@ function applyPlaybackCommand(data, retryAttempt = 0) {
             }, 200);
         }
     }
-    // Verificação de segurança após 1.2s: se foi um seek explícito e o currentTime não mudou
-    if (!data.autoDrift && typeof data.positionSeconds === 'number' && retryAttempt < 2) {
+    // Verificação de segurança após 1.2s: se foi um seek explícito e o currentTime não mudou (apenas plataformas não-Netflix)
+    if (!isNetflix && !data.autoDrift && typeof data.positionSeconds === 'number' && retryAttempt < 2) {
         const targetPos = data.positionSeconds;
         setTimeout(() => {
             const v = getActiveVideo();
